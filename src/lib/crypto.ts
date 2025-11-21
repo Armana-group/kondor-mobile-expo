@@ -26,9 +26,15 @@ try {
   const { hmac } = require('@noble/hashes/hmac');
   const { sha256 } = require('@noble/hashes/sha256');
 
-  // Provide pure JS HMAC implementation to @noble/secp256k1
-  secp.utils.hmacSha256Sync = (key: Uint8Array, ...messages: Uint8Array[]) => {
+  // Provide pure JS HMAC implementation to @noble/secp256k1 (both sync and async)
+  const hmacSha256Implementation = (key: Uint8Array, ...messages: Uint8Array[]) => {
     return hmac(sha256, key, secp.utils.concatBytes(...messages));
+  };
+
+  // Override both sync and async versions
+  secp.utils.hmacSha256Sync = hmacSha256Implementation;
+  secp.utils.hmacSha256 = async (key: Uint8Array, ...messages: Uint8Array[]) => {
+    return hmacSha256Implementation(key, ...messages);
   };
 
   console.log('[Crypto] Configured @noble/secp256k1 to use pure JS crypto');
