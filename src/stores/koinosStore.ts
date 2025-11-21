@@ -14,6 +14,7 @@ interface KoinosState {
   // Actions
   initialize: () => Promise<void>;
   getBalance: (address: string) => Promise<string>;
+  getMana: (address: string) => Promise<{ current: string; max: string; percentage: number }>;
   transfer: (to: string, amount: string) => Promise<string>;
   estimateMana: (to: string, amount: string) => Promise<string>;
   reset: () => void;
@@ -133,6 +134,67 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
         isLoading: false,
         error: error.message || 'Failed to get balance'
       });
+      throw error;
+    }
+  },
+
+  getMana: async (address: string) => {
+    console.log('[KoinosStore] getMana called for address:', address);
+    const { provider, isInitialized } = get();
+
+    // Initialize if needed
+    if (!provider || !isInitialized) {
+      console.log('[KoinosStore] Provider not initialized, initializing...');
+      await get().initialize();
+    }
+
+    const currentProvider = get().provider;
+    if (!currentProvider) {
+      console.error('[KoinosStore] Provider still not initialized after init attempt');
+      throw new Error('Provider not initialized');
+    }
+
+    try {
+      console.log('[KoinosStore] Fetching account resource credits...');
+
+      // Get current mana using chain.get_account_rc RPC call
+      const rcResult = await currentProvider.call('chain.get_account_rc', {
+        account: address
+      });
+
+      console.log('[KoinosStore] RC result:', rcResult);
+
+      const currentMana = rcResult.rc || '0';
+
+      // Get balance to calculate max mana
+      const balance = await get().getBalance(address);
+
+      // Max mana = balance * 10^8 (KOIN has 8 decimals)
+      const balanceInSatoshis = utils.parseUnits(balance, 8);
+      const maxMana = balanceInSatoshis;
+
+      console.log('[KoinosStore] Current mana:', currentMana);
+      console.log('[KoinosStore] Max mana:', maxMana);
+
+      // Calculate percentage
+      const currentManaBigInt = BigInt(currentMana);
+      const maxManaBigInt = BigInt(maxMana);
+
+      let percentage = 0;
+      if (maxManaBigInt > 0n) {
+        percentage = Number((currentManaBigInt * 100n) / maxManaBigInt);
+      }
+
+      console.log('[KoinosStore] Mana percentage:', percentage);
+
+      return {
+        current: currentMana,
+        max: maxMana,
+        percentage
+      };
+    } catch (error: any) {
+      console.error('[KoinosStore] Get mana error:', error);
+      console.error('[KoinosStore] Error stack:', error.stack);
       throw error;
     }
   },

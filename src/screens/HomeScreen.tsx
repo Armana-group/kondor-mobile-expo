@@ -20,9 +20,10 @@ import { truncateAddress, formatKoinBalance } from '../lib/utils';
 export const HomeScreen = () => {
   const navigation = useNavigation<any>();
   const { address, balance, updateBalance } = useWalletStore();
-  const { getBalance, initialize } = useKoinosStore();
+  const { getBalance, getMana, initialize } = useKoinosStore();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [manaPercentage, setManaPercentage] = useState<number>(0);
 
   const initializeAndLoadBalance = useCallback(async () => {
     try {
@@ -55,6 +56,16 @@ export const HomeScreen = () => {
       const newBalance = await getBalance(address);
       console.log('[HomeScreen] Balance fetched successfully:', newBalance);
       updateBalance(newBalance);
+
+      // Fetch mana
+      try {
+        const manaData = await getMana(address);
+        console.log('[HomeScreen] Mana fetched successfully:', manaData);
+        setManaPercentage(manaData.percentage);
+      } catch (manaError: any) {
+        console.error('[HomeScreen] Mana fetch error:', manaError);
+        // Don't show alert for mana fetch error, just log it
+      }
     } catch (error: any) {
       console.error('[HomeScreen] Balance fetch error:', error);
       console.error('[HomeScreen] Error message:', error.message);
@@ -119,6 +130,24 @@ export const HomeScreen = () => {
         <View style={styles.balanceCard}>
           <Text style={styles.balanceLabel}>Total Balance</Text>
           <Text style={styles.balance}>{formatKoinBalance(balance)} KOIN</Text>
+
+          <View style={styles.manaContainer}>
+            <View style={styles.manaHeader}>
+              <Text style={styles.manaLabel}>Mana Available</Text>
+              <Text style={styles.manaValue}>{manaPercentage.toFixed(1)}%</Text>
+            </View>
+            <View style={styles.manaBarContainer}>
+              <View
+                style={[
+                  styles.manaBar,
+                  {
+                    width: `${Math.min(manaPercentage, 100)}%`,
+                    backgroundColor: manaPercentage < 20 ? '#DC3545' : manaPercentage < 50 ? '#FFC107' : '#34C759'
+                  }
+                ]}
+              />
+            </View>
+          </View>
 
           <View style={styles.addressContainer}>
             <Text style={styles.addressLabel}>Your Address</Text>
@@ -196,6 +225,37 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#007AFF',
     marginBottom: 16,
+  },
+  manaContainer: {
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEE',
+  },
+  manaHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  manaLabel: {
+    fontSize: 12,
+    color: '#666',
+  },
+  manaValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+  },
+  manaBarContainer: {
+    height: 8,
+    backgroundColor: '#E0E0E0',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  manaBar: {
+    height: '100%',
+    borderRadius: 4,
   },
   addressContainer: {
     borderTopWidth: 1,

@@ -48,3 +48,30 @@ export const isValidAddress = (address: string): boolean => {
   const addressRegex = /^[1-9A-HJ-NP-Za-km-z]{33,35}$/;
   return addressRegex.test(address);
 };
+
+/**
+ * Calculate mana regeneration time estimate
+ * @param current - Current mana amount
+ * @param required - Required mana amount
+ * @param max - Maximum mana (based on balance)
+ * @returns Human-readable time estimate
+ */
+export const calculateManaRegenTime = (
+  current: bigint,
+  required: bigint,
+  max: bigint
+): string => {
+  if (current >= required) return 'now';
+  if (max === 0n) return 'unknown';
+
+  const needed = required - current;
+  const FULL_REGEN_TIME = 432000; // 5 days in seconds
+
+  // Calculate time needed: (needed / max) * full_regen_time
+  const secondsNeeded = Number(needed * BigInt(FULL_REGEN_TIME) / max);
+
+  if (secondsNeeded < 60) return `${Math.ceil(secondsNeeded)} seconds`;
+  if (secondsNeeded < 3600) return `${Math.ceil(secondsNeeded / 60)} minutes`;
+  if (secondsNeeded < 86400) return `${Math.ceil(secondsNeeded / 3600)} hours`;
+  return `${Math.ceil(secondsNeeded / 86400)} days`;
+};

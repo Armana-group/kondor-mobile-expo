@@ -12,13 +12,12 @@ import { Button } from '../components/Button';
 import { Input } from '../components/Input';
 import { useKoinosStore } from '../stores/koinosStore';
 import { useWalletStore } from '../stores/walletStore';
-import { isValidAddress } from '../lib/utils';
+import { isValidAddress, calculateManaRegenTime } from '../lib/utils';
 
 export const SendScreen = () => {
   const navigation = useNavigation<any>();
-  const { transfer, estimateMana } = useKoinosStore();
+  const { transfer, estimateMana, getMana, getBalance } = useKoinosStore();
   const { balance, address, updateBalance } = useWalletStore();
-  const { getBalance } = useKoinosStore();
 
   const [recipient, setRecipient] = useState('');
   const [amount, setAmount] = useState('');
@@ -53,8 +52,58 @@ export const SendScreen = () => {
     return Object.keys(newErrors).length === 0;
   };
 
+  const validateMana = async (): Promise<boolean> => {
+    // Estimated mana cost for a transfer (typically 0.2-0.5 million)
+    const TRANSFER_MANA_COST = 500000;
+
+    try {
+      const manaData = await getMana(address);
+      const currentMana = BigInt(manaData.current);
+      const maxMana = BigInt(manaData.max);
+      const requiredMana = BigInt(TRANSFER_MANA_COST);
+
+      console.log('[SendScreen] Current mana:', currentMana.toString());
+      console.log('[SendScreen] Required mana:', requiredMana.toString());
+
+      if (currentMana < requiredMana) {
+        const timeToRegen = calculateManaRegenTime(
+          currentMana,
+          requiredMana,
+          maxMana
+        );
+
+        Alert.alert(
+          'Insufficient Mana',
+          `Your account doesn't have enough mana to process this transaction.\n\nCurrent: ${manaData.percentage.toFixed(1)}%\nRequired: ~${(Number(requiredMana) / Number(maxMana) * 100).toFixed(1)}%\n\nMana regenerates over time. Please wait approximately ${timeToRegen} and try again.`,
+          [{ text: 'OK' }]
+        );
+        return false;
+      }
+
+      return true;
+    } catch (error: any) {
+      console.error('[SendScreen] Mana check error:', error);
+      // If mana check fails, show warning but allow user to proceed
+      Alert.alert(
+        'Warning',
+        'Unable to check mana availability. The transaction may fail if you have insufficient mana. Continue anyway?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Continue', onPress: () => {} }
+        ]
+      );
+      return false;
+    }
+  };
+
   const handleSend = async () => {
     if (!validateForm()) {
+      return;
+    }
+
+    // Check mana before proceeding
+    const hasSufficientMana = await validateMana();
+    if (!hasSufficientMana) {
       return;
     }
 
