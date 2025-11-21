@@ -157,43 +157,24 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
 
       console.log('[KoinosStore] Starting transfer to:', to, 'amount:', amount);
 
-      // Get KOIN contract with standard token ABI
-      const koin = new Contract({
-        id: DEFAULT_NETWORK.koinContract,
-        abi: utils.tokenAbi,
-        provider: currentProvider,
-        signer: currentSigner
-      });
+      // Use ManualTokenContract to avoid protobuf extension issues
+      const tokenContract = new ManualTokenContract(
+        DEFAULT_NETWORK.koinContract,
+        currentProvider
+      );
 
-      // Convert amount to smallest unit (8 decimals)
-      const value = utils.parseUnits(amount, 8);
-      console.log('[KoinosStore] Parsed amount:', value);
-
-      // Prepare transaction
-      console.log('[KoinosStore] Preparing transaction...');
-      const { transaction } = await koin.functions.transfer({
-        from: currentSigner.getAddress(),
+      // Transfer using manual contract implementation
+      const { transactionId } = await tokenContract.transfer(
+        currentSigner,
         to,
-        value
-      }, {
-        rcLimit: DEFAULT_RC_LIMIT,
-        beforeSend: async (tx: any) => {
-          console.log('[KoinosStore] Transaction prepared:', tx.id);
-        }
-      });
+        amount,
+        { rcLimit: DEFAULT_RC_LIMIT }
+      );
 
-      // Send transaction
-      console.log('[KoinosStore] Sending transaction...');
-      const receipt = await transaction.send();
-      console.log('[KoinosStore] Transaction sent, receipt:', receipt);
-
-      // Wait for confirmation
-      console.log('[KoinosStore] Waiting for confirmation...');
-      await transaction.wait();
-      console.log('[KoinosStore] Transaction confirmed!');
+      console.log('[KoinosStore] Transfer complete, transaction ID:', transactionId);
 
       set({ isLoading: false });
-      return receipt.id;
+      return transactionId;
     } catch (error: any) {
       console.error('[KoinosStore] Transfer error:', error);
       console.error('[KoinosStore] Error details:', error.message);

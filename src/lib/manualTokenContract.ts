@@ -3,7 +3,7 @@
  * Uses protobufjs directly without the problematic extensions
  */
 
-import { Provider, utils } from 'koilib';
+import { Provider, Signer, utils, Transaction } from 'koilib';
 import * as protobuf from 'protobufjs/minimal';
 
 // Configure protobufjs for the environment
@@ -71,6 +71,37 @@ export class ManualTokenContract {
     }
   }
 
+  /**
+   * Manually encode transfer arguments using protobufjs
+   */
+  private encodeTransferArgs(from: string, to: string, value: string): Uint8Array {
+    try {
+      // Decode addresses to bytes
+      const fromBytes = utils.decodeBase58(from);
+      const toBytes = utils.decodeBase58(to);
+
+      // Manual protobuf encoding for transfer_arguments
+      // Field 1 (from) as bytes
+      // Field 2 (to) as bytes
+      // Field 3 (value) as uint64
+      const writer = protobuf.Writer.create();
+
+      writer.uint32(0x0A); // field 1, wire type 2 (length-delimited)
+      writer.bytes(fromBytes);
+
+      writer.uint32(0x12); // field 2, wire type 2 (length-delimited)
+      writer.bytes(toBytes);
+
+      writer.uint32(0x18); // field 3, wire type 0 (varint)
+      writer.uint64(value);
+
+      return writer.finish();
+    } catch (error) {
+      console.error('[ManualTokenContract] Error encoding transfer args:', error);
+      throw error;
+    }
+  }
+
   async getBalance(address: string): Promise<string> {
     try {
       console.log('[ManualTokenContract] Getting balance for:', address);
@@ -104,6 +135,67 @@ export class ManualTokenContract {
       return balance;
     } catch (error) {
       console.error('[ManualTokenContract] Error getting balance:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Transfer tokens using manual transaction creation to avoid protobuf issues
+   */
+  async transfer(
+    signer: Signer,
+    to: string,
+    amount: string,
+    options: { rcLimit?: number } = {}
+  ): Promise<{ transactionId: string }> {
+    try {
+      console.log('[ManualTokenContract] Starting transfer to:', to, 'amount:', amount);
+
+      const from = signer.getAddress();
+
+      // Convert amount to smallest unit (8 decimals)
+      const value = utils.parseUnits(amount, 8);
+      console.log('[ManualTokenContract] Parsed amount:', value);
+
+      // Encode transfer arguments
+      const encodedArgs = this.encodeTransferArgs(from, to, value);
+      console.log('[ManualTokenContract] Encoded transfer args');
+
+      // Create transaction
+      const tx = new Transaction({
+        signer,
+        provider: this.provider,
+        options: {
+          rcLimit: options.rcLimit || 1000000000, // Default RC limit
+        }
+      });
+
+      console.log('[ManualTokenContract] Preparing transaction...');
+
+      // Add the transfer operation
+      await tx.pushOperation({
+        call_contract: {
+          contract_id: this.contractId,
+          entry_point: 0x27f576ca, // transfer entry point
+          args: utils.encodeBase64url(encodedArgs)
+        }
+      });
+
+      console.log('[ManualTokenContract] Transaction prepared, ID:', tx.id);
+
+      // Send transaction
+      console.log('[ManualTokenContract] Sending transaction...');
+      const receipt = await tx.send();
+      console.log('[ManualTokenContract] Transaction sent, receipt:', receipt);
+
+      // Wait for confirmation
+      console.log('[ManualTokenContract] Waiting for confirmation...');
+      await tx.wait();
+      console.log('[ManualTokenContract] Transaction confirmed!');
+
+      return { transactionId: receipt.id };
+    } catch (error) {
+      console.error('[ManualTokenContract] Transfer error:', error);
       throw error;
     }
   }
