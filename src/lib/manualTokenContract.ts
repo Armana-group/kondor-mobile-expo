@@ -168,12 +168,26 @@ export class ManualTokenContract {
       if (!rcLimit) {
         console.log('[ManualTokenContract] No RC limit provided, estimating via dry-run...');
 
+        // Get account's available RC for dry-run estimation
+        let estimationLimit = 100000000; // Default 100M for estimation
+        try {
+          const rcResult = await this.provider.call('chain.get_account_rc', {
+            account: from
+          });
+          const availableRc = Number(rcResult.rc || 0);
+          // Use 90% of available RC for estimation to be safe
+          estimationLimit = Math.floor(availableRc * 0.9);
+          console.log('[ManualTokenContract] Using', estimationLimit, 'RC for dry-run (90% of', availableRc, ')');
+        } catch (error) {
+          console.log('[ManualTokenContract] Could not fetch RC, using default:', estimationLimit);
+        }
+
         // Create a test transaction for estimation
         const estimateTx = new Transaction({
           signer,
           provider: this.provider,
           options: {
-            rcLimit: 1000000000, // High limit for estimation
+            rcLimit: estimationLimit,
           }
         });
 
