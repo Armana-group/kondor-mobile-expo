@@ -19,6 +19,23 @@ try {
   console.log('[Crypto] See EXPO_GO_LIMITATION.md for instructions to enable transfers');
 }
 
+// Configure @noble/secp256k1 to use pure JS crypto instead of crypto.subtle
+// This avoids compatibility issues with react-native-quick-crypto's subtle implementation
+try {
+  const secp = require('@noble/secp256k1');
+  const { hmac } = require('@noble/hashes/hmac');
+  const { sha256 } = require('@noble/hashes/sha256');
+
+  // Provide pure JS HMAC implementation to @noble/secp256k1
+  secp.utils.hmacSha256Sync = (key: Uint8Array, ...messages: Uint8Array[]) => {
+    return hmac(sha256, key, secp.utils.concatBytes(...messages));
+  };
+
+  console.log('[Crypto] Configured @noble/secp256k1 to use pure JS crypto');
+} catch (error) {
+  console.warn('[Crypto] Could not configure @noble/secp256k1:', error);
+}
+
 export const setupCrypto = () => {
   console.log('[Crypto] Polyfills initialized');
   console.log('[Crypto] Quick Crypto:', quickCryptoAvailable ? 'ENABLED' : 'DISABLED (Expo Go)');
