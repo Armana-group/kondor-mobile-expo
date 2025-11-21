@@ -37,14 +37,41 @@ await transaction.wait();
 **Solution:** Configured `@noble/secp256k1` to use pure JS crypto from `@noble/hashes`
 **File:** `src/lib/crypto.ts` - Override `hmacSha256` and `hmacSha256Sync`
 
+### 5. Mana (RC) Limit Issues
+**Problem:** Transfers failing with "insufficient pending account resources" (code 104)
+**Root Cause:** Using hardcoded RC limit of 1 billion, but account only had 470M mana
+**Solution:** Implemented proper mana checking and RC estimation system
+**Changes:**
+- Added `getMana()` method with reserved mana checking (`src/stores/koinosStore.ts:141-228`)
+- Implemented dry-run transaction estimation with dynamic RC limits (`src/lib/manualTokenContract.ts:167-211`)
+- Added mana display in HomeScreen with progress bar (`src/screens/HomeScreen.tsx:134-150`)
+- Added pre-send mana validation in SendScreen (`src/screens/SendScreen.tsx:55-101`)
+- Created `calculateManaRegenTime()` helper utility (`src/lib/utils.ts:59-77`)
+
+### 6. RC Limit Calculation
+**Problem:** Even dry-run estimation was failing because we used 1B RC limit, exceeding account's capacity
+**Solution:** Query account's actual RC before dry-run and use 90% of available for estimation
+**Key Pattern:**
+```typescript
+// Fetch actual available RC
+const rcResult = await provider.call('chain.get_account_rc', { account });
+const availableRc = Number(rcResult.rc || 0);
+// Use 90% for safe estimation
+const estimationLimit = Math.floor(availableRc * 0.9);
+```
+
 ## Current Status
 
 ### ✅ Working Features
 - Wallet creation and import
 - Balance fetching (using ManualTokenContract)
-- Transaction preparation and signing
+- **Mana checking with reserved RC from mempool**
+- **Dynamic RC estimation via dry-run transactions**
+- **Mana display with visual progress bar**
+- Transaction preparation and signing with proper RC limits
 - Transaction submission to blockchain
 - Balance display and refresh
+- **Successful KOIN transfers** ✅
 
 ### ✅ Technical Setup
 - Bare React Native project (has ios/ and android/ folders)
@@ -54,23 +81,6 @@ await transaction.wait();
   - `@noble/secp256k1` (configured for pure JS HMAC)
   - `@ethersproject/shims` (ethers.js support)
   - `text-encoding-polyfill` (TextEncoder/TextDecoder)
-
-### 🚧 Current Issue
-**Mana Insufficient Error:**
-```
-{"error":"insufficient pending account resources","code":104}
-```
-
-**What this means:**
-- Transfer code is working correctly ✅
-- Transaction reaches the blockchain ✅
-- Account has depleted mana (needs to regenerate)
-
-**Mana in Koinos:**
-- Mana = resource credits used for transactions
-- Regenerates over time based on KOIN balance
-- With 4.7 KOIN, full regeneration takes ~5 days
-- Current account: `13jqmvK2NF9yGCqUWSKjVH4msTqhRM96ac`
 
 ## Code Architecture
 
@@ -103,22 +113,31 @@ await transaction.wait();
 - **HomeScreen** → Shows balance, refresh button, send button
 - **SendScreen** → Transfer form with validation
 
+## Mana Checking Implementation
+
+### How It Works
+1. **Query Current RC**: `chain.get_account_rc` RPC call returns account's current mana
+2. **Check Reserved RC**: `mempool.get_reserved_account_rc` returns mana locked in pending transactions
+3. **Calculate Available**: `available = current - reserved`
+4. **Calculate Max**: Max mana equals balance in satoshis (balance × 10^8)
+5. **Display Percentage**: Shows both current% and available% to user
+
+### Dry-Run RC Estimation
+1. Query account's available RC
+2. Create test transaction with 90% of available RC as limit
+3. Send with `broadcast: false` to get actual RC usage
+4. Add 10% buffer to estimated RC for real transaction
+5. Use calculated RC limit for actual transfer
+
+### Visual Feedback
+- **HomeScreen**: Progress bar shows available mana percentage
+- **SendScreen**: Pre-send validation checks if sufficient mana available
+- **Color Coding**: Red (<20%), Yellow (<50%), Green (≥50%)
+- **Time Estimates**: Shows regeneration time if insufficient
+
 ## Next Steps
 
-### 1. Add Mana Checker (High Priority)
-**What:** Display current mana before allowing transfers
-**Why:** Prevents "insufficient resources" errors
-**How:**
-- Add `getMana()` method to koinosStore
-- Use Koinos RPC: `chain.get_account_rc`
-- Display mana as percentage or absolute value
-- Show in HomeScreen and SendScreen
-- Disable send button if mana insufficient
-
-**Reference Implementation:**
-Check `../kondor` or `../kondor-mobile` for mana checking patterns
-
-### 2. Improve Error Handling
+### 1. Improve Error Handling
 - Show user-friendly error messages
 - Distinguish between different error types:
   - Network errors

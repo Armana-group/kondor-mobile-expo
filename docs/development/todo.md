@@ -1,143 +1,144 @@
-# Next Session TODO: Mana Checker Implementation
+# Development TODO
 
-## Priority: HIGH - Blocks Transfers
+## Status: ✅ Transfers Working!
 
-### Current Blocker
-Transfers fail with: `insufficient pending account resources` (code 104)
-Account has depleted mana and needs to regenerate or we need to check before sending.
+### ✅ Completed
+- ✅ Mana checker implementation
+- ✅ Reserved RC checking from mempool
+- ✅ Dynamic RC estimation via dry-run
+- ✅ Mana display in HomeScreen
+- ✅ Pre-send mana validation
+- ✅ Successful KOIN transfers
 
-## Task: Add Mana Checker
+## Next Priority Tasks
 
-### 1. Backend - Add getMana to koinosStore
-**File:** `src/stores/koinosStore.ts`
+### 1. Transaction History (HIGH)
+**Why:** Users need to see their transaction history
+**Tasks:**
+- Fetch transaction history from Koinos API
+- Display recent transactions in HomeScreen
+- Show transaction details (amount, address, time, status)
+- Add pull-to-refresh for transaction list
+- Handle pagination for large transaction lists
 
-```typescript
-getMana: async (address: string) => Promise<{ current: string; max: string; percentage: number }> => {
-  const { provider } = get();
+**Reference:** Check `../kondor` for transaction history patterns
 
-  // Get current mana
-  const rcResult = await provider.call('chain.get_account_rc', {
-    account: address
-  });
+### 2. Error Handling Improvements (MEDIUM)
+**Why:** Better user experience for error scenarios
+**Tasks:**
+- Parse and display user-friendly error messages
+- Distinguish error types:
+  - Network errors → "Connection failed, please try again"
+  - Insufficient mana → Show time estimate with mana info
+  - Invalid address → "Invalid recipient address"
+  - Insufficient balance → "Not enough KOIN for this transfer"
+- Add retry logic for network errors
+- Show error details in a dismissible modal
 
-  // Get max mana (based on balance)
-  const balance = await get().getBalance(address);
-  const maxMana = utils.parseUnits(balance, 8); // Max mana = balance * 10^8
+### 3. Address Book / QR Scanner (MEDIUM)
+**Why:** Easier address entry
+**Tasks:**
+- Implement QR code scanner for addresses
+- Add address book to save frequent recipients
+- Validate scanned addresses before use
+- Add "Scan QR" button in SendScreen
 
-  const currentMana = rcResult.rc || '0';
-  const percentage = (BigInt(currentMana) * 100n) / BigInt(maxMana);
+**Libraries:**
+- `expo-camera` for QR scanning
+- AsyncStorage for address book persistence
 
-  return {
-    current: currentMana,
-    max: maxMana,
-    percentage: Number(percentage)
-  };
-}
+### 4. Multi-Account Support (LOW)
+**Why:** Users may want multiple wallets
+**Tasks:**
+- Support creating/importing multiple accounts
+- Add account switcher in HomeScreen
+- Store multiple private keys (separate SecureStore keys)
+- Show all account balances in account list
+- Allow naming accounts
+
+### 5. Token Support Beyond KOIN (LOW)
+**Why:** Support other Koinos tokens
+**Tasks:**
+- Add token contract addresses
+- Fetch token balances
+- Display token list with balances
+- Support token transfers
+- Add token icons/metadata
+
+**Reference:** `../kondor` handles multiple tokens
+
+### 6. UI/UX Polish (LOW)
+**Tasks:**
+- Add loading states for all async operations
+- Improve transaction confirmation modal
+- Add haptic feedback for button presses
+- Better success/failure animations
+- Add "Copy Address" button with feedback
+- Improve mana bar styling
+- Add transaction pending indicators
+
+### 7. Testing & Quality (ONGOING)
+**Tasks:**
+- Test on physical iOS device
+- Test on physical Android device
+- Test with different account balances
+- Test with low/no mana scenarios
+- Test network error handling
+- Test with very large balances
+- Add unit tests for core utilities
+- Add integration tests for transfers
+
+## Quick Wins
+
+These can be done quickly for immediate value:
+
+1. **Copy Address Button**: Add dedicated button to copy wallet address
+2. **Better Loading States**: Show spinners during all network requests
+3. **Transaction Success Animation**: Celebratory animation on successful transfer
+4. **Mana Refresh Button**: Allow manual mana refresh without full balance refresh
+5. **Amount Shortcuts**: Add buttons for "25%", "50%", "75%", "Max" amounts
+
+## Known Issues
+
+### None Currently! 🎉
+
+All blocking issues have been resolved:
+- ✅ Protobuf extensions → Using ManualTokenContract
+- ✅ Crypto compatibility → Configured polyfills correctly
+- ✅ Mana insufficient errors → Implemented mana checker
+- ✅ RC limit too high → Using dynamic estimation
+
+## Testing Account
+
+**Current Test Account:**
+- Address: `13jqmvK2NF9yGCqUWSKjVH4msTqhRM96ac`
+- Balance: ~4.7 KOIN
+- Mana: 100% (fully regenerated)
+- Status: ✅ Working perfectly
+
+## Development Commands
+
+```bash
+# Start development
+npm start
+
+# Build and run iOS
+npm run ios
+
+# Build and run Android
+npm run android
+
+# Clear cache and restart
+npm start -- --clear
+
+# Build for production
+eas build --platform ios --profile production
+eas build --platform android --profile production
 ```
 
-### 2. UI - Display Mana in HomeScreen
-**File:** `src/screens/HomeScreen.tsx`
+## Reference Implementations
 
-Add after balance display:
-```typescript
-const [mana, setMana] = useState<number>(0);
+- **Kondor Extension** (`../kondor`): Primary reference for blockchain operations
+- **Kondor Mobile** (`../kondor-mobile`): Secondary reference for mobile patterns
 
-// Fetch mana when balance is fetched
-const fetchMana = async () => {
-  const manaData = await getMana(address);
-  setMana(manaData.percentage);
-};
-
-// Display
-<View style={styles.manaContainer}>
-  <Text style={styles.manaLabel}>Mana Available</Text>
-  <Text style={styles.manaValue}>{mana}%</Text>
-  <View style={styles.manaBar}>
-    <View style={[styles.manaFill, { width: `${mana}%` }]} />
-  </View>
-</View>
-```
-
-### 3. UI - Check Mana Before Send
-**File:** `src/screens/SendScreen.tsx`
-
-Add validation:
-```typescript
-const TRANSFER_MANA_COST = 500000; // Estimated mana cost for transfer
-
-const validateMana = async () => {
-  const manaData = await getMana(address);
-
-  if (BigInt(manaData.current) < BigInt(TRANSFER_MANA_COST)) {
-    const timeToRegenerate = calculateRegenTime(
-      BigInt(manaData.current),
-      BigInt(TRANSFER_MANA_COST),
-      BigInt(manaData.max)
-    );
-
-    Alert.alert(
-      'Insufficient Mana',
-      `Please wait ${timeToRegenerate} for mana to regenerate.`
-    );
-    return false;
-  }
-  return true;
-};
-
-// Call before handleSend
-const handleSend = async () => {
-  if (!validateForm()) return;
-  if (!await validateMana()) return;
-
-  // ... rest of send logic
-};
-```
-
-### 4. Helper - Calculate Regeneration Time
-**File:** `src/lib/utils.ts` (or create new file)
-
-```typescript
-export const calculateManaRegenTime = (
-  current: bigint,
-  required: bigint,
-  max: bigint
-): string => {
-  if (current >= required) return 'now';
-
-  const needed = required - current;
-  const FULL_REGEN_TIME = 432000; // 5 days in seconds
-
-  const secondsNeeded = Number(needed * BigInt(FULL_REGEN_TIME) / max);
-
-  if (secondsNeeded < 60) return `${secondsNeeded} seconds`;
-  if (secondsNeeded < 3600) return `${Math.ceil(secondsNeeded / 60)} minutes`;
-  if (secondsNeeded < 86400) return `${Math.ceil(secondsNeeded / 3600)} hours`;
-  return `${Math.ceil(secondsNeeded / 86400)} days`;
-};
-```
-
-## Testing Checklist
-
-- [ ] Mana displays correctly in HomeScreen
-- [ ] Mana updates when balance refreshes
-- [ ] SendScreen checks mana before allowing send
-- [ ] Error message shows when insufficient mana
-- [ ] Time estimate is accurate
-- [ ] Send works when mana is sufficient
-- [ ] Mana percentage calculation is correct
-
-## Reference
-
-Look at `../kondor` or `../kondor-mobile` for existing mana handling patterns.
-
-## Expected Completion
-
-This should take 1-2 hours to implement and test.
-
-## Alternative: Wait for Mana
-
-If you want to test immediately without implementing mana checker:
-- Wait 30-60 minutes for mana to regenerate
-- Try sending a very small amount (0.01 KOIN)
-- Current balance: 4.7 KOIN
-- Account: `13jqmvK2NF9yGCqUWSKjVH4msTqhRM96ac`
+Always check the Kondor extension for up-to-date Koinos integration patterns.
