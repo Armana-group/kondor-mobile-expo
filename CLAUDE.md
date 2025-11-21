@@ -6,6 +6,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Kondor Mobile is a React Native Expo application for the Koinos blockchain ecosystem. It's a non-custodial cryptocurrency wallet that allows users to manage their Koinos (KOIN) assets on mobile devices.
 
+## Documentation
+
+**All project documentation is in the `/docs` directory:**
+- **Current Status:** See `/docs/development/progress.md` for latest work and current state
+- **Next Tasks:** See `/docs/development/todo.md` for priority tasks
+- **Architecture:** See `/docs/architecture/architecture-overview.md` for system design
+- **Getting Started:** See `/docs/getting-started/` for setup instructions
+
+**Before starting work, always read:**
+1. `/docs/development/progress.md` - Understand current state
+2. `/docs/development/todo.md` - Know what needs to be done
+3. `/docs/architecture/architecture-overview.md` - Understand the codebase
+
 ## Reference Codebases
 
 When developing features, reference these existing implementations:
