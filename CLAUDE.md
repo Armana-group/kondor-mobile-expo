@@ -33,13 +33,29 @@ When developing features, reference these existing implementations:
   - Network interaction patterns
   - Security implementations
 
-### Secondary Reference: Konio Mobile Wallet
+### Secondary Reference: Kondor3 Chrome Extension
+- **Location**: `/Users/ron/devstuff/projects/armana/apps/kondor3`
+- **Status**: Modern, actively developed Chrome extension
+- **Usage**: Excellent reference for transaction history, backup systems, and multi-account support
+- **Analysis**: See `/docs/architecture/kondor3-analysis.md` for detailed breakdown
+- **Key Areas to Reference**:
+  - Transaction history API integration
+  - HDKoinos class for multi-account HD wallet
+  - Backup/recovery system with encryption
+  - Token management and KoinDX integration
+  - Custom error types and security patterns
+- **Note**: Kondor Mobile has MORE ADVANCED mana handling than kondor3 (they use hardcoded RC limits)
+
+### Tertiary Reference: Kondor Mobile (Old)
 - **Location**: `../kondor-mobile`
 - **Status**: Abandoned project (not updated)
-- **Usage**: Secondary reference for mobile-specific patterns
+- **Usage**: Tertiary reference for mobile-specific patterns
 - **Note**: While outdated, it may contain useful mobile UI/UX patterns and React Native implementations
 
-**Important**: Always prioritize patterns from the Kondor extension (`../kondor`) as it's actively maintained and confirmed working with the current Koinos network.
+**Important**: Priority order for references:
+1. **Kondor Extension** (`../kondor`) - Primary for blockchain operations and patterns
+2. **Kondor3** (`../armana/apps/kondor3`) - Secondary for transaction history, backup, multi-account
+3. **Old Kondor Mobile** (`../kondor-mobile`) - Tertiary for React Native mobile patterns only
 
 ## Development Commands
 

@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -16,6 +17,25 @@ import { Button } from '../components/Button';
 import { useWalletStore } from '../stores/walletStore';
 import { useKoinosStore } from '../stores/koinosStore';
 import { truncateAddress, formatKoinBalance } from '../lib/utils';
+import { useTransactionHistory } from '../hooks/useTransactionHistory';
+
+/**
+ * Format transaction time relative to now
+ */
+const formatTransactionTime = (timestamp: number): string => {
+  const now = Date.now();
+  const diff = now - timestamp;
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (seconds < 60) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days < 7) return `${days}d ago`;
+  return new Date(timestamp).toLocaleDateString();
+};
 
 export const HomeScreen = () => {
   const navigation = useNavigation<any>();
@@ -24,6 +44,9 @@ export const HomeScreen = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [manaPercentage, setManaPercentage] = useState<number>(0);
+
+  // Transaction history hook
+  const { transactions, loading: txLoading, error: txError, refetch: refetchTransactions } = useTransactionHistory();
 
   const initializeAndLoadBalance = useCallback(async () => {
     try {
@@ -67,6 +90,9 @@ export const HomeScreen = () => {
         console.error('[HomeScreen] Mana fetch error:', manaError);
         // Don't show alert for mana fetch error, just log it
       }
+
+      // Refresh transaction history
+      await refetchTransactions();
     } catch (error: any) {
       console.error('[HomeScreen] Balance fetch error:', error);
       console.error('[HomeScreen] Error message:', error.message);
@@ -176,9 +202,69 @@ export const HomeScreen = () => {
 
         <View style={styles.transactionSection}>
           <Text style={styles.sectionTitle}>Recent Transactions</Text>
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>No transactions yet</Text>
-          </View>
+          {txLoading && transactions.length === 0 ? (
+            <View style={styles.loadingState}>
+              <ActivityIndicator size="large" color="#007AFF" />
+              <Text style={styles.loadingText}>Loading transactions...</Text>
+            </View>
+          ) : txError ? (
+            <View style={styles.errorState}>
+              <Text style={styles.errorText}>Failed to load transactions</Text>
+              <TouchableOpacity onPress={refetchTransactions}>
+                <Text style={styles.retryText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : transactions.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyText}>No transactions yet</Text>
+            </View>
+          ) : (
+            <View style={styles.transactionList}>
+              {transactions.slice(0, 10).map((tx) => (
+                <TouchableOpacity
+                  key={tx.id}
+                  style={styles.transactionItem}
+                  onPress={() => {
+                    Alert.alert(
+                      'Transaction Details',
+                      `Type: ${tx.type === 'send' ? 'Sent' : 'Received'}\n` +
+                      `Amount: ${tx.amount} ${tx.tokenSymbol}\n` +
+                      `${tx.type === 'send' ? 'To' : 'From'}: ${tx.type === 'send' ? tx.to : tx.from}\n` +
+                      `Fee: ${tx.fee} mana\n` +
+                      `Block: ${tx.blockHeight || 'N/A'}\n` +
+                      `Time: ${new Date(tx.timestamp).toLocaleString()}`,
+                      [{ text: 'OK' }]
+                    );
+                  }}
+                >
+                  <View style={styles.transactionIcon}>
+                    <Text style={styles.transactionIconText}>
+                      {tx.type === 'send' ? '↑' : '↓'}
+                    </Text>
+                  </View>
+                  <View style={styles.transactionDetails}>
+                    <Text style={styles.transactionType}>
+                      {tx.type === 'send' ? 'Sent' : 'Received'}
+                    </Text>
+                    <Text style={styles.transactionAddress}>
+                      {tx.type === 'send' ? truncateAddress(tx.to) : truncateAddress(tx.from)}
+                    </Text>
+                  </View>
+                  <View style={styles.transactionAmount}>
+                    <Text style={[
+                      styles.transactionAmountText,
+                      { color: tx.type === 'send' ? '#DC3545' : '#34C759' }
+                    ]}>
+                      {tx.type === 'send' ? '-' : '+'}{tx.amount} {tx.tokenSymbol}
+                    </Text>
+                    <Text style={styles.transactionTime}>
+                      {formatTransactionTime(tx.timestamp)}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </View>
       </ScrollView>
     </Screen>
@@ -311,12 +397,90 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 16,
   },
+  loadingState: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 14,
+    color: '#999',
+    marginTop: 12,
+  },
+  errorState: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  errorText: {
+    fontSize: 14,
+    color: '#DC3545',
+    marginBottom: 12,
+  },
+  retryText: {
+    fontSize: 14,
+    color: '#007AFF',
+    fontWeight: '600',
+  },
   emptyState: {
     padding: 40,
     alignItems: 'center',
   },
   emptyText: {
     fontSize: 14,
+    color: '#999',
+  },
+  transactionList: {
+    gap: 12,
+  },
+  transactionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  transactionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F0F0F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  transactionIconText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#666',
+  },
+  transactionDetails: {
+    flex: 1,
+  },
+  transactionType: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 2,
+  },
+  transactionAddress: {
+    fontSize: 12,
+    color: '#999',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  transactionAmount: {
+    alignItems: 'flex-end',
+  },
+  transactionAmountText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  transactionTime: {
+    fontSize: 12,
     color: '#999',
   },
 });
