@@ -254,11 +254,11 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
       );
 
       // Transfer using manual contract implementation
+      // Don't pass rcLimit - let the contract estimate via dry-run
       const { transactionId } = await tokenContract.transfer(
         currentSigner,
         to,
-        amount,
-        { rcLimit: DEFAULT_RC_LIMIT }
+        amount
       );
 
       console.log('[KoinosStore] Transfer complete, transaction ID:', transactionId);
