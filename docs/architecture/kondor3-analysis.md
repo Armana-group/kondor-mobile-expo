@@ -39,14 +39,16 @@
 
 ### API Integration
 ```typescript
-// Primary API
-https://koinoscollective.org/api/account/{address}/history
+// Primary API (Kondor Mobile uses correct endpoint)
+https://rest.koinos.io/v1/account/{address}/history
 
 // Parameters
-limit=10&ascending=true&irreversible=true&decode_operations=true&decode_events=true
+limit=50&ascending=false
 
 // Token List API
 https://raw.githubusercontent.com/koindx/token-list/main/src/tokens/mainnet.json
+
+// Note: Kondor3 documentation referenced koinoscollective.org but the working endpoint is rest.koinos.io
 ```
 
 ### Hook: `useTransactionHistory`
@@ -349,7 +351,7 @@ throw new SecurityVerificationError('Invalid PIN');
 | **RC Estimation** | ✅ Yes, via dry-run | ❌ No |
 | **Mana Display** | ✅ Progress bar with % | ❌ Only fees after tx |
 | **Reserved RC Check** | ✅ Yes, from mempool | ❌ No |
-| **Transaction History** | ❌ Not yet | ✅ Yes, auto-refresh |
+| **Transaction History** | ✅ Yes, auto-refresh | ✅ Yes, auto-refresh |
 | **Multi-Account** | ❌ Not yet | ✅ Yes, HD wallet |
 | **Backup System** | ❌ Not yet | ✅ Yes, encrypted |
 | **Multi-Token** | ❌ KOIN only | ✅ All tokens |

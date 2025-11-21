@@ -1,6 +1,6 @@
 # Development TODO
 
-## Status: ✅ Transfers Working!
+## Status: ✅ Transfers Working! ✅ Transaction History Live!
 
 ### ✅ Completed
 - ✅ Mana checker implementation
@@ -9,21 +9,13 @@
 - ✅ Mana display in HomeScreen
 - ✅ Pre-send mana validation
 - ✅ Successful KOIN transfers
+- ✅ Transaction history with auto-refresh
+- ✅ Transaction list UI with send/receive indicators
+- ✅ Pull-to-refresh functionality
 
 ## Next Priority Tasks
 
-### 1. Transaction History (HIGH)
-**Why:** Users need to see their transaction history
-**Tasks:**
-- Fetch transaction history from Koinos API
-- Display recent transactions in HomeScreen
-- Show transaction details (amount, address, time, status)
-- Add pull-to-refresh for transaction list
-- Handle pagination for large transaction lists
-
-**Reference:** Check `../kondor` for transaction history patterns
-
-### 2. Error Handling Improvements (MEDIUM)
+### 1. Error Handling Improvements (HIGH)
 **Why:** Better user experience for error scenarios
 **Tasks:**
 - Parse and display user-friendly error messages
@@ -35,7 +27,7 @@
 - Add retry logic for network errors
 - Show error details in a dismissible modal
 
-### 3. Address Book / QR Scanner (MEDIUM)
+### 2. Address Book / QR Scanner (MEDIUM)
 **Why:** Easier address entry
 **Tasks:**
 - Implement QR code scanner for addresses
@@ -47,7 +39,7 @@
 - `expo-camera` for QR scanning
 - AsyncStorage for address book persistence
 
-### 4. Multi-Account Support (LOW)
+### 3. Multi-Account Support (LOW)
 **Why:** Users may want multiple wallets
 **Tasks:**
 - Support creating/importing multiple accounts
@@ -56,7 +48,7 @@
 - Show all account balances in account list
 - Allow naming accounts
 
-### 5. Token Support Beyond KOIN (LOW)
+### 4. Token Support Beyond KOIN (LOW)
 **Why:** Support other Koinos tokens
 **Tasks:**
 - Add token contract addresses
@@ -67,7 +59,7 @@
 
 **Reference:** `../kondor` handles multiple tokens
 
-### 6. UI/UX Polish (LOW)
+### 5. UI/UX Polish (LOW)
 **Tasks:**
 - Add loading states for all async operations
 - Improve transaction confirmation modal
@@ -77,7 +69,7 @@
 - Improve mana bar styling
 - Add transaction pending indicators
 
-### 7. Testing & Quality (ONGOING)
+### 6. Testing & Quality (ONGOING)
 **Tasks:**
 - Test on physical iOS device
 - Test on physical Android device

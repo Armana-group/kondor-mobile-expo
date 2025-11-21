@@ -1,11 +1,10 @@
 /**
  * Transaction History Hook
- * Based on kondor3 patterns - fetches and parses transaction history from Koinos RPC
+ * Based on kondor3 patterns - fetches and parses transaction history from Koinos REST API
  */
 
 import { useState, useEffect, useCallback } from 'react';
 import { useWalletStore } from '../stores/walletStore';
-import { useKoinosStore } from '../stores/koinosStore';
 import { utils } from 'koilib';
 
 export interface ParsedTransaction {
@@ -45,18 +44,18 @@ const REFRESH_INTERVAL = 30000; // 30 seconds
 /**
  * Hook to fetch and manage transaction history
  * Auto-refreshes every 30 seconds
- * Uses Koinos RPC method: chain.get_account_history
+ * Uses Koinos REST API: rest.koinos.io
  */
 export const useTransactionHistory = (): UseTransactionHistoryResult => {
   const { address } = useWalletStore();
-  const koinosStore = useKoinosStore();
   const [transactions, setTransactions] = useState<ParsedTransaction[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   /**
-   * Parse raw transaction from API into our format
+   * Parse raw transaction from REST API into our format
+   * The REST API returns decoded operations, not protobuf
    */
   const parseTransaction = (rawTx: any, userAddress: string): ParsedTransaction | null => {
     try {
@@ -68,69 +67,18 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
       const callContract = operation.call_contract;
       if (!callContract) return null;
 
-      // Decode the arguments to get transfer details
-      let from = '';
-      let to = '';
-      let amount = '0';
-      let tokenSymbol = 'KOIN';
-      let tokenDecimals = 8;
-
-      // Try to decode transfer arguments
-      if (callContract.args) {
-        try {
-          const argsBytes = utils.decodeBase64url(callContract.args);
-          // Simple protobuf parsing for transfer args
-          // Field 1: from (bytes), Field 2: to (bytes), Field 3: value (uint64)
-          let pos = 0;
-          while (pos < argsBytes.length) {
-            const tag = argsBytes[pos];
-            const fieldNumber = tag >>> 3;
-            const wireType = tag & 7;
-            pos++;
-
-            if (fieldNumber === 1 && wireType === 2) {
-              // from address
-              const length = argsBytes[pos];
-              pos++;
-              const addressBytes = argsBytes.slice(pos, pos + length);
-              from = utils.encodeBase58(addressBytes);
-              pos += length;
-            } else if (fieldNumber === 2 && wireType === 2) {
-              // to address
-              const length = argsBytes[pos];
-              pos++;
-              const addressBytes = argsBytes.slice(pos, pos + length);
-              to = utils.encodeBase58(addressBytes);
-              pos += length;
-            } else if (fieldNumber === 3 && wireType === 0) {
-              // amount (varint)
-              let value = 0;
-              let shift = 0;
-              while (pos < argsBytes.length) {
-                const byte = argsBytes[pos];
-                pos++;
-                value |= (byte & 0x7f) << shift;
-                if ((byte & 0x80) === 0) break;
-                shift += 7;
-              }
-              amount = value.toString();
-            } else {
-              // Skip unknown fields
-              if (wireType === 0) {
-                // Varint
-                while (pos < argsBytes.length && (argsBytes[pos] & 0x80) !== 0) pos++;
-                pos++;
-              } else if (wireType === 2) {
-                // Length-delimited
-                const length = argsBytes[pos];
-                pos += length + 1;
-              }
-            }
-          }
-        } catch (parseError) {
-          console.log('[TransactionHistory] Could not parse args, using fallback');
-        }
+      // REST API provides already-decoded args
+      const args = callContract.args;
+      if (!args || !args.from || !args.to || !args.value) {
+        console.log('[TransactionHistory] Missing required fields in args');
+        return null;
       }
+
+      const from = args.from;
+      const to = args.to;
+      const amount = args.value;
+      const tokenSymbol = 'KOIN'; // TODO: Get from token metadata
+      const tokenDecimals = 8;
 
       // Determine transaction type
       const type: 'send' | 'receive' = from.toLowerCase() === userAddress.toLowerCase() ? 'send' : 'receive';
@@ -144,8 +92,11 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
       // Get payer
       const payer = rawTx.trx?.transaction?.header?.payer || '';
 
+      // Get timestamp - if not available, use current time
+      const timestamp = rawTx.timestamp ? parseInt(rawTx.timestamp) * 1000 : Date.now();
+
       return {
-        id: rawTx.trx?.id || `${rawTx.block_height}-${rawTx.seq_num}`,
+        id: rawTx.trx?.transaction?.id || `tx-${rawTx.seq_num}`,
         type,
         amount: utils.formatUnits(amount, tokenDecimals),
         token: callContract.contract_id,
@@ -153,7 +104,7 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
         tokenDecimals,
         from,
         to,
-        timestamp: rawTx.timestamp ? parseInt(rawTx.timestamp) : Date.now(),
+        timestamp,
         status: 'confirmed',
         blockHeight: rawTx.block_height,
         fee,
@@ -167,23 +118,12 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
   };
 
   /**
-   * Fetch transaction history from Koinos RPC
+   * Fetch transaction history from Koinos REST API
    */
   const fetchTransactions = useCallback(async (isRefresh = false) => {
     if (!address) {
       console.log('[TransactionHistory] No address, skipping fetch');
       return;
-    }
-
-    // Wait for provider initialization
-    if (!koinosStore.provider || !koinosStore.isInitialized) {
-      console.log('[TransactionHistory] Provider not initialized, waiting...');
-      try {
-        await koinosStore.initialize();
-      } catch (error) {
-        console.log('[TransactionHistory] Failed to initialize provider');
-        return;
-      }
     }
 
     console.log('[TransactionHistory] Fetching transactions for:', address);
@@ -196,19 +136,22 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
       }
       setError(null);
 
-      // Fetch transaction history via RPC
-      const result = await koinosStore.provider!.call('chain.get_account_history', {
-        address,
-        limit: 50,
-        ascending: false
-      });
+      // Fetch transaction history from REST API
+      const url = `https://rest.koinos.io/v1/account/${address}/history?limit=50&ascending=false`;
+      console.log('[TransactionHistory] Fetching from:', url);
 
-      console.log('[TransactionHistory] Got RPC response');
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('[TransactionHistory] Got response with', Array.isArray(data) ? data.length : 0, 'transactions');
 
       // Parse transactions
       const parsedTransactions: ParsedTransaction[] = [];
-      if (result.values && Array.isArray(result.values)) {
-        for (const rawTx of result.values) {
+      if (Array.isArray(data)) {
+        for (const rawTx of data) {
           const parsed = parseTransaction(rawTx, address);
           if (parsed) {
             parsedTransactions.push(parsed);
@@ -225,7 +168,7 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [address, koinosStore]);
+  }, [address]);
 
   /**
    * Calculate transaction statistics
