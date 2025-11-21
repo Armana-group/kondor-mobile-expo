@@ -36,6 +36,5 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
-# generated native folders
-/ios
-/android
+# NOTE: Native folders are now committed (bare React Native workflow)
+# Build artifacts inside native folders are gitignored via ios/.gitignore and android/.gitignore
