@@ -141,6 +141,7 @@ export class ManualTokenContract {
 
   /**
    * Transfer tokens using manual transaction creation to avoid protobuf issues
+   * Uses dry-run estimation to determine actual RC needed (Kondor pattern)
    */
   async transfer(
     signer: Signer,
@@ -161,16 +162,52 @@ export class ManualTokenContract {
       const encodedArgs = this.encodeTransferArgs(from, to, value);
       console.log('[ManualTokenContract] Encoded transfer args');
 
-      // Create transaction
+      let rcLimit = options.rcLimit;
+
+      // If no RC limit provided, estimate it via dry-run (Kondor pattern)
+      if (!rcLimit) {
+        console.log('[ManualTokenContract] No RC limit provided, estimating via dry-run...');
+
+        // Create a test transaction for estimation
+        const estimateTx = new Transaction({
+          signer,
+          provider: this.provider,
+          options: {
+            rcLimit: 1000000000, // High limit for estimation
+          }
+        });
+
+        // Add the transfer operation
+        await estimateTx.pushOperation({
+          call_contract: {
+            contract_id: this.contractId,
+            entry_point: 0x27f576ca, // transfer entry point
+            args: utils.encodeBase64url(encodedArgs)
+          }
+        });
+
+        // Dry-run: send with broadcast: false to get actual RC usage
+        console.log('[ManualTokenContract] Performing dry-run...');
+        const dryRunReceipt = await estimateTx.send({ broadcast: false });
+        console.log('[ManualTokenContract] Dry-run receipt:', dryRunReceipt);
+
+        // Add 10% buffer to estimated RC (Kondor pattern)
+        const rcUsed = Number(dryRunReceipt.rc_used || 0);
+        rcLimit = Math.floor(1.1 * rcUsed);
+        console.log('[ManualTokenContract] Estimated RC used:', rcUsed);
+        console.log('[ManualTokenContract] RC limit with 10% buffer:', rcLimit);
+      }
+
+      // Create the actual transaction with estimated RC limit
       const tx = new Transaction({
         signer,
         provider: this.provider,
         options: {
-          rcLimit: options.rcLimit || 1000000000, // Default RC limit
+          rcLimit: rcLimit || 100000000, // Fallback to 100M if estimation fails
         }
       });
 
-      console.log('[ManualTokenContract] Preparing transaction...');
+      console.log('[ManualTokenContract] Preparing transaction with RC limit:', tx.header?.rc_limit);
 
       // Add the transfer operation
       await tx.pushOperation({
@@ -183,7 +220,7 @@ export class ManualTokenContract {
 
       console.log('[ManualTokenContract] Transaction prepared, ID:', tx.id);
 
-      // Send transaction
+      // Send transaction (broadcast: true)
       console.log('[ManualTokenContract] Sending transaction...');
       const receipt = await tx.send();
       console.log('[ManualTokenContract] Transaction sent, receipt:', receipt);

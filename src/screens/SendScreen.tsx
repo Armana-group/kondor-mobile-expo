@@ -54,32 +54,36 @@ export const SendScreen = () => {
 
   const validateMana = async (): Promise<boolean> => {
     // Estimated mana cost for a transfer (typically 0.2-0.5 million)
-    const TRANSFER_MANA_COST = 500000;
+    // This is a conservative estimate - actual cost will be determined by dry-run
+    const ESTIMATED_TRANSFER_MANA = 500000;
 
     try {
       const manaData = await getMana(address);
-      const currentMana = BigInt(manaData.current);
+      const availableMana = BigInt(manaData.available);
       const maxMana = BigInt(manaData.max);
-      const requiredMana = BigInt(TRANSFER_MANA_COST);
+      const requiredMana = BigInt(ESTIMATED_TRANSFER_MANA);
 
-      console.log('[SendScreen] Current mana:', currentMana.toString());
-      console.log('[SendScreen] Required mana:', requiredMana.toString());
+      console.log('[SendScreen] Available mana:', availableMana.toString());
+      console.log('[SendScreen] Reserved mana:', manaData.reserved);
+      console.log('[SendScreen] Estimated required:', requiredMana.toString());
 
-      if (currentMana < requiredMana) {
+      // Check if available mana (after accounting for reserved) is sufficient
+      if (availableMana < requiredMana) {
         const timeToRegen = calculateManaRegenTime(
-          currentMana,
+          availableMana,
           requiredMana,
           maxMana
         );
 
         Alert.alert(
           'Insufficient Mana',
-          `Your account doesn't have enough mana to process this transaction.\n\nCurrent: ${manaData.percentage.toFixed(1)}%\nRequired: ~${(Number(requiredMana) / Number(maxMana) * 100).toFixed(1)}%\n\nMana regenerates over time. Please wait approximately ${timeToRegen} and try again.`,
+          `Your account doesn't have enough available mana to process this transaction.\n\nAvailable: ${manaData.availablePercentage.toFixed(1)}% (${(Number(availableMana) / 1000000).toFixed(2)}M)\nReserved: ${(Number(manaData.reserved) / 1000000).toFixed(2)}M\nRequired: ~${(Number(requiredMana) / 1000000).toFixed(2)}M\n\nMana regenerates over time. Please wait approximately ${timeToRegen} and try again.`,
           [{ text: 'OK' }]
         );
         return false;
       }
 
+      console.log('[SendScreen] Mana check passed, proceeding with transfer');
       return true;
     } catch (error: any) {
       console.error('[SendScreen] Mana check error:', error);

@@ -14,7 +14,7 @@ interface KoinosState {
   // Actions
   initialize: () => Promise<void>;
   getBalance: (address: string) => Promise<string>;
-  getMana: (address: string) => Promise<{ current: string; max: string; percentage: number }>;
+  getMana: (address: string) => Promise<{ current: string; reserved: string; available: string; max: string; percentage: number; availablePercentage: number }>;
   transfer: (to: string, amount: string) => Promise<string>;
   estimateMana: (to: string, amount: string) => Promise<string>;
   reset: () => void;
@@ -166,6 +166,18 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
 
       const currentMana = rcResult.rc || '0';
 
+      // Get reserved mana from mempool (mana locked in pending transactions)
+      let reservedMana = '0';
+      try {
+        const reservedResult = await currentProvider.call('mempool.get_reserved_account_rc', {
+          account: address
+        });
+        reservedMana = reservedResult.rc || '0';
+        console.log('[KoinosStore] Reserved mana in mempool:', reservedMana);
+      } catch (error) {
+        console.log('[KoinosStore] Could not fetch reserved mana (mempool may be empty)');
+      }
+
       // Get balance to calculate max mana
       const balance = await get().getBalance(address);
 
@@ -174,23 +186,39 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
       const maxMana = balanceInSatoshis;
 
       console.log('[KoinosStore] Current mana:', currentMana);
+      console.log('[KoinosStore] Reserved mana:', reservedMana);
       console.log('[KoinosStore] Max mana:', maxMana);
 
-      // Calculate percentage
+      // Calculate available mana (current - reserved)
       const currentManaBigInt = BigInt(currentMana);
+      const reservedManaBigInt = BigInt(reservedMana);
       const maxManaBigInt = BigInt(maxMana);
 
+      const availableManaBigInt = currentManaBigInt > reservedManaBigInt
+        ? currentManaBigInt - reservedManaBigInt
+        : 0n;
+
+      console.log('[KoinosStore] Available mana:', availableManaBigInt.toString());
+
+      // Calculate percentages
       let percentage = 0;
+      let availablePercentage = 0;
+
       if (maxManaBigInt > 0n) {
         percentage = Number((currentManaBigInt * 100n) / maxManaBigInt);
+        availablePercentage = Number((availableManaBigInt * 100n) / maxManaBigInt);
       }
 
-      console.log('[KoinosStore] Mana percentage:', percentage);
+      console.log('[KoinosStore] Current mana percentage:', percentage);
+      console.log('[KoinosStore] Available mana percentage:', availablePercentage);
 
       return {
         current: currentMana,
+        reserved: reservedMana,
+        available: availableManaBigInt.toString(),
         max: maxMana,
-        percentage
+        percentage,
+        availablePercentage
       };
     } catch (error: any) {
       console.error('[KoinosStore] Get mana error:', error);

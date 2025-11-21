@@ -61,7 +61,8 @@ export const HomeScreen = () => {
       try {
         const manaData = await getMana(address);
         console.log('[HomeScreen] Mana fetched successfully:', manaData);
-        setManaPercentage(manaData.percentage);
+        // Use availablePercentage instead of percentage (accounts for reserved mana)
+        setManaPercentage(manaData.availablePercentage);
       } catch (manaError: any) {
         console.error('[HomeScreen] Mana fetch error:', manaError);
         // Don't show alert for mana fetch error, just log it
