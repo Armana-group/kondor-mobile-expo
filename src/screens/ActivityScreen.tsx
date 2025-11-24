@@ -109,7 +109,7 @@ export const ActivityScreen = () => {
   );
 
   return (
-    <Screen>
+    <Screen scroll={false}>
       <View style={styles.container}>
         <View style={styles.header}>
           <Text style={styles.title}>Activity</Text>

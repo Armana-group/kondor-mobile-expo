@@ -5,7 +5,7 @@ import colors from '../theme/colors';
 
 export const BrowserScreen = () => {
   return (
-    <Screen>
+    <Screen scroll={false}>
       <View style={styles.container}>
         <View style={styles.iconContainer}>
           <Text style={styles.icon}>🌐</Text>

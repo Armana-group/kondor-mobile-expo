@@ -122,7 +122,7 @@ export const ContactsScreen = () => {
   );
 
   return (
-    <Screen>
+    <Screen scroll={false}>
       <View style={styles.container}>
         <View style={styles.header}>
           <Text style={styles.title}>Contacts</Text>
