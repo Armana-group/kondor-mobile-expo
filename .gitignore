@@ -9,6 +9,9 @@ dist/
 web-build/
 expo-env.d.ts
 
+# EAS Build
+.easignore
+
 # Native
 .kotlin/
 *.orig.*
@@ -21,7 +24,8 @@ expo-env.d.ts
 # Metro
 .metro-health-check*
 
-# debug
+# Logs
+*.log
 npm-debug.*
 yarn-debug.*
 yarn-error.*
@@ -30,11 +34,16 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
-.env*.local
+# Environment variables
+.env
+.env.*
+!.env.example
 
 # typescript
 *.tsbuildinfo
+
+# Testing
+coverage/
 
 # generated native folders
 /ios
