@@ -8,6 +8,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import colors from '../theme/colors';
 
 interface ScreenProps {
   children: React.ReactNode;
@@ -62,7 +63,7 @@ export const Screen: React.FC<ScreenProps> = ({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: colors.background,
   },
   keyboardView: {
     flex: 1,
