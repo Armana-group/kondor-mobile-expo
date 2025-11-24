@@ -1,13 +1,116 @@
 # Development Progress Summary
 
-## Session Date: 2025-11-21
+## Latest Session: 2025-11-24 (Phase 7 - Multi-Token Support)
 
-## Starting Problem
-Transfer functionality was not working - could receive KOIN but not send it out.
+### Completed Features
 
-## Issues Identified and Fixed
+#### Multi-Token Support
+- **Token Store** (`src/stores/tokenStore.ts`)
+  - Fetches token list from KoinDX GitHub API
+  - SPECIAL_TOKENS for KOIN and VHP with correct contract addresses
+  - Blacklist for non-standard tokens (Lords Forsaken packs, KoinDX nickname addresses)
+  - Batch balance fetching (5 tokens at a time to avoid rate limiting)
+  - Manual protobuf encoding for `balanceOf` calls
+  - Zustand persistence with AsyncStorage
 
-### 1. Incorrect Transfer Flow
+- **Token Detail Screen** (`src/screens/TokenDetailScreen.tsx`)
+  - Token header with icon, name, symbol
+  - Balance display with formatting
+  - Send/Receive action buttons
+  - Token info section (contract address, decimals)
+  - "View on Explorer" link to koiner.app
+  - Transaction history filtered to selected token
+  - Pull-to-refresh for balance and transactions
+
+- **Home Screen Updates** (`src/screens/HomeScreen.tsx`)
+  - Token list with icons from URLs
+  - Token count badge ("Tokens 31")
+  - Tap token → navigate to TokenDetailScreen
+  - Balance display per token
+  - Loading states during token fetch
+
+- **Send Screen Updates** (`src/screens/SendScreen.tsx`)
+  - Token picker modal with full token list
+  - Token selector shows selected token with icon
+  - Balance display updates based on selected token
+  - Receives token from route params (from TokenDetailScreen)
+  - Only KOIN transfers work currently (other tokens show "Coming Soon")
+
+- **Transaction History Updates** (`src/hooks/useTransactionHistory.ts`)
+  - Multi-token support - looks up token metadata from tokenStore
+  - Added tokenIcon field to ParsedTransaction
+  - Token symbol and decimals from store lookup
+
+- **Activity Screen Updates** (`src/screens/ActivityScreen.tsx`)
+  - Token icons with send/receive indicator overlay
+  - "View on Explorer" link to koiner.app in transaction details
+
+#### Bug Fixes
+- **KoinDX API Parsing**: Fixed - API returns `{ chainId, tokens: [...] }` not a raw array
+- **Duplicate KOIN/VHP**: Fixed - KoinDX uses nickname addresses (`koin`, `vhp`), added to blacklist
+
+### Technical Implementation
+
+#### Token Balance Fetching
+```typescript
+// Manual protobuf encoding for balanceOf
+function encodeBalanceOfArgs(address: string): Uint8Array {
+  const addressBytes = utils.decodeBase58(address);
+  const writer = protobuf.Writer.create();
+  writer.uint32(0x0A); // field 1, wire type 2
+  writer.bytes(addressBytes);
+  return writer.finish();
+}
+
+// RPC call to get balance
+const result = await provider.call('chain.read_contract', {
+  contract_id: contractId,
+  entry_point: 0x5c721497, // balanceOf
+  args: utils.encodeBase64url(encodedArgs),
+});
+```
+
+#### KoinDX Token List
+- URL: `https://raw.githubusercontent.com/koindx/token-list/main/src/tokens/mainnet.json`
+- Format: `{ chainId: "...", tokens: [...] }`
+- Cache duration: 5 minutes
+
+#### Special Tokens (Hardcoded)
+```typescript
+const SPECIAL_TOKENS = [
+  {
+    contractId: '19GYjDBVXU7keLbYvMLazsGQn3GTWHjHkK', // KOIN
+    symbol: 'KOIN',
+    name: 'Koinos',
+    decimals: 8,
+  },
+  {
+    contractId: '12Y5vW6gk8GceH53YfRkRre2Rrcsgw7Naq', // VHP
+    symbol: 'VHP',
+    name: 'Virtual Hash Power',
+    decimals: 8,
+  },
+];
+```
+
+---
+
+## Previous Session: 2025-11-24 (Phase 6 - Navigation & Contacts)
+
+### Completed Features
+- Bottom tab navigation (Home, Collectibles, Swap, Activity, Browser)
+- Contact management system with add/edit/delete
+- Settings screen with seed phrase and private key export
+- Transaction history with auto-refresh
+- Real device testing on iOS (mainnet transfer successful)
+
+---
+
+## Session: 2025-11-21 (Phase 1-5 - Core Wallet)
+
+### Issues Identified and Fixed
+
+#### 1. Incorrect Transfer Flow
 **Problem:** Code was calling `koin.functions.transfer()` and expecting immediate result
 **Solution:** Changed to proper koilib pattern:
 ```typescript
@@ -15,286 +118,112 @@ const { transaction } = await koin.functions.transfer({...});
 const receipt = await transaction.send();
 await transaction.wait();
 ```
-**File:** `src/stores/koinosStore.ts`
 
-### 2. Protobuf Extension Errors
+#### 2. Protobuf Extension Errors
 **Problem:** `utils.tokenAbi` caused "unresolvable extensions" error in React Native
-**Solution:** Created `ManualTokenContract` class that manually encodes/decodes protobuf without extensions
-**Files:**
-- `src/lib/manualTokenContract.ts` - Manual implementation for balance and transfer
-- `src/stores/koinosStore.ts` - Updated to use ManualTokenContract
+**Solution:** Created `ManualTokenContract` class that manually encodes/decodes protobuf
 
-### 3. Expo Go Limitation
-**Problem:** `react-native-quick-crypto` (needed for signing) doesn't work in Expo Go
-**Solution:** Converted project from Expo managed to bare React Native using `expo prebuild`
-**Files:**
-- Generated `ios/` and `android/` native folders
-- Updated `.gitignore` to commit native folders
-- Updated `src/lib/crypto.ts` to conditionally load quick-crypto
+#### 3. Expo Go Limitation
+**Problem:** `react-native-quick-crypto` doesn't work in Expo Go
+**Solution:** Converted to bare React Native using `expo prebuild`
 
-### 4. @noble/secp256k1 Crypto Compatibility
-**Problem:** `@noble/secp256k1` tried to use `crypto.subtle.sign()` with incompatible algorithm format
-**Solution:** Configured `@noble/secp256k1` to use pure JS crypto from `@noble/hashes`
-**File:** `src/lib/crypto.ts` - Override `hmacSha256` and `hmacSha256Sync`
+#### 4. @noble/secp256k1 Crypto Compatibility
+**Problem:** `@noble/secp256k1` tried to use `crypto.subtle.sign()` with incompatible algorithm
+**Solution:** Configured to use pure JS crypto from `@noble/hashes`
 
-### 5. Mana (RC) Limit Issues
-**Problem:** Transfers failing with "insufficient pending account resources" (code 104)
-**Root Cause:** Using hardcoded RC limit of 1 billion, but account only had 470M mana
+#### 5. Mana (RC) Limit Issues
+**Problem:** Transfers failing with "insufficient pending account resources"
 **Solution:** Implemented proper mana checking and RC estimation system
-**Changes:**
-- Added `getMana()` method with reserved mana checking (`src/stores/koinosStore.ts:141-228`)
-- Implemented dry-run transaction estimation with dynamic RC limits (`src/lib/manualTokenContract.ts:167-211`)
-- Added mana display in HomeScreen with progress bar (`src/screens/HomeScreen.tsx:134-150`)
-- Added pre-send mana validation in SendScreen (`src/screens/SendScreen.tsx:55-101`)
-- Created `calculateManaRegenTime()` helper utility (`src/lib/utils.ts:59-77`)
 
-### 6. RC Limit Calculation
-**Problem:** Even dry-run estimation was failing because we used 1B RC limit, exceeding account's capacity
-**Solution:** Query account's actual RC before dry-run and use 90% of available for estimation
-**Key Pattern:**
-```typescript
-// Fetch actual available RC
-const rcResult = await provider.call('chain.get_account_rc', { account });
-const availableRc = Number(rcResult.rc || 0);
-// Use 90% for safe estimation
-const estimationLimit = Math.floor(availableRc * 0.9);
-```
+---
 
-## Current Status
+## Current App Status
 
 ### ✅ Working Features
-- Wallet creation and import
-- Balance fetching (using ManualTokenContract)
-- **Mana checking with reserved RC from mempool**
-- **Dynamic RC estimation via dry-run transactions**
-- **Mana display with visual progress bar**
-- Transaction preparation and signing with proper RC limits
-- Transaction submission to blockchain
-- Balance display and refresh
-- **Successful KOIN transfers** ✅
+- Wallet creation and import (BIP39 mnemonic)
+- Multi-token balance display (31 tokens from KoinDX)
+- Token detail view with filtered transactions
+- KOIN transfers with mana validation
+- Transaction history with auto-refresh
+- Contact management
+- Settings with seed/key export
+- Bottom tab navigation
+- Real device builds (iOS tested)
 
 ### ✅ Technical Setup
-- Bare React Native project (has ios/ and android/ folders)
-- Native crypto modules compiled and working
-- All polyfills configured correctly:
-  - `react-native-quick-crypto` (native signing)
-  - `@noble/secp256k1` (configured for pure JS HMAC)
-  - `@ethersproject/shims` (ethers.js support)
-  - `text-encoding-polyfill` (TextEncoder/TextDecoder)
+- Bare React Native with Expo SDK 54
+- Native crypto modules (react-native-quick-crypto)
+- Zustand state management with persistence
+- koilib for blockchain operations
+- Manual protobuf encoding (bypasses ABI issues)
+
+---
 
 ## Code Architecture
 
 ### Stores (Zustand)
-- **walletStore** (`src/stores/walletStore.ts`)
-  - Manages wallet creation/import
-  - Secure storage of private keys (Expo SecureStore)
-  - Public data persistence (AsyncStorage)
-  - Biometric authentication for sensitive operations
+- **walletStore** - Wallet creation/import, secure storage
+- **koinosStore** - Blockchain operations (balance, transfer, mana)
+- **tokenStore** - Multi-token management, KoinDX integration
+- **contactStore** - Contact management
 
-- **koinosStore** (`src/stores/koinosStore.ts`)
-  - Blockchain operations (balance, transfer)
-  - Provider and Signer management
-  - Uses ManualTokenContract to avoid protobuf issues
+### Key Files
+```
+src/
+├── stores/
+│   ├── walletStore.ts      # Wallet & secure storage
+│   ├── koinosStore.ts      # Blockchain operations
+│   ├── tokenStore.ts       # Multi-token support (NEW)
+│   └── contactStore.ts     # Contacts
+├── screens/
+│   ├── HomeScreen.tsx      # Token list, balance
+│   ├── TokenDetailScreen.tsx # Token detail view (NEW)
+│   ├── SendScreen.tsx      # Transfer with token picker
+│   ├── ActivityScreen.tsx  # Transaction history
+│   ├── ContactsScreen.tsx  # Contact management
+│   └── SettingsScreen.tsx  # Settings & export
+├── hooks/
+│   └── useTransactionHistory.ts # Multi-token tx history
+├── navigation/
+│   └── TabNavigator.tsx    # Bottom tabs + stack nav
+└── lib/
+    ├── manualTokenContract.ts # Manual protobuf
+    ├── crypto.ts           # Polyfills
+    └── constants.ts        # Network config
+```
 
-### Core Libraries
-- **manualTokenContract** (`src/lib/manualTokenContract.ts`)
-  - Manual protobuf encoding/decoding
-  - Methods: `getBalance()`, `transfer()`
-  - Bypasses koilib's ABI system to avoid extensions errors
-
-- **crypto** (`src/lib/crypto.ts`)
-  - All crypto polyfills configuration
-  - Loads react-native-quick-crypto
-  - Configures @noble/secp256k1 for pure JS crypto
-  - Must be imported first in App.tsx
-
-### Screens
-- **WelcomeScreen** → **CreateWalletScreen** / **ImportWalletScreen**
-- **HomeScreen** → Shows balance, refresh button, send button
-- **SendScreen** → Transfer form with validation
-
-## Mana Checking Implementation
-
-### How It Works
-1. **Query Current RC**: `chain.get_account_rc` RPC call returns account's current mana
-2. **Check Reserved RC**: `mempool.get_reserved_account_rc` returns mana locked in pending transactions
-3. **Calculate Available**: `available = current - reserved`
-4. **Calculate Max**: Max mana equals balance in satoshis (balance × 10^8)
-5. **Display Percentage**: Shows both current% and available% to user
-
-### Dry-Run RC Estimation
-1. Query account's available RC
-2. Create test transaction with 90% of available RC as limit
-3. Send with `broadcast: false` to get actual RC usage
-4. Add 10% buffer to estimated RC for real transaction
-5. Use calculated RC limit for actual transfer
-
-### Visual Feedback
-- **HomeScreen**: Progress bar shows available mana percentage
-- **SendScreen**: Pre-send validation checks if sufficient mana available
-- **Color Coding**: Red (<20%), Yellow (<50%), Green (≥50%)
-- **Time Estimates**: Shows regeneration time if insufficient
-
-## Next Steps
-
-### 1. Improve Error Handling
-- Show user-friendly error messages
-- Distinguish between different error types:
-  - Network errors
-  - Insufficient mana
-  - Invalid address
-  - Insufficient balance
-
-### 3. Transaction History
-- Fetch and display recent transactions
-- Use Koinos account history API
-
-### 4. Testing
-- Test with different amounts
-- Test with insufficient balance
-- Test network error scenarios
-- Test on physical device
-
-### 5. UI/UX Improvements
-- Loading states during balance refresh
-- Better transaction confirmation UI
-- Transaction success/failure feedback
-- Copy address functionality
+---
 
 ## Running the App
 
 ### Development
 ```bash
-# Terminal 1 - Metro bundler
+# Start Metro bundler
 npm start
 
-# Terminal 2 - Build and run
-npm run ios        # iOS
-npm run android    # Android
+# Run on iOS simulator
+npm run ios
+
+# Run on iOS device (requires code signing)
+npx expo run:ios --device
+
+# Clear cache if issues
+npm start -- --clear
 ```
 
-### Clean Build
+### Building
 ```bash
-npm start -- --reset-cache
-npm run ios
+# Development build for device
+eas build --platform ios --profile development
+
+# Production build
+eas build --platform ios --profile production
 ```
+
+---
 
 ## Reference Projects
 
-### kondor-mobile (../kondor-mobile)
-- Bare React Native (same structure now)
-- Working transfer implementation
-- Reference for patterns and implementations
-
-### kondor (../kondor)
-- Chrome extension version
-- Working Koinos integration
-- Reference for blockchain operations
-
-## Key Files Modified
-
-```
-src/
-├── lib/
-│   ├── crypto.ts                    # ✅ Fixed - crypto polyfills config
-│   ├── manualTokenContract.ts       # ✅ New - manual protobuf handling
-│   └── constants.ts                 # ✅ Correct KOIN contract address
-├── stores/
-│   ├── koinosStore.ts              # ✅ Fixed - uses ManualTokenContract
-│   └── walletStore.ts              # ✅ Working - secure key storage
-└── screens/
-    ├── HomeScreen.tsx              # ✅ Working - balance display
-    └── SendScreen.tsx              # ✅ Working - transfer UI
-
-ios/                                 # ✅ New - native iOS project
-android/                             # ✅ New - native Android project
-```
-
-## Important Notes
-
-1. **Never commit private keys** - They're in SecureStore only
-2. **Native folders are now tracked** - Unlike managed Expo projects
-3. **Metro cache may need clearing** - Use `--reset-cache` if issues
-4. **Crypto polyfills must load first** - crypto.ts imported before anything else
-5. **Testnet vs Mainnet** - Currently on mainnet, can switch in constants.ts
-
-## Mana Checker Implementation Plan
-
-### API to Use
-```typescript
-// Get account resource credits (mana)
-await provider.call('chain.get_account_rc', {
-  account: address
-});
-
-// Response format:
-{
-  rc: "1234567890"  // Current mana in smallest unit
-}
-```
-
-### Where to Add
-
-1. **koinosStore.ts** - Add method:
-```typescript
-getMana: async (address: string) => Promise<string>
-```
-
-2. **HomeScreen.tsx** - Display mana with balance:
-```
-Balance: 4.7 KOIN
-Mana: 85% (1,234,567 / 1,450,000)
-```
-
-3. **SendScreen.tsx** - Check before send:
-```typescript
-// Disable send button if mana < required amount
-// Show warning: "Insufficient mana, please wait X minutes"
-```
-
-### Mana Calculation
-- Max mana = balance * 10^8 (KOIN has 8 decimals)
-- Mana regenerates linearly over ~5 days (432,000 seconds)
-- Typical transfer costs ~0.2-0.5 million mana
-
-## Test Accounts
-
-**Current Test Account:**
-- Address: `13jqmvK2NF9yGCqUWSKjVH4msTqhRM96ac`
-- Balance: 4.7 KOIN
-- Status: Mana depleted (needs regeneration)
-
-**Test Transfer Target:**
-- Address: `1DTstq47k9v5dwyw8LrvZRxRX1qU5CBNJd`
-
-## Success Criteria for Next Session
-
-- [ ] Implement getMana() function
-- [ ] Display mana in HomeScreen
-- [ ] Check mana before allowing transfers
-- [ ] Show estimated time until sufficient mana
-- [ ] Test successful transfer with adequate mana
-- [ ] Add mana regeneration info to UI
-
-## Additional Documentation Created
-
-- `QUICK_START.md` - How to run the app
-- `RUN_INSTRUCTIONS.md` - Detailed run commands
-- `EXPO_GO_LIMITATION.md` - Why we needed prebuild
-- `COMPARISON.md` - Differences from kondor-mobile
-- `PROGRESS.md` - This file
-
-## Git Commits to Make
-
-```bash
-# Commit the current working state
-git add -A
-git commit -m "Fix transfers: prebuild + crypto config + ManualTokenContract
-
-- Ran expo prebuild to enable react-native-quick-crypto
-- Fixed transfer flow: prepare → send → wait
-- Created ManualTokenContract to bypass protobuf issues
-- Configured @noble/secp256k1 for pure JS crypto
-- Transfer code working, blocked only by mana regeneration
-- Next: Add mana checker before allowing sends"
-```
+1. **Kondor Extension** (`../kondor`) - Primary for blockchain operations
+2. **Kondor3** (`../armana/apps/kondor3`) - Secondary for advanced features
+3. **Old Kondor Mobile** (`../kondor-mobile`) - Tertiary for mobile patterns
