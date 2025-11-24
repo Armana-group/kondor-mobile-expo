@@ -67,8 +67,11 @@ const SPECIAL_TOKENS: Partial<Token>[] = [
 ];
 
 // Blacklisted contracts that don't follow standard token interface
+// Also skip KoinDX nickname addresses for KOIN/VHP since we have proper entries in SPECIAL_TOKENS
 const BLACKLISTED_CONTRACTS = new Set([
   '1A4Nv58odXgVK91bFHgCFWPgiu7kfsxdVY', // Lords Forsaken packs
+  'koin', // KoinDX uses nickname, we use full contract address in SPECIAL_TOKENS
+  'vhp',  // KoinDX uses nickname, we use full contract address in SPECIAL_TOKENS
 ]);
 
 const KOINDX_TOKEN_LIST_URL = 'https://raw.githubusercontent.com/koindx/token-list/main/src/tokens/mainnet.json';
