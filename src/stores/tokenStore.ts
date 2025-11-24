@@ -157,8 +157,10 @@ async function fetchKoinDXTokenList(): Promise<KoinDXToken[]> {
     }
 
     const data = await response.json();
-    console.log('[TokenStore] Fetched', data.length, 'tokens from KoinDX');
-    return data;
+    // API returns { chainId, tokens: [...] }, not a raw array
+    const tokens = data.tokens || [];
+    console.log('[TokenStore] Fetched', tokens.length, 'tokens from KoinDX');
+    return tokens;
   } catch (error) {
     console.error('[TokenStore] Error fetching token list:', error);
     throw error;
