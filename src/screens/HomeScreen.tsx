@@ -89,28 +89,6 @@ export const HomeScreen = () => {
     );
   };
 
-  const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout? Make sure you have your recovery phrase saved!',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: async () => {
-            await useWalletStore.getState().clearWallet();
-            useKoinosStore.getState().reset();
-            navigation.reset({
-              index: 0,
-              routes: [{ name: 'Welcome' }],
-            });
-          },
-        },
-      ]
-    );
-  };
-
   const getManaColor = () => {
     if (manaPercentage < 20) return colors.error;
     if (manaPercentage < 50) return colors.warning;
@@ -152,7 +130,7 @@ export const HomeScreen = () => {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.headerButton}
-              onPress={handleLogout}
+              onPress={() => navigation.navigate('Settings')}
             >
               <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
             </TouchableOpacity>

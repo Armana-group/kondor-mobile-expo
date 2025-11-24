@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { HomeScreen } from '../screens/HomeScreen';
 import { SendScreen } from '../screens/SendScreen';
 import { ContactsScreen } from '../screens/ContactsScreen';
+import { SettingsScreen } from '../screens/SettingsScreen';
 import { CollectiblesScreen } from '../screens/CollectiblesScreen';
 import { SwapScreen } from '../screens/SwapScreen';
 import { ActivityScreen } from '../screens/ActivityScreen';
@@ -21,6 +22,7 @@ export type HomeStackParamList = {
   HomeMain: undefined;
   Send: undefined;
   Contacts: undefined;
+  Settings: undefined;
 };
 
 export type TabParamList = {
@@ -37,7 +39,7 @@ const HomeStack = createNativeStackNavigator<HomeStackParamList>();
 // Icon name type for Ionicons
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
-// Home stack navigator (Home + Send modal + Contacts)
+// Home stack navigator (Home + Send modal + Contacts + Settings)
 const HomeStackNavigator = () => (
   <HomeStack.Navigator screenOptions={{ headerShown: false }}>
     <HomeStack.Screen name="HomeMain" component={HomeScreen} />
@@ -51,6 +53,13 @@ const HomeStackNavigator = () => (
     <HomeStack.Screen
       name="Contacts"
       component={ContactsScreen}
+      options={{
+        presentation: 'modal',
+      }}
+    />
+    <HomeStack.Screen
+      name="Settings"
+      component={SettingsScreen}
       options={{
         presentation: 'modal',
       }}
