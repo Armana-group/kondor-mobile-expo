@@ -5,23 +5,31 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
+import { ContactPicker } from '../components/ContactPicker';
 import { useKoinosStore } from '../stores/koinosStore';
 import { useWalletStore } from '../stores/walletStore';
-import { isValidAddress, calculateManaRegenTime } from '../lib/utils';
+import { useContactStore, Contact } from '../stores/contactStore';
+import { isValidAddress, calculateManaRegenTime, truncateAddress } from '../lib/utils';
+import colors from '../theme/colors';
 
 export const SendScreen = () => {
   const navigation = useNavigation<any>();
-  const { transfer, estimateMana, getMana, getBalance } = useKoinosStore();
+  const { transfer, getMana, getBalance } = useKoinosStore();
   const { balance, address, updateBalance } = useWalletStore();
+  const { getContactByAddress } = useContactStore();
 
   const [recipient, setRecipient] = useState('');
   const [amount, setAmount] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [showContactPicker, setShowContactPicker] = useState(false);
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [errors, setErrors] = useState<{
     recipient?: string;
     amount?: string;
@@ -53,8 +61,6 @@ export const SendScreen = () => {
   };
 
   const validateMana = async (): Promise<boolean> => {
-    // Estimated mana cost for a transfer (typically 0.2-0.5 million)
-    // This is a conservative estimate - actual cost will be determined by dry-run
     const ESTIMATED_TRANSFER_MANA = 500000;
 
     try {
@@ -67,7 +73,6 @@ export const SendScreen = () => {
       console.log('[SendScreen] Reserved mana:', manaData.reserved);
       console.log('[SendScreen] Estimated required:', requiredMana.toString());
 
-      // Check if available mana (after accounting for reserved) is sufficient
       if (availableMana < requiredMana) {
         const timeToRegen = calculateManaRegenTime(
           availableMana,
@@ -87,7 +92,6 @@ export const SendScreen = () => {
       return true;
     } catch (error: any) {
       console.error('[SendScreen] Mana check error:', error);
-      // If mana check fails, show warning but allow user to proceed
       Alert.alert(
         'Warning',
         'Unable to check mana availability. The transaction may fail if you have insufficient mana. Continue anyway?',
@@ -105,15 +109,18 @@ export const SendScreen = () => {
       return;
     }
 
-    // Check mana before proceeding
     const hasSufficientMana = await validateMana();
     if (!hasSufficientMana) {
       return;
     }
 
+    const displayRecipient = selectedContact
+      ? `${selectedContact.name} (${truncateAddress(recipient)})`
+      : recipient;
+
     Alert.alert(
       'Confirm Transaction',
-      `Send ${amount} KOIN to\n${recipient}?`,
+      `Send ${amount} KOIN to\n${displayRecipient}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -123,7 +130,6 @@ export const SendScreen = () => {
             try {
               const txId = await transfer(recipient, amount);
 
-              // Update balance after successful transaction
               const newBalance = await getBalance(address);
               updateBalance(newBalance);
 
@@ -152,46 +158,93 @@ export const SendScreen = () => {
   };
 
   const handleMaxAmount = () => {
-    // Leave a small amount for transaction fees
     const maxAmount = Math.max(0, parseFloat(balance) - 0.01);
     setAmount(maxAmount.toString());
     setErrors({ ...errors, amount: undefined });
+  };
+
+  const handleContactSelect = (contact: Contact) => {
+    setSelectedContact(contact);
+    setRecipient(contact.address);
+    setErrors({ ...errors, recipient: undefined });
+  };
+
+  const handleRecipientChange = (text: string) => {
+    setRecipient(text);
+    setErrors({ ...errors, recipient: undefined });
+    // Check if this address matches a contact
+    const contact = getContactByAddress(text);
+    setSelectedContact(contact || null);
+  };
+
+  const clearSelectedContact = () => {
+    setSelectedContact(null);
+    setRecipient('');
   };
 
   return (
     <Screen>
       <View style={styles.container}>
         <View style={styles.header}>
-          <Button
-            title="← Back"
-            onPress={() => navigation.goBack()}
-            variant="secondary"
-            style={styles.backButton}
-          />
           <Text style={styles.title}>Send KOIN</Text>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="close" size={28} color={colors.textSecondary} />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.form}>
-          <Input
-            label="Recipient Address"
-            placeholder="Enter Koinos address"
-            value={recipient}
-            onChangeText={(text) => {
-              setRecipient(text);
-              setErrors({ ...errors, recipient: undefined });
-            }}
-            error={errors.recipient}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
+          {/* Recipient Section */}
+          <View style={styles.recipientSection}>
+            <View style={styles.labelRow}>
+              <Text style={styles.inputLabel}>Recipient Address</Text>
+              <TouchableOpacity
+                style={styles.contactButton}
+                onPress={() => setShowContactPicker(true)}
+              >
+                <Text style={styles.contactButtonText}>👥 Contacts</Text>
+              </TouchableOpacity>
+            </View>
 
+            {selectedContact ? (
+              <TouchableOpacity
+                style={styles.selectedContact}
+                onPress={clearSelectedContact}
+              >
+                <View style={styles.selectedContactAvatar}>
+                  <Text style={styles.selectedContactAvatarText}>
+                    {selectedContact.name.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <View style={styles.selectedContactInfo}>
+                  <Text style={styles.selectedContactName}>{selectedContact.name}</Text>
+                  <Text style={styles.selectedContactAddress}>
+                    {truncateAddress(selectedContact.address)}
+                  </Text>
+                </View>
+                <Text style={styles.clearButton}>✕</Text>
+              </TouchableOpacity>
+            ) : (
+              <Input
+                placeholder="Enter Koinos address"
+                value={recipient}
+                onChangeText={handleRecipientChange}
+                error={errors.recipient}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            )}
+          </View>
+
+          {/* Amount Section */}
           <View>
             <Input
               label="Amount"
               placeholder="0.00"
               value={amount}
               onChangeText={(text) => {
-                // Only allow valid numeric input
                 if (/^\d*\.?\d*$/.test(text) || text === '') {
                   setAmount(text);
                   setErrors({ ...errors, amount: undefined });
@@ -204,38 +257,39 @@ export const SendScreen = () => {
               <Text style={styles.balanceText}>
                 Available: {balance} KOIN
               </Text>
-              <Button
-                title="Max"
-                onPress={handleMaxAmount}
-                variant="secondary"
-                style={styles.maxButton}
-                textStyle={styles.maxButtonText}
-              />
+              <TouchableOpacity style={styles.maxButton} onPress={handleMaxAmount}>
+                <Text style={styles.maxButtonText}>Max</Text>
+              </TouchableOpacity>
             </View>
-          </View>
-
-          <View style={styles.feeInfo}>
-            <Text style={styles.feeLabel}>Network Fee</Text>
-            <Text style={styles.feeValue}>~0.001 KOIN</Text>
           </View>
         </View>
 
         <View style={styles.footer}>
           {isSending ? (
             <View style={styles.sendingContainer}>
-              <ActivityIndicator size="large" color="#007AFF" />
+              <ActivityIndicator size="large" color={colors.purple} />
               <Text style={styles.sendingText}>Sending transaction...</Text>
             </View>
           ) : (
-            <Button
-              title="Send Transaction"
+            <TouchableOpacity
+              style={[
+                styles.sendButton,
+                (!recipient || !amount) && styles.sendButtonDisabled,
+              ]}
               onPress={handleSend}
               disabled={!recipient || !amount}
-              style={styles.sendButton}
-            />
+            >
+              <Text style={styles.sendButtonText}>Send Transaction</Text>
+            </TouchableOpacity>
           )}
         </View>
       </View>
+
+      <ContactPicker
+        visible={showContactPicker}
+        onClose={() => setShowContactPicker(false)}
+        onSelect={handleContactSelect}
+      />
     </Screen>
   );
 };
@@ -243,23 +297,93 @@ export const SendScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 20,
+    backgroundColor: colors.background,
   },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 24,
-  },
-  backButton: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginBottom: 16,
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#333',
+    color: colors.textPrimary,
+  },
+  closeButton: {
+    padding: 4,
   },
   form: {
     flex: 1,
+  },
+  recipientSection: {
+    marginBottom: 20,
+  },
+  labelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+  contactButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: colors.elevated,
+    borderRadius: 8,
+  },
+  contactButtonText: {
+    fontSize: 13,
+    color: colors.purple,
+    fontWeight: '500',
+  },
+  selectedContact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.purple,
+  },
+  selectedContactAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.purpleLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  selectedContactAvatarText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.purple,
+  },
+  selectedContactInfo: {
+    flex: 1,
+  },
+  selectedContactName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  selectedContactAddress: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  clearButton: {
+    fontSize: 18,
+    color: colors.textSecondary,
+    padding: 4,
   },
   balanceInfo: {
     flexDirection: 'row',
@@ -269,40 +393,36 @@ const styles = StyleSheet.create({
   },
   balanceText: {
     fontSize: 12,
-    color: '#666',
+    color: colors.textSecondary,
   },
   maxButton: {
     paddingHorizontal: 16,
-    paddingVertical: 4,
-    minHeight: 28,
+    paddingVertical: 6,
+    backgroundColor: colors.elevated,
+    borderRadius: 6,
   },
   maxButtonText: {
     fontSize: 12,
-  },
-  feeInfo: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#EEE',
-    marginTop: 16,
-  },
-  feeLabel: {
-    fontSize: 14,
-    color: '#666',
-  },
-  feeValue: {
-    fontSize: 14,
-    color: '#333',
-    fontWeight: '500',
+    color: colors.purple,
+    fontWeight: '600',
   },
   footer: {
     marginTop: 'auto',
     paddingTop: 16,
   },
   sendButton: {
-    marginTop: 16,
+    backgroundColor: colors.purple,
+    padding: 18,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  sendButtonDisabled: {
+    opacity: 0.5,
+  },
+  sendButtonText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.textPrimary,
   },
   sendingContainer: {
     alignItems: 'center',
@@ -311,6 +431,6 @@ const styles = StyleSheet.create({
   sendingText: {
     marginTop: 12,
     fontSize: 14,
-    color: '#666',
+    color: colors.textSecondary,
   },
 });

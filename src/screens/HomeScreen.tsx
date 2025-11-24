@@ -8,34 +8,15 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
-  ActivityIndicator,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Screen } from '../components/Screen';
-import { Button } from '../components/Button';
 import { useWalletStore } from '../stores/walletStore';
 import { useKoinosStore } from '../stores/koinosStore';
 import { truncateAddress, formatKoinBalance } from '../lib/utils';
-import { useTransactionHistory } from '../hooks/useTransactionHistory';
-
-/**
- * Format transaction time relative to now
- */
-const formatTransactionTime = (timestamp: number): string => {
-  const now = Date.now();
-  const diff = now - timestamp;
-  const seconds = Math.floor(diff / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-
-  if (seconds < 60) return 'Just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  if (hours < 24) return `${hours}h ago`;
-  if (days < 7) return `${days}d ago`;
-  return new Date(timestamp).toLocaleDateString();
-};
+import colors from '../theme/colors';
 
 export const HomeScreen = () => {
   const navigation = useNavigation<any>();
@@ -44,9 +25,6 @@ export const HomeScreen = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [manaPercentage, setManaPercentage] = useState<number>(0);
-
-  // Transaction history hook
-  const { transactions, loading: txLoading, error: txError, refetch: refetchTransactions } = useTransactionHistory();
 
   const initializeAndLoadBalance = useCallback(async () => {
     try {
@@ -57,7 +35,6 @@ export const HomeScreen = () => {
       await refreshBalance();
     } catch (error: any) {
       console.error('Failed to initialize:', error);
-      // Don't show error on initial load, only on refresh
     }
   }, [isInitialized]);
 
@@ -84,18 +61,12 @@ export const HomeScreen = () => {
       try {
         const manaData = await getMana(address);
         console.log('[HomeScreen] Mana fetched successfully:', manaData);
-        // Use availablePercentage instead of percentage (accounts for reserved mana)
         setManaPercentage(manaData.availablePercentage);
       } catch (manaError: any) {
         console.error('[HomeScreen] Mana fetch error:', manaError);
-        // Don't show alert for mana fetch error, just log it
       }
-
-      // Refresh transaction history
-      await refetchTransactions();
     } catch (error: any) {
       console.error('[HomeScreen] Balance fetch error:', error);
-      console.error('[HomeScreen] Error message:', error.message);
       Alert.alert('Error', `Failed to fetch balance: ${error.message}`);
     } finally {
       setIsRefreshing(false);
@@ -118,50 +89,69 @@ export const HomeScreen = () => {
     );
   };
 
-  const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout? Make sure you have your recovery phrase saved!',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: async () => {
-            await useWalletStore.getState().clearWallet();
-            useKoinosStore.getState().reset();
-            navigation.reset({
-              index: 0,
-              routes: [{ name: 'Welcome' }],
-            });
-          },
-        },
-      ]
-    );
+  const getManaColor = () => {
+    if (manaPercentage < 20) return colors.error;
+    if (manaPercentage < 50) return colors.warning;
+    return colors.success;
   };
 
   return (
     <Screen scroll={false}>
       <ScrollView
         style={styles.container}
+        contentContainerStyle={styles.scrollContent}
         refreshControl={
-          <RefreshControl refreshing={isRefreshing} onRefresh={refreshBalance} />
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={refreshBalance}
+            tintColor={colors.purple}
+          />
         }>
+        {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Kondor Mobile</Text>
-          <TouchableOpacity onPress={handleLogout}>
-            <Text style={styles.logoutText}>Logout</Text>
-          </TouchableOpacity>
+          <View style={styles.accountInfo}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>A1</Text>
+            </View>
+            <View>
+              <Text style={styles.accountName}>Account 1</Text>
+              <TouchableOpacity onPress={handleCopyAddress} style={styles.addressRow}>
+                <Text style={styles.address}>{truncateAddress(address)}</Text>
+                <Ionicons name="copy-outline" size={14} color={colors.textTertiary} style={styles.copyIcon} />
+              </TouchableOpacity>
+            </View>
+          </View>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.headerButton}
+              onPress={() => navigation.navigate('Contacts')}
+            >
+              <Ionicons name="people-outline" size={22} color={colors.textSecondary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.headerButton}
+              onPress={() => navigation.navigate('Settings')}
+            >
+              <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
         </View>
 
-        <View style={styles.balanceCard}>
-          <Text style={styles.balanceLabel}>Total Balance</Text>
-          <Text style={styles.balance}>{formatKoinBalance(balance)} KOIN</Text>
+        {/* Portfolio Card */}
+        <View style={styles.portfolioCard}>
+          <Text style={styles.portfolioLabel}>Portfolio</Text>
+          <Text style={styles.portfolioSubLabel}>Total Balance</Text>
+          <Text style={styles.portfolioValue}>
+            {formatKoinBalance(balance)} KOIN
+          </Text>
 
+          {/* Mana Bar */}
           <View style={styles.manaContainer}>
             <View style={styles.manaHeader}>
               <Text style={styles.manaLabel}>Mana Available</Text>
-              <Text style={styles.manaValue}>{manaPercentage.toFixed(1)}%</Text>
+              <Text style={[styles.manaValue, { color: getManaColor() }]}>
+                {manaPercentage.toFixed(1)}%
+              </Text>
             </View>
             <View style={styles.manaBarContainer}>
               <View
@@ -169,102 +159,56 @@ export const HomeScreen = () => {
                   styles.manaBar,
                   {
                     width: `${Math.min(manaPercentage, 100)}%`,
-                    backgroundColor: manaPercentage < 20 ? '#DC3545' : manaPercentage < 50 ? '#FFC107' : '#34C759'
-                  }
+                    backgroundColor: getManaColor(),
+                  },
                 ]}
               />
             </View>
           </View>
-
-          <View style={styles.addressContainer}>
-            <Text style={styles.addressLabel}>Your Address</Text>
-            <TouchableOpacity onPress={handleCopyAddress}>
-              <Text style={styles.address}>{truncateAddress(address)}</Text>
-            </TouchableOpacity>
-          </View>
         </View>
 
+        {/* Action Buttons */}
         <View style={styles.actions}>
+          <TouchableOpacity style={styles.actionButton} onPress={handleReceive}>
+            <View style={styles.actionIconContainer}>
+              <Ionicons name="arrow-down" size={24} color={colors.textPrimary} />
+            </View>
+            <Text style={styles.actionLabel}>Receive</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity
-            style={[styles.actionButton, styles.sendButton]}
+            style={styles.actionButton}
             onPress={() => navigation.navigate('Send')}>
-            <Text style={styles.actionButtonText}>↑</Text>
+            <View style={styles.actionIconContainer}>
+              <Ionicons name="arrow-up" size={24} color={colors.textPrimary} />
+            </View>
             <Text style={styles.actionLabel}>Send</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.actionButton, styles.receiveButton]}
-            onPress={handleReceive}>
-            <Text style={styles.actionButtonText}>↓</Text>
-            <Text style={styles.actionLabel}>Receive</Text>
+          <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('Swap')}>
+            <View style={styles.actionIconContainer}>
+              <Ionicons name="swap-horizontal" size={24} color={colors.textPrimary} />
+            </View>
+            <Text style={styles.actionLabel}>Swap</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.transactionSection}>
-          <Text style={styles.sectionTitle}>Recent Transactions</Text>
-          {txLoading && transactions.length === 0 ? (
-            <View style={styles.loadingState}>
-              <ActivityIndicator size="large" color="#007AFF" />
-              <Text style={styles.loadingText}>Loading transactions...</Text>
+        {/* Tokens Section */}
+        <View style={styles.tokensSection}>
+          <Text style={styles.sectionTitle}>Tokens</Text>
+          <TouchableOpacity style={styles.tokenItem}>
+            <View style={styles.tokenIcon}>
+              <Text style={styles.tokenIconText}>K</Text>
             </View>
-          ) : txError ? (
-            <View style={styles.errorState}>
-              <Text style={styles.errorText}>Failed to load transactions</Text>
-              <TouchableOpacity onPress={refetchTransactions}>
-                <Text style={styles.retryText}>Retry</Text>
-              </TouchableOpacity>
+            <View style={styles.tokenInfo}>
+              <Text style={styles.tokenName}>Koinos</Text>
+              <Text style={styles.tokenSymbol}>KOIN</Text>
             </View>
-          ) : transactions.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyText}>No transactions yet</Text>
+            <View style={styles.tokenBalance}>
+              <Text style={styles.tokenAmount}>{formatKoinBalance(balance)}</Text>
+              <Text style={styles.tokenValue}>KOIN</Text>
             </View>
-          ) : (
-            <View style={styles.transactionList}>
-              {transactions.slice(0, 10).map((tx) => (
-                <TouchableOpacity
-                  key={tx.id}
-                  style={styles.transactionItem}
-                  onPress={() => {
-                    Alert.alert(
-                      'Transaction Details',
-                      `Type: ${tx.type === 'send' ? 'Sent' : 'Received'}\n` +
-                      `Amount: ${tx.amount} ${tx.tokenSymbol}\n` +
-                      `${tx.type === 'send' ? 'To' : 'From'}: ${tx.type === 'send' ? tx.to : tx.from}\n` +
-                      `Fee: ${tx.fee} mana\n` +
-                      `Block: ${tx.blockHeight || 'N/A'}\n` +
-                      `Time: ${new Date(tx.timestamp).toLocaleString()}`,
-                      [{ text: 'OK' }]
-                    );
-                  }}
-                >
-                  <View style={styles.transactionIcon}>
-                    <Text style={styles.transactionIconText}>
-                      {tx.type === 'send' ? '↑' : '↓'}
-                    </Text>
-                  </View>
-                  <View style={styles.transactionDetails}>
-                    <Text style={styles.transactionType}>
-                      {tx.type === 'send' ? 'Sent' : 'Received'}
-                    </Text>
-                    <Text style={styles.transactionAddress}>
-                      {tx.type === 'send' ? truncateAddress(tx.to) : truncateAddress(tx.from)}
-                    </Text>
-                  </View>
-                  <View style={styles.transactionAmount}>
-                    <Text style={[
-                      styles.transactionAmountText,
-                      { color: tx.type === 'send' ? '#DC3545' : '#34C759' }
-                    ]}>
-                      {tx.type === 'send' ? '-' : '+'}{tx.amount} {tx.tokenSymbol}
-                    </Text>
-                    <Text style={styles.transactionTime}>
-                      {formatTransactionTime(tx.timestamp)}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </Screen>
@@ -274,50 +218,95 @@ export const HomeScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
+    backgroundColor: colors.background,
+  },
+  scrollContent: {
+    flexGrow: 1,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 16,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
+  accountInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  logoutText: {
-    fontSize: 14,
-    color: '#DC3545',
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.purpleLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
-  balanceCard: {
-    backgroundColor: 'white',
+  avatarText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.purple,
+  },
+  accountName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  addressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  address: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  copyIcon: {
+    marginLeft: 6,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  headerButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.card,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  portfolioCard: {
+    marginHorizontal: 16,
+    marginVertical: 12,
     padding: 24,
+    backgroundColor: colors.card,
     borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
-    marginBottom: 24,
   },
-  balanceLabel: {
+  portfolioLabel: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: 4,
+  },
+  portfolioSubLabel: {
     fontSize: 14,
-    color: '#666',
+    color: colors.textSecondary,
     marginBottom: 8,
   },
-  balance: {
-    fontSize: 36,
+  portfolioValue: {
+    fontSize: 32,
     fontWeight: 'bold',
-    color: '#007AFF',
-    marginBottom: 16,
+    color: colors.textPrimary,
+    marginBottom: 20,
   },
   manaContainer: {
-    marginBottom: 16,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#EEE',
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
   manaHeader: {
     flexDirection: 'row',
@@ -326,161 +315,104 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   manaLabel: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: 13,
+    color: colors.textSecondary,
   },
   manaValue: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
   },
   manaBarContainer: {
-    height: 8,
-    backgroundColor: '#E0E0E0',
-    borderRadius: 4,
+    height: 6,
+    backgroundColor: colors.elevated,
+    borderRadius: 3,
     overflow: 'hidden',
   },
   manaBar: {
     height: '100%',
-    borderRadius: 4,
-  },
-  addressContainer: {
-    borderTopWidth: 1,
-    borderTopColor: '#EEE',
-    paddingTop: 16,
-  },
-  addressLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 4,
-  },
-  address: {
-    fontSize: 14,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    color: '#333',
+    borderRadius: 3,
   },
   actions: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
     marginBottom: 32,
+    gap: 16,
   },
   actionButton: {
-    flex: 1,
-    paddingVertical: 16,
-    borderRadius: 12,
     alignItems: 'center',
-    marginHorizontal: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 20,
   },
-  sendButton: {
-    backgroundColor: '#007AFF',
-  },
-  receiveButton: {
-    backgroundColor: '#34C759',
-  },
-  actionButtonText: {
-    fontSize: 24,
-    color: 'white',
-    fontWeight: 'bold',
-    marginBottom: 4,
+  actionIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.card,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
   },
   actionLabel: {
-    fontSize: 14,
-    color: 'white',
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.textSecondary,
   },
-  transactionSection: {
-    flex: 1,
+  tokensSection: {
+    paddingHorizontal: 16,
+    paddingBottom: 40,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#333',
+    color: colors.textPrimary,
     marginBottom: 16,
   },
-  loadingState: {
-    padding: 40,
-    alignItems: 'center',
-  },
-  loadingText: {
-    fontSize: 14,
-    color: '#999',
-    marginTop: 12,
-  },
-  errorState: {
-    padding: 40,
-    alignItems: 'center',
-  },
-  errorText: {
-    fontSize: 14,
-    color: '#DC3545',
-    marginBottom: 12,
-  },
-  retryText: {
-    fontSize: 14,
-    color: '#007AFF',
-    fontWeight: '600',
-  },
-  emptyState: {
-    padding: 40,
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 14,
-    color: '#999',
-  },
-  transactionList: {
-    gap: 12,
-  },
-  transactionItem: {
+  tokenItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'white',
+    backgroundColor: colors.card,
     padding: 16,
     borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
   },
-  transactionIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F0F0F0',
-    alignItems: 'center',
+  tokenIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.purple,
     justifyContent: 'center',
+    alignItems: 'center',
     marginRight: 12,
   },
-  transactionIconText: {
-    fontSize: 20,
+  tokenIconText: {
+    fontSize: 18,
     fontWeight: 'bold',
-    color: '#666',
+    color: colors.textPrimary,
   },
-  transactionDetails: {
+  tokenInfo: {
     flex: 1,
   },
-  transactionType: {
+  tokenName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
-    marginBottom: 2,
+    color: colors.textPrimary,
   },
-  transactionAddress: {
-    fontSize: 12,
-    color: '#999',
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  tokenSymbol: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
-  transactionAmount: {
+  tokenBalance: {
     alignItems: 'flex-end',
   },
-  transactionAmountText: {
+  tokenAmount: {
     fontSize: 16,
     fontWeight: '600',
-    marginBottom: 2,
+    color: colors.textPrimary,
   },
-  transactionTime: {
-    fontSize: 12,
-    color: '#999',
+  tokenValue: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
 });

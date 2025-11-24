@@ -7,18 +7,21 @@ import { ActivityIndicator, View, StyleSheet } from 'react-native';
 import { WelcomeScreen } from '../screens/WelcomeScreen';
 import { CreateWalletScreen } from '../screens/CreateWalletScreen';
 import { ImportWalletScreen } from '../screens/ImportWalletScreen';
-import { HomeScreen } from '../screens/HomeScreen';
-import { SendScreen } from '../screens/SendScreen';
+
+// Navigators
+import { TabNavigator } from './TabNavigator';
 
 // Store
 import { useWalletStore } from '../stores/walletStore';
+
+// Theme
+import colors from '../theme/colors';
 
 export type RootStackParamList = {
   Welcome: undefined;
   CreateWallet: undefined;
   ImportWallet: undefined;
-  Home: undefined;
-  Send: undefined;
+  Main: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -44,7 +47,7 @@ export const AppNavigator = () => {
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color={colors.purple} />
       </View>
     );
   }
@@ -55,6 +58,7 @@ export const AppNavigator = () => {
         screenOptions={{
           headerShown: false,
           animation: 'slide_from_right',
+          contentStyle: { backgroundColor: colors.background },
         }}>
         {!isWalletCreated ? (
           // Auth Stack
@@ -67,6 +71,8 @@ export const AppNavigator = () => {
                 headerShown: true,
                 title: 'Create Wallet',
                 headerBackTitle: 'Back',
+                headerStyle: { backgroundColor: colors.background },
+                headerTintColor: colors.textPrimary,
               }}
             />
             <Stack.Screen
@@ -76,21 +82,14 @@ export const AppNavigator = () => {
                 headerShown: true,
                 title: 'Import Wallet',
                 headerBackTitle: 'Back',
+                headerStyle: { backgroundColor: colors.background },
+                headerTintColor: colors.textPrimary,
               }}
             />
           </>
         ) : (
-          // Main Stack
-          <>
-            <Stack.Screen name="Home" component={HomeScreen} />
-            <Stack.Screen
-              name="Send"
-              component={SendScreen}
-              options={{
-                presentation: 'modal',
-              }}
-            />
-          </>
+          // Main App with Tabs
+          <Stack.Screen name="Main" component={TabNavigator} />
         )}
       </Stack.Navigator>
     </NavigationContainer>
@@ -102,6 +101,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F5F5F5',
+    backgroundColor: colors.background,
   },
 });
