@@ -60,9 +60,6 @@ const HomeStackNavigator = () => (
     <HomeStack.Screen
       name="Settings"
       component={SettingsScreen}
-      options={{
-        presentation: 'modal',
-      }}
     />
   </HomeStack.Navigator>
 );

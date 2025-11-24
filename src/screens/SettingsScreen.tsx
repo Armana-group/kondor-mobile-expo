@@ -129,13 +129,14 @@ export const SettingsScreen = () => {
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Settings</Text>
           <TouchableOpacity
-            style={styles.closeButton}
+            style={styles.backButton}
             onPress={() => navigation.goBack()}
           >
-            <Ionicons name="close" size={28} color={colors.textSecondary} />
+            <Ionicons name="chevron-back" size={28} color={colors.purple} />
           </TouchableOpacity>
+          <Text style={styles.title}>Settings</Text>
+          <View style={styles.headerSpacer} />
         </View>
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -239,13 +240,19 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+  backButton: {
+    padding: 4,
+    marginRight: 8,
+  },
   title: {
+    flex: 1,
     fontSize: 24,
     fontWeight: 'bold',
     color: colors.textPrimary,
+    textAlign: 'center',
   },
-  closeButton: {
-    padding: 4,
+  headerSpacer: {
+    width: 36,
   },
   content: {
     flex: 1,
