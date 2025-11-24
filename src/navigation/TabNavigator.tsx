@@ -13,16 +13,21 @@ import { CollectiblesScreen } from '../screens/CollectiblesScreen';
 import { SwapScreen } from '../screens/SwapScreen';
 import { ActivityScreen } from '../screens/ActivityScreen';
 import { BrowserScreen } from '../screens/BrowserScreen';
+import { TokenDetailScreen } from '../screens/TokenDetailScreen';
 
 // Theme
 import colors from '../theme/colors';
 
+// Stores
+import { Token } from '../stores/tokenStore';
+
 // Types
 export type HomeStackParamList = {
   HomeMain: undefined;
-  Send: undefined;
+  Send: { token?: Token } | undefined;
   Contacts: undefined;
   Settings: undefined;
+  TokenDetail: { token: Token };
 };
 
 export type TabParamList = {
@@ -39,7 +44,7 @@ const HomeStack = createNativeStackNavigator<HomeStackParamList>();
 // Icon name type for Ionicons
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
-// Home stack navigator (Home + Send modal + Contacts + Settings)
+// Home stack navigator (Home + Send modal + Contacts + Settings + TokenDetail)
 const HomeStackNavigator = () => (
   <HomeStack.Navigator screenOptions={{ headerShown: false }}>
     <HomeStack.Screen name="HomeMain" component={HomeScreen} />
@@ -60,6 +65,10 @@ const HomeStackNavigator = () => (
     <HomeStack.Screen
       name="Settings"
       component={SettingsScreen}
+    />
+    <HomeStack.Screen
+      name="TokenDetail"
+      component={TokenDetailScreen}
     />
   </HomeStack.Navigator>
 );
