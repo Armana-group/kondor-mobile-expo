@@ -9,6 +9,7 @@ import {
   Alert,
   Platform,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Screen } from '../components/Screen';
@@ -137,7 +138,7 @@ export const HomeScreen = () => {
               <Text style={styles.accountName}>Account 1</Text>
               <TouchableOpacity onPress={handleCopyAddress} style={styles.addressRow}>
                 <Text style={styles.address}>{truncateAddress(address)}</Text>
-                <Text style={styles.copyIcon}>📋</Text>
+                <Ionicons name="copy-outline" size={14} color={colors.textTertiary} style={styles.copyIcon} />
               </TouchableOpacity>
             </View>
           </View>
@@ -146,13 +147,13 @@ export const HomeScreen = () => {
               style={styles.headerButton}
               onPress={() => navigation.navigate('Contacts')}
             >
-              <Text style={styles.headerButtonText}>👥</Text>
+              <Ionicons name="people-outline" size={22} color={colors.textSecondary} />
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.headerButton}
               onPress={handleLogout}
             >
-              <Text style={styles.headerButtonText}>⚙️</Text>
+              <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
         </View>
@@ -191,7 +192,7 @@ export const HomeScreen = () => {
         <View style={styles.actions}>
           <TouchableOpacity style={styles.actionButton} onPress={handleReceive}>
             <View style={styles.actionIconContainer}>
-              <Text style={styles.actionIcon}>📥</Text>
+              <Ionicons name="arrow-down" size={24} color={colors.textPrimary} />
             </View>
             <Text style={styles.actionLabel}>Receive</Text>
           </TouchableOpacity>
@@ -200,14 +201,14 @@ export const HomeScreen = () => {
             style={styles.actionButton}
             onPress={() => navigation.navigate('Send')}>
             <View style={styles.actionIconContainer}>
-              <Text style={styles.actionIcon}>📤</Text>
+              <Ionicons name="arrow-up" size={24} color={colors.textPrimary} />
             </View>
             <Text style={styles.actionLabel}>Send</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('Swap')}>
             <View style={styles.actionIconContainer}>
-              <Text style={styles.actionIcon}>🔄</Text>
+              <Ionicons name="swap-horizontal" size={24} color={colors.textPrimary} />
             </View>
             <Text style={styles.actionLabel}>Swap</Text>
           </TouchableOpacity>
@@ -281,23 +282,19 @@ const styles = StyleSheet.create({
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
   copyIcon: {
-    fontSize: 12,
     marginLeft: 6,
   },
   headerActions: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 12,
   },
   headerButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.elevated,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.card,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  headerButtonText: {
-    fontSize: 20,
   },
   portfolioCard: {
     margin: 20,
@@ -357,31 +354,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 20,
     marginBottom: 32,
-    gap: 12,
+    gap: 16,
   },
   actionButton: {
-    flex: 1,
     alignItems: 'center',
-    padding: 16,
-    backgroundColor: colors.card,
-    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 20,
   },
   actionIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.elevated,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.card,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
   },
-  actionIcon: {
-    fontSize: 22,
-  },
   actionLabel: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '500',
-    color: colors.textPrimary,
+    color: colors.textSecondary,
   },
   tokensSection: {
     paddingHorizontal: 20,

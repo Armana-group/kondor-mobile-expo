@@ -1,7 +1,8 @@
 import React from 'react';
-import { StyleSheet, View, Text } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 
 // Screens
 import { HomeScreen } from '../screens/HomeScreen';
@@ -33,17 +34,8 @@ export type TabParamList = {
 const Tab = createBottomTabNavigator<TabParamList>();
 const HomeStack = createNativeStackNavigator<HomeStackParamList>();
 
-// Tab icon component
-interface TabIconProps {
-  icon: string;
-  focused: boolean;
-}
-
-const TabIcon = ({ icon, focused }: TabIconProps) => (
-  <View style={styles.iconContainer}>
-    <Text style={[styles.icon, focused && styles.iconActive]}>{icon}</Text>
-  </View>
-);
+// Icon name type for Ionicons
+type IoniconsName = keyof typeof Ionicons.glyphMap;
 
 // Home stack navigator (Home + Send modal + Contacts)
 const HomeStackNavigator = () => (
@@ -73,9 +65,8 @@ export const TabNavigator = () => {
         headerShown: false,
         tabBarStyle: styles.tabBar,
         tabBarActiveTintColor: colors.purple,
-        tabBarInactiveTintColor: colors.textSecondary,
+        tabBarInactiveTintColor: colors.textTertiary,
         tabBarLabelStyle: styles.tabBarLabel,
-        tabBarIconStyle: styles.tabBarIcon,
       }}
     >
       <Tab.Screen
@@ -83,7 +74,9 @@ export const TabNavigator = () => {
         component={HomeStackNavigator}
         options={{
           tabBarLabel: 'Home',
-          tabBarIcon: ({ focused }) => <TabIcon icon="🏠" focused={focused} />,
+          tabBarIcon: ({ focused, color }) => (
+            <Ionicons name={focused ? 'home' : 'home-outline'} size={24} color={color} />
+          ),
         }}
       />
       <Tab.Screen
@@ -91,7 +84,9 @@ export const TabNavigator = () => {
         component={CollectiblesScreen}
         options={{
           tabBarLabel: 'Collectibles',
-          tabBarIcon: ({ focused }) => <TabIcon icon="⊞" focused={focused} />,
+          tabBarIcon: ({ focused, color }) => (
+            <Ionicons name={focused ? 'grid' : 'grid-outline'} size={24} color={color} />
+          ),
         }}
       />
       <Tab.Screen
@@ -99,7 +94,9 @@ export const TabNavigator = () => {
         component={SwapScreen}
         options={{
           tabBarLabel: 'Swap',
-          tabBarIcon: ({ focused }) => <TabIcon icon="🔄" focused={focused} />,
+          tabBarIcon: ({ focused, color }) => (
+            <Ionicons name={focused ? 'swap-horizontal' : 'swap-horizontal-outline'} size={24} color={color} />
+          ),
         }}
       />
       <Tab.Screen
@@ -107,7 +104,9 @@ export const TabNavigator = () => {
         component={ActivityScreen}
         options={{
           tabBarLabel: 'Activity',
-          tabBarIcon: ({ focused }) => <TabIcon icon="🕐" focused={focused} />,
+          tabBarIcon: ({ focused, color }) => (
+            <Ionicons name={focused ? 'time' : 'time-outline'} size={24} color={color} />
+          ),
         }}
       />
       <Tab.Screen
@@ -115,7 +114,9 @@ export const TabNavigator = () => {
         component={BrowserScreen}
         options={{
           tabBarLabel: 'Browser',
-          tabBarIcon: ({ focused }) => <TabIcon icon="🌐" focused={focused} />,
+          tabBarIcon: ({ focused, color }) => (
+            <Ionicons name={focused ? 'globe' : 'globe-outline'} size={24} color={color} />
+          ),
         }}
       />
     </Tab.Navigator>
@@ -126,28 +127,14 @@ const styles = StyleSheet.create({
   tabBar: {
     backgroundColor: colors.card,
     borderTopColor: colors.border,
-    borderTopWidth: 1,
+    borderTopWidth: 0.5,
     height: 85,
     paddingTop: 8,
     paddingBottom: 28,
   },
   tabBarLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '500',
-    marginTop: 4,
-  },
-  tabBarIcon: {
-    marginTop: 4,
-  },
-  iconContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  icon: {
-    fontSize: 22,
-    opacity: 0.6,
-  },
-  iconActive: {
-    opacity: 1,
+    marginTop: 2,
   },
 });
