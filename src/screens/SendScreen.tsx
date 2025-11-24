@@ -262,11 +262,6 @@ export const SendScreen = () => {
               </TouchableOpacity>
             </View>
           </View>
-
-          <View style={styles.feeInfo}>
-            <Text style={styles.feeLabel}>Network Fee</Text>
-            <Text style={styles.feeValue}>~0.001 KOIN</Text>
-          </View>
         </View>
 
         <View style={styles.footer}>
@@ -410,24 +405,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.purple,
     fontWeight: '600',
-  },
-  feeInfo: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 16,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    marginTop: 16,
-  },
-  feeLabel: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  feeValue: {
-    fontSize: 14,
-    color: colors.textPrimary,
-    fontWeight: '500',
   },
   footer: {
     marginTop: 'auto',
