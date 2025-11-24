@@ -28,7 +28,15 @@ const generateId = (): string => {
 export const useContactStore = create<ContactState>()(
   persist(
     (set, get) => ({
-      contacts: [],
+      contacts: [
+        // Default contact
+        {
+          id: 'default-ron',
+          name: 'Ron',
+          address: '1DTstq47k9v5dwyw8LrvZRxRX1qU5CBNJd',
+          createdAt: Date.now(),
+        },
+      ],
 
       addContact: (name: string, address: string) => {
         const newContact: Contact = {
