@@ -5,8 +5,8 @@
 
 export const colors = {
   // Backgrounds
-  background: '#0A0A0A',      // neutral-950 - Main background
-  card: '#141414',            // neutral-900 - Card backgrounds
+  background: '#111111',      // Slightly lighter black
+  card: '#1A1A1A',            // Card backgrounds
   elevated: '#272727',        // neutral-800 - Elevated surfaces, hover states
   border: '#404040',          // neutral-700 - Borders, dividers
 

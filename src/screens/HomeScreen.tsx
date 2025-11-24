@@ -118,9 +118,10 @@ export const HomeScreen = () => {
   };
 
   return (
-    <Screen>
+    <Screen scroll={false}>
       <ScrollView
         style={styles.container}
+        contentContainerStyle={styles.scrollContent}
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
@@ -241,12 +242,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  scrollContent: {
+    flexGrow: 1,
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    paddingTop: 16,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 16,
   },
   accountInfo: {
     flexDirection: 'row',
@@ -297,8 +302,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   portfolioCard: {
-    margin: 20,
-    marginTop: 8,
+    marginHorizontal: 16,
+    marginVertical: 12,
     padding: 24,
     backgroundColor: colors.card,
     borderRadius: 16,
@@ -352,7 +357,7 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     justifyContent: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     marginBottom: 32,
     gap: 16,
   },
@@ -376,7 +381,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   tokensSection: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingBottom: 40,
   },
   sectionTitle: {
