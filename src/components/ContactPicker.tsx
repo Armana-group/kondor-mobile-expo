@@ -9,6 +9,7 @@ import {
   TextInput,
   Platform,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useContactStore, Contact } from '../stores/contactStore';
 import { truncateAddress } from '../lib/utils';
 import colors from '../theme/colors';
@@ -81,8 +82,8 @@ export const ContactPicker: React.FC<ContactPickerProps> = ({
         <View style={styles.container}>
           <View style={styles.header}>
             <Text style={styles.title}>Select Contact</Text>
-            <TouchableOpacity onPress={onClose}>
-              <Text style={styles.closeButton}>✕</Text>
+            <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+              <Ionicons name="close" size={28} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
@@ -141,8 +142,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   closeButton: {
-    fontSize: 24,
-    color: colors.textSecondary,
     padding: 4,
   },
   searchContainer: {

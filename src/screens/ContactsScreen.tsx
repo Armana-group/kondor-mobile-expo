@@ -10,12 +10,15 @@ import {
   Modal,
   Platform,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { useContactStore, Contact } from '../stores/contactStore';
 import { truncateAddress } from '../lib/utils';
 import colors from '../theme/colors';
 
 export const ContactsScreen = () => {
+  const navigation = useNavigation<any>();
   const { contacts, addContact, updateContact, deleteContact } = useContactStore();
   const [modalVisible, setModalVisible] = useState(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
@@ -125,15 +128,25 @@ export const ContactsScreen = () => {
     <Screen scroll={false}>
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.title}>Contacts</Text>
-          {contacts.length > 0 && (
+          <View style={styles.headerLeft}>
+            <Text style={styles.title}>Contacts</Text>
+          </View>
+          <View style={styles.headerRight}>
+            {contacts.length > 0 && (
+              <TouchableOpacity
+                style={styles.addButton}
+                onPress={() => handleOpenModal()}
+              >
+                <Text style={styles.addButtonText}>+ Add</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
-              style={styles.addButton}
-              onPress={() => handleOpenModal()}
+              style={styles.closeButton}
+              onPress={() => navigation.goBack()}
             >
-              <Text style={styles.addButtonText}>+ Add</Text>
+              <Ionicons name="close" size={28} color={colors.textSecondary} />
             </TouchableOpacity>
-          )}
+          </View>
         </View>
 
         <FlatList
@@ -158,8 +171,8 @@ export const ContactsScreen = () => {
                 <Text style={styles.modalTitle}>
                   {editingContact ? 'Edit Contact' : 'Add Contact'}
                 </Text>
-                <TouchableOpacity onPress={handleCloseModal}>
-                  <Text style={styles.modalClose}>✕</Text>
+                <TouchableOpacity style={styles.modalCloseButton} onPress={handleCloseModal}>
+                  <Ionicons name="close" size={28} color={colors.textSecondary} />
                 </TouchableOpacity>
               </View>
 
@@ -224,6 +237,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+  headerLeft: {
+    flex: 1,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
@@ -239,6 +260,9 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: '600',
     fontSize: 14,
+  },
+  closeButton: {
+    padding: 4,
   },
   listContainer: {
     padding: 16,
@@ -352,9 +376,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.textPrimary,
   },
-  modalClose: {
-    fontSize: 24,
-    color: colors.textSecondary,
+  modalCloseButton: {
     padding: 4,
   },
   inputGroup: {

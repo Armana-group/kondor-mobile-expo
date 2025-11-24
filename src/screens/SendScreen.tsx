@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
@@ -185,13 +186,13 @@ export const SendScreen = () => {
     <Screen>
       <View style={styles.container}>
         <View style={styles.header}>
+          <Text style={styles.title}>Send KOIN</Text>
           <TouchableOpacity
-            style={styles.backButton}
+            style={styles.closeButton}
             onPress={() => navigation.goBack()}
           >
-            <Text style={styles.backButtonText}>← Back</Text>
+            <Ionicons name="close" size={28} color={colors.textSecondary} />
           </TouchableOpacity>
-          <Text style={styles.title}>Send KOIN</Text>
         </View>
 
         <View style={styles.form}>
@@ -307,21 +308,18 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 24,
-  },
-  backButton: {
-    alignSelf: 'flex-start',
-    paddingVertical: 8,
-    marginBottom: 16,
-  },
-  backButtonText: {
-    fontSize: 16,
-    color: colors.purple,
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
     color: colors.textPrimary,
+  },
+  closeButton: {
+    padding: 4,
   },
   form: {
     flex: 1,
