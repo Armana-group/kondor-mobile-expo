@@ -143,15 +143,23 @@ export const AccountSwitcher: React.FC<AccountSwitcherProps> = ({
 
           <View style={styles.accountInfo}>
             {isEditing ? (
-              <TextInput
-                style={styles.nameInput}
-                value={editingName}
-                onChangeText={setEditingName}
-                autoFocus
-                selectTextOnFocus
-                onBlur={handleSaveRename}
-                onSubmitEditing={handleSaveRename}
-              />
+              <View style={styles.editingRow}>
+                <TextInput
+                  style={styles.nameInput}
+                  value={editingName}
+                  onChangeText={setEditingName}
+                  autoFocus
+                  selectTextOnFocus
+                  onSubmitEditing={handleSaveRename}
+                  returnKeyType="done"
+                />
+                <TouchableOpacity
+                  style={styles.saveBtn}
+                  onPress={handleSaveRename}
+                >
+                  <Ionicons name="checkmark-circle" size={28} color={colors.success} />
+                </TouchableOpacity>
+              </View>
             ) : (
               <>
                 <TouchableOpacity
@@ -401,7 +409,12 @@ const styles = StyleSheet.create({
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     marginTop: 2,
   },
+  editingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   nameInput: {
+    flex: 1,
     fontSize: 16,
     fontWeight: '600',
     color: colors.textPrimary,
@@ -409,7 +422,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
-    marginRight: 8,
+  },
+  saveBtn: {
+    marginLeft: 8,
+    padding: 4,
   },
   accountActions: {
     flexDirection: 'row',
