@@ -85,20 +85,7 @@ export const TokenDetailScreen = () => {
   };
 
   const handleReceive = () => {
-    Alert.alert(
-      `Receive ${token.symbol}`,
-      `Share your address to receive ${token.symbol}:\n\n${address}`,
-      [
-        {
-          text: 'Copy Address',
-          onPress: async () => {
-            await Clipboard.setStringAsync(address);
-            Alert.alert('Copied!', 'Address copied to clipboard');
-          },
-        },
-        { text: 'Close', style: 'cancel' },
-      ]
-    );
+    navigation.navigate('Receive', { token });
   };
 
   const handleCopyContract = async () => {

@@ -136,14 +136,7 @@ export const HomeScreen = () => {
   };
 
   const handleReceive = () => {
-    Alert.alert(
-      'Receive KOIN',
-      `Share your address to receive KOIN:\n\n${address}`,
-      [
-        { text: 'Copy Address', onPress: handleCopyAddress },
-        { text: 'Close', style: 'cancel' },
-      ]
-    );
+    navigation.navigate('Receive');
   };
 
   const getManaColor = () => {

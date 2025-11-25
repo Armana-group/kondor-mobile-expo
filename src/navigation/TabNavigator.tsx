@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 // Screens
 import { HomeScreen } from '../screens/HomeScreen';
 import { SendScreen } from '../screens/SendScreen';
+import { ReceiveScreen } from '../screens/ReceiveScreen';
 import { ContactsScreen } from '../screens/ContactsScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { CollectiblesScreen } from '../screens/CollectiblesScreen';
@@ -25,6 +26,7 @@ import { Token } from '../stores/tokenStore';
 export type HomeStackParamList = {
   HomeMain: undefined;
   Send: { token?: Token } | undefined;
+  Receive: { token?: Token } | undefined;
   Contacts: undefined;
   Settings: undefined;
   TokenDetail: { token: Token };
@@ -44,13 +46,20 @@ const HomeStack = createNativeStackNavigator<HomeStackParamList>();
 // Icon name type for Ionicons
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
-// Home stack navigator (Home + Send modal + Contacts + Settings + TokenDetail)
+// Home stack navigator (Home + Send modal + Receive modal + Contacts + Settings + TokenDetail)
 const HomeStackNavigator = () => (
   <HomeStack.Navigator screenOptions={{ headerShown: false }}>
     <HomeStack.Screen name="HomeMain" component={HomeScreen} />
     <HomeStack.Screen
       name="Send"
       component={SendScreen}
+      options={{
+        presentation: 'modal',
+      }}
+    />
+    <HomeStack.Screen
+      name="Receive"
+      component={ReceiveScreen}
       options={{
         presentation: 'modal',
       }}

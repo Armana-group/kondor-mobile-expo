@@ -102,7 +102,7 @@ export class ManualTokenContract {
     }
   }
 
-  async getBalance(address: string): Promise<string> {
+  async getBalance(address: string, decimals: number = 8): Promise<string> {
     try {
       console.log('[ManualTokenContract] Getting balance for:', address);
 
@@ -128,8 +128,8 @@ export class ManualTokenContract {
       const resultBytes = utils.decodeBase64url(result.result);
       const value = this.decodeBalanceOfResult(resultBytes);
 
-      // Format the balance
-      const balance = utils.formatUnits(value, 8);
+      // Format the balance with the token's decimals
+      const balance = utils.formatUnits(value, decimals);
       console.log('[ManualTokenContract] Formatted balance:', balance);
 
       return balance;
@@ -147,15 +147,16 @@ export class ManualTokenContract {
     signer: Signer,
     to: string,
     amount: string,
-    options: { rcLimit?: number } = {}
+    options: { rcLimit?: number; decimals?: number } = {}
   ): Promise<{ transactionId: string }> {
     try {
-      console.log('[ManualTokenContract] Starting transfer to:', to, 'amount:', amount);
+      const decimals = options.decimals ?? 8;
+      console.log('[ManualTokenContract] Starting transfer to:', to, 'amount:', amount, 'decimals:', decimals);
 
       const from = signer.getAddress();
 
-      // Convert amount to smallest unit (8 decimals)
-      const value = utils.parseUnits(amount, 8);
+      // Convert amount to smallest unit using the token's decimals
+      const value = utils.parseUnits(amount, decimals);
       console.log('[ManualTokenContract] Parsed amount:', value);
 
       // Encode transfer arguments

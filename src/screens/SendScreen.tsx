@@ -31,7 +31,7 @@ type SendRouteParams = {
 export const SendScreen = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<SendRouteParams, 'Send'>>();
-  const { transfer, getMana, getBalance } = useKoinosStore();
+  const { transfer, transferToken, getMana, getBalance } = useKoinosStore();
   const { balance, address, updateBalance } = useWalletStore();
   const { getContactByAddress } = useContactStore();
   const { tokens, getTokenBySymbol, refreshSingleBalance } = useTokenStore();
@@ -160,18 +160,13 @@ export const SendScreen = () => {
           onPress: async () => {
             setIsSending(true);
             try {
-              // For now, only KOIN transfers are supported via the existing transfer function
-              // TODO: Add support for other tokens via ManualTokenContract
-              if (selectedToken.symbol !== 'KOIN') {
-                Alert.alert(
-                  'Coming Soon',
-                  `Sending ${selectedToken.symbol} is not yet supported. Only KOIN transfers are available.`
-                );
-                setIsSending(false);
-                return;
-              }
-
-              const txId = await transfer(recipient, amount);
+              // Use transferToken for all tokens (works with any contract)
+              const txId = await transferToken(
+                selectedToken.contractId,
+                recipient,
+                amount,
+                selectedToken.decimals
+              );
 
               // Refresh balances
               const newBalance = await getBalance(address);
