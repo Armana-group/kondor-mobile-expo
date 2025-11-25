@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Screen } from '../components/Screen';
+import { AccountSwitcher } from '../components/AccountSwitcher';
 import { useWalletStore } from '../stores/walletStore';
 import { useKoinosStore } from '../stores/koinosStore';
 import { useTokenStore, Token } from '../stores/tokenStore';
@@ -23,12 +24,16 @@ import colors from '../theme/colors';
 
 export const HomeScreen = () => {
   const navigation = useNavigation<any>();
-  const { address, balance, updateBalance } = useWalletStore();
-  const { getBalance, getMana, initialize } = useKoinosStore();
+  const { address, balance, updateBalance, accounts, getActiveAccount } = useWalletStore();
+  const { getBalance, getMana, initialize, reset: resetKoinos } = useKoinosStore();
   const { tokens, isLoading: tokensLoading, initialize: initializeTokens, refreshBalances } = useTokenStore();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [manaPercentage, setManaPercentage] = useState<number>(0);
+  const [showAccountSwitcher, setShowAccountSwitcher] = useState(false);
+
+  // Get active account info
+  const activeAccount = getActiveAccount();
 
   const initializeAndLoadBalance = useCallback(async () => {
     try {
@@ -159,18 +164,33 @@ export const HomeScreen = () => {
         }>
         {/* Header */}
         <View style={styles.header}>
-          <View style={styles.accountInfo}>
+          <TouchableOpacity
+            style={styles.accountInfo}
+            onPress={() => setShowAccountSwitcher(true)}
+          >
             <View style={styles.avatar}>
-              <Text style={styles.avatarText}>A1</Text>
+              <Text style={styles.avatarText}>
+                {activeAccount?.name.charAt(0).toUpperCase() || 'A'}
+              </Text>
             </View>
-            <View>
-              <Text style={styles.accountName}>Account 1</Text>
+            <View style={styles.accountDetails}>
+              <View style={styles.accountNameRow}>
+                <Text style={styles.accountName}>
+                  {activeAccount?.name || 'Account 1'}
+                </Text>
+                <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
+              </View>
               <TouchableOpacity onPress={handleCopyAddress} style={styles.addressRow}>
                 <Text style={styles.address}>{truncateAddress(address)}</Text>
                 <Ionicons name="copy-outline" size={14} color={colors.textTertiary} style={styles.copyIcon} />
               </TouchableOpacity>
             </View>
-          </View>
+            {accounts.length > 1 && (
+              <View style={styles.accountCountBadge}>
+                <Text style={styles.accountCountText}>{accounts.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
           <View style={styles.headerActions}>
             <TouchableOpacity
               style={styles.headerButton}
@@ -269,6 +289,22 @@ export const HomeScreen = () => {
           )}
         </View>
       </ScrollView>
+
+      {/* Account Switcher Modal */}
+      <AccountSwitcher
+        visible={showAccountSwitcher}
+        onClose={() => setShowAccountSwitcher(false)}
+        onAccountSwitch={() => {
+          // Reset koinos store to re-initialize with new account's private key
+          resetKoinos();
+          // Reset initialization to reload balances for new account
+          setIsInitialized(false);
+          // Refresh balance and mana for new account
+          setTimeout(() => {
+            initializeAndLoadBalance();
+          }, 100);
+        }}
+      />
     </Screen>
   );
 };
@@ -307,8 +343,30 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.purple,
   },
+  accountDetails: {
+    flex: 1,
+  },
+  accountNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
   accountName: {
     fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  accountCountBadge: {
+    backgroundColor: colors.purple,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  accountCountText: {
+    fontSize: 11,
     fontWeight: '600',
     color: colors.textPrimary,
   },

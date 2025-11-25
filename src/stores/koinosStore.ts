@@ -38,8 +38,27 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
       const provider = new Provider(DEFAULT_NETWORK.rpcNodes);
 
       // Get private key from secure storage
+      // Try new per-account key first, then fall back to legacy key
       console.log('[KoinosStore] Getting private key from secure storage...');
-      const privateKey = await SecureStore.getItemAsync('kondor_wallet_private_key');
+
+      // Import the wallet store to get active account
+      const { useWalletStore } = await import('./walletStore');
+      const { activeAccountId } = useWalletStore.getState();
+
+      let privateKey: string | null = null;
+
+      // Try account-specific key first
+      if (activeAccountId) {
+        privateKey = await SecureStore.getItemAsync(`kondor_pk_${activeAccountId}`);
+        console.log('[KoinosStore] Tried account-specific key:', privateKey ? 'found' : 'not found');
+      }
+
+      // Fallback to legacy key
+      if (!privateKey) {
+        privateKey = await SecureStore.getItemAsync('kondor_wallet_private_key');
+        console.log('[KoinosStore] Tried legacy key:', privateKey ? 'found' : 'not found');
+      }
+
       if (!privateKey) {
         console.error('[KoinosStore] No private key found in secure storage');
         set({
