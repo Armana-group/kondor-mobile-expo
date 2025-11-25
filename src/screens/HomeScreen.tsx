@@ -328,6 +328,7 @@ const styles = StyleSheet.create({
   accountInfo: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
   },
   avatar: {
     width: 44,
@@ -386,6 +387,7 @@ const styles = StyleSheet.create({
   headerActions: {
     flexDirection: 'row',
     gap: 12,
+    flexShrink: 0,
   },
   headerButton: {
     width: 36,
