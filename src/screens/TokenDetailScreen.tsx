@@ -181,8 +181,10 @@ export const TokenDetailScreen = () => {
             </View>
           )}
         </View>
-        <Text style={styles.tokenName}>{token.name}</Text>
-        <Text style={styles.tokenSymbol}>{token.symbol}</Text>
+        <View style={styles.tokenHeaderText}>
+          <Text style={styles.tokenName}>{token.name}</Text>
+          <Text style={styles.tokenSymbol}>{token.symbol}</Text>
+        </View>
       </View>
 
       {/* Balance */}
@@ -322,11 +324,16 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   tokenHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 24,
+    paddingHorizontal: 16,
   },
   tokenIconLarge: {
-    marginBottom: 12,
+    marginRight: 16,
+  },
+  tokenHeaderText: {
+    flex: 1,
   },
   tokenIconImage: {
     width: 72,
@@ -348,10 +355,10 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   tokenName: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '600',
     color: colors.textPrimary,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   tokenSymbol: {
     fontSize: 14,
