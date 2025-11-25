@@ -261,6 +261,13 @@ export const HomeScreen = () => {
             </View>
             <Text style={styles.actionLabel}>Swap</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('Activity')}>
+            <View style={styles.actionIconContainer}>
+              <Ionicons name="time-outline" size={24} color={colors.textPrimary} />
+            </View>
+            <Text style={styles.actionLabel}>Activity</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Tokens Section */}
@@ -455,17 +462,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 16,
     marginBottom: 32,
-    gap: 16,
+    gap: 8,
   },
   actionButton: {
     alignItems: 'center',
     paddingVertical: 8,
-    paddingHorizontal: 20,
+    paddingHorizontal: 12,
   },
   actionIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: colors.card,
     justifyContent: 'center',
     alignItems: 'center',
