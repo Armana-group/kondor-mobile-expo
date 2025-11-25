@@ -1,6 +1,13 @@
 # Development TODO
 
-## Status: Phase 7 Complete - Multi-Token Support
+## Status: Phase 7.5 Complete - Core Wallet Features
+
+### ✅ Completed (Phase 7.5)
+- ✅ Multi-token transfers (all 31 tokens, not just KOIN)
+- ✅ Receive screen with QR code
+- ✅ Multi-account support (HD derivation + private key import)
+- ✅ Account switcher with rename/remove
+- ✅ Copy address and share functionality
 
 ### ✅ Completed (Phase 7)
 - ✅ Token store with KoinDX integration
@@ -26,7 +33,22 @@
 
 ---
 
-## Phase 8: Apps/dApps Browser
+## Phase 8: QR Scanner & Camera Integration
+
+### Tasks
+1. **QR code scanner for sending**
+   - Camera permission handling
+   - Scan Koinos addresses
+   - Auto-fill recipient in SendScreen
+2. **Optional: Scan WalletConnect QR codes**
+   - For future WalletConnect integration
+
+### Reference
+- expo-camera or expo-barcode-scanner
+
+---
+
+## Phase 9: Apps/dApps Browser
 
 ### Overview
 Phantom-style dApp integration where users can browse and use Koinos dApps via WebView.
@@ -56,28 +78,7 @@ Phantom-style dApp integration where users can browse and use Koinos dApps via W
 
 ---
 
-## Phase 9: Multi-Token Transfers
-
-### Tasks
-1. **Generic token transfer**
-   - Update manualTokenContract for any token
-   - Test with VHP, KOINDX, etc.
-2. **Token-specific validation**
-   - Check token balance before send
-   - Handle tokens with different decimals
-
----
-
 ## Phase 10: Advanced Features
-
-### Multi-Account Support
-- HD wallet with multiple derived accounts
-- Account switcher in HomeScreen
-- Per-account balances and history
-
-### QR Code Scanner
-- Scan addresses for sending
-- Scan WalletConnect QR codes
 
 ### WalletConnect v2
 - Connect to desktop dApps
@@ -93,10 +94,9 @@ Phantom-style dApp integration where users can browse and use Koinos dApps via W
 ## Quick Wins (Can Do Anytime)
 
 1. **Amount shortcuts** - "25%", "50%", "Max" buttons in SendScreen
-2. **Copy address button** - Dedicated button on HomeScreen
-3. **Better loading states** - Skeleton loaders instead of spinners
-4. **Transaction success animation** - Confetti or checkmark animation
-5. **Keyboard improvements** - Fix input field keyboard delay
+2. **Better loading states** - Skeleton loaders instead of spinners
+3. **Transaction success animation** - Confetti or checkmark animation
+4. **Keyboard improvements** - Fix input field keyboard delay
 
 ---
 
@@ -139,6 +139,12 @@ eas build --platform ios --profile production
 - [ ] Test KOIN transfer on mainnet
 - [ ] Test all 31 tokens load correctly
 - [ ] Test token detail screen navigation
+- [ ] Test multi-token transfers (VHP, etc.)
+- [ ] Test receive screen QR code
+- [ ] Test account creation (HD derivation)
+- [ ] Test account import (private key)
+- [ ] Test account switching
+- [ ] Test account rename/remove
 - [ ] Test transaction history accuracy
 - [ ] Test contact add/edit/delete
 - [ ] Test settings seed phrase export

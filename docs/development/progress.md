@@ -1,6 +1,82 @@
 # Development Progress Summary
 
-## Latest Session: 2025-11-24 (Phase 7 - Multi-Token Support)
+## Latest Session: 2025-11-25 (Phase 7.5 - Core Wallet Completion)
+
+### Completed Features
+
+#### 1. Multi-Token Transfers
+Previously only KOIN transfers worked. Now all 31 tokens can be sent.
+
+- **ManualTokenContract Updates** (`src/lib/manualTokenContract.ts`)
+  - Added `decimals` parameter to `getBalance()` and `transfer()` methods
+  - Supports any token contract with any decimal precision
+
+- **koinosStore Updates** (`src/stores/koinosStore.ts`)
+  - Added `transferToken(contractId, to, amount, decimals)` method
+  - Works with any token contract, not just KOIN
+
+- **SendScreen Updates** (`src/screens/SendScreen.tsx`)
+  - Removed "Coming Soon" restriction for non-KOIN tokens
+  - Uses `transferToken` with selected token's contract and decimals
+
+#### 2. Receive Screen with QR Code
+New dedicated screen for receiving tokens.
+
+- **ReceiveScreen** (`src/screens/ReceiveScreen.tsx`)
+  - QR code displaying wallet address (`react-native-qrcode-svg`)
+  - Copy address button with clipboard integration
+  - Share button using native share sheet
+  - Token info display when navigating from TokenDetailScreen
+  - Warning about only sending Koinos tokens
+  - Styled consistently with app theme
+
+- **Navigation Updates**
+  - Added Receive route to HomeStackParamList
+  - Modal presentation from HomeScreen and TokenDetailScreen
+  - Updated action buttons to navigate to ReceiveScreen
+
+#### 3. Multi-Account Support
+Full HD wallet support with multiple accounts.
+
+- **walletStore Rewrite** (`src/stores/walletStore.ts`)
+  - New `Account` interface: id, name, address, derivationIndex, isImported
+  - HD derivation path: `m/44'/659'/n'/0/0` (BIP44 for Koinos)
+  - Per-account private key storage in SecureStore (`kondor_pk_{accountId}`)
+  - Migration support for existing single-account wallets
+  - New methods:
+    - `addAccount(name?)` - Create new HD-derived account
+    - `importAccountFromPrivateKey(key, name?)` - Import from hex/WIF
+    - `switchAccount(accountId)` - Switch active account
+    - `renameAccount(accountId, name)` - Rename account
+    - `removeAccount(accountId)` - Remove account (not last one)
+    - `getActiveAccount()` - Get current account info
+
+- **AccountSwitcher Component** (`src/components/AccountSwitcher.tsx`)
+  - Modal showing all accounts with active indicator
+  - Tap to switch between accounts
+  - Inline rename with edit button
+  - Remove accounts with confirmation (requires biometric)
+  - "Add Account" button - creates new HD account
+  - "Import Private Key" button - imports external account
+  - Shows "Imported" badge for non-HD accounts
+
+- **HomeScreen Updates** (`src/screens/HomeScreen.tsx`)
+  - Tappable account header opens AccountSwitcher
+  - Shows active account name dynamically
+  - Account count badge when multiple accounts exist
+  - Resets and reloads balances when switching accounts
+
+- **koinosStore Updates** (`src/stores/koinosStore.ts`)
+  - Gets private key based on active account ID
+  - Falls back to legacy key for migration compatibility
+
+### New Dependencies
+- `react-native-qrcode-svg` - QR code generation
+- `react-native-svg` - SVG support for QR codes
+
+---
+
+## Previous Session: 2025-11-24 (Phase 7 - Multi-Token Support)
 
 ### Completed Features
 
@@ -8,90 +84,22 @@
 - **Token Store** (`src/stores/tokenStore.ts`)
   - Fetches token list from KoinDX GitHub API
   - SPECIAL_TOKENS for KOIN and VHP with correct contract addresses
-  - Blacklist for non-standard tokens (Lords Forsaken packs, KoinDX nickname addresses)
-  - Batch balance fetching (5 tokens at a time to avoid rate limiting)
-  - Manual protobuf encoding for `balanceOf` calls
-  - Zustand persistence with AsyncStorage
+  - Blacklist for non-standard tokens
+  - Batch balance fetching (5 tokens at a time)
 
 - **Token Detail Screen** (`src/screens/TokenDetailScreen.tsx`)
   - Token header with icon, name, symbol
-  - Balance display with formatting
-  - Send/Receive action buttons
-  - Token info section (contract address, decimals)
-  - "View on Explorer" link to koiner.app
-  - Transaction history filtered to selected token
-  - Pull-to-refresh for balance and transactions
+  - Balance display, Send/Receive buttons
+  - Token info section, explorer link
+  - Filtered transaction history
 
-- **Home Screen Updates** (`src/screens/HomeScreen.tsx`)
-  - Token list with icons from URLs
-  - Token count badge ("Tokens 31")
-  - Tap token → navigate to TokenDetailScreen
+- **Send Screen Updates**
+  - Token picker modal
   - Balance display per token
-  - Loading states during token fetch
 
-- **Send Screen Updates** (`src/screens/SendScreen.tsx`)
-  - Token picker modal with full token list
-  - Token selector shows selected token with icon
-  - Balance display updates based on selected token
-  - Receives token from route params (from TokenDetailScreen)
-  - Only KOIN transfers work currently (other tokens show "Coming Soon")
-
-- **Transaction History Updates** (`src/hooks/useTransactionHistory.ts`)
-  - Multi-token support - looks up token metadata from tokenStore
-  - Added tokenIcon field to ParsedTransaction
-  - Token symbol and decimals from store lookup
-
-- **Activity Screen Updates** (`src/screens/ActivityScreen.tsx`)
-  - Token icons with send/receive indicator overlay
-  - "View on Explorer" link to koiner.app in transaction details
-
-#### Bug Fixes
-- **KoinDX API Parsing**: Fixed - API returns `{ chainId, tokens: [...] }` not a raw array
-- **Duplicate KOIN/VHP**: Fixed - KoinDX uses nickname addresses (`koin`, `vhp`), added to blacklist
-
-### Technical Implementation
-
-#### Token Balance Fetching
-```typescript
-// Manual protobuf encoding for balanceOf
-function encodeBalanceOfArgs(address: string): Uint8Array {
-  const addressBytes = utils.decodeBase58(address);
-  const writer = protobuf.Writer.create();
-  writer.uint32(0x0A); // field 1, wire type 2
-  writer.bytes(addressBytes);
-  return writer.finish();
-}
-
-// RPC call to get balance
-const result = await provider.call('chain.read_contract', {
-  contract_id: contractId,
-  entry_point: 0x5c721497, // balanceOf
-  args: utils.encodeBase64url(encodedArgs),
-});
-```
-
-#### KoinDX Token List
-- URL: `https://raw.githubusercontent.com/koindx/token-list/main/src/tokens/mainnet.json`
-- Format: `{ chainId: "...", tokens: [...] }`
-- Cache duration: 5 minutes
-
-#### Special Tokens (Hardcoded)
-```typescript
-const SPECIAL_TOKENS = [
-  {
-    contractId: '19GYjDBVXU7keLbYvMLazsGQn3GTWHjHkK', // KOIN
-    symbol: 'KOIN',
-    name: 'Koinos',
-    decimals: 8,
-  },
-  {
-    contractId: '12Y5vW6gk8GceH53YfRkRre2Rrcsgw7Naq', // VHP
-    symbol: 'VHP',
-    name: 'Virtual Hash Power',
-    decimals: 8,
-  },
-];
-```
+- **Bug Fixes**
+  - KoinDX API parsing (returns object with tokens array)
+  - Duplicate KOIN/VHP (blacklisted nickname addresses)
 
 ---
 
@@ -108,32 +116,12 @@ const SPECIAL_TOKENS = [
 
 ## Session: 2025-11-21 (Phase 1-5 - Core Wallet)
 
-### Issues Identified and Fixed
-
-#### 1. Incorrect Transfer Flow
-**Problem:** Code was calling `koin.functions.transfer()` and expecting immediate result
-**Solution:** Changed to proper koilib pattern:
-```typescript
-const { transaction } = await koin.functions.transfer({...});
-const receipt = await transaction.send();
-await transaction.wait();
-```
-
-#### 2. Protobuf Extension Errors
-**Problem:** `utils.tokenAbi` caused "unresolvable extensions" error in React Native
-**Solution:** Created `ManualTokenContract` class that manually encodes/decodes protobuf
-
-#### 3. Expo Go Limitation
-**Problem:** `react-native-quick-crypto` doesn't work in Expo Go
-**Solution:** Converted to bare React Native using `expo prebuild`
-
-#### 4. @noble/secp256k1 Crypto Compatibility
-**Problem:** `@noble/secp256k1` tried to use `crypto.subtle.sign()` with incompatible algorithm
-**Solution:** Configured to use pure JS crypto from `@noble/hashes`
-
-#### 5. Mana (RC) Limit Issues
-**Problem:** Transfers failing with "insufficient pending account resources"
-**Solution:** Implemented proper mana checking and RC estimation system
+### Issues Fixed
+1. **Transfer Flow** - Changed to proper koilib pattern (prepare → send → wait)
+2. **Protobuf Errors** - Created ManualTokenContract for manual encoding
+3. **Expo Go Limitation** - Converted to bare React Native
+4. **Crypto Compatibility** - Configured @noble/secp256k1 for pure JS
+5. **Mana Issues** - Implemented proper RC estimation via dry-run
 
 ---
 
@@ -141,9 +129,11 @@ await transaction.wait();
 
 ### ✅ Working Features
 - Wallet creation and import (BIP39 mnemonic)
+- **Multi-account support** (HD derivation + private key import)
 - Multi-token balance display (31 tokens from KoinDX)
+- **All token transfers** (not just KOIN)
+- **Receive screen with QR code**
 - Token detail view with filtered transactions
-- KOIN transfers with mana validation
 - Transaction history with auto-refresh
 - Contact management
 - Settings with seed/key export
@@ -156,13 +146,14 @@ await transaction.wait();
 - Zustand state management with persistence
 - koilib for blockchain operations
 - Manual protobuf encoding (bypasses ABI issues)
+- QR code generation (react-native-qrcode-svg)
 
 ---
 
 ## Code Architecture
 
 ### Stores (Zustand)
-- **walletStore** - Wallet creation/import, secure storage
+- **walletStore** - Multi-account wallet management, secure storage
 - **koinosStore** - Blockchain operations (balance, transfer, mana)
 - **tokenStore** - Multi-token management, KoinDX integration
 - **contactStore** - Contact management
@@ -171,23 +162,28 @@ await transaction.wait();
 ```
 src/
 ├── stores/
-│   ├── walletStore.ts      # Wallet & secure storage
-│   ├── koinosStore.ts      # Blockchain operations
-│   ├── tokenStore.ts       # Multi-token support (NEW)
+│   ├── walletStore.ts      # Multi-account wallet (UPDATED)
+│   ├── koinosStore.ts      # Blockchain operations (UPDATED)
+│   ├── tokenStore.ts       # Multi-token support
 │   └── contactStore.ts     # Contacts
 ├── screens/
-│   ├── HomeScreen.tsx      # Token list, balance
-│   ├── TokenDetailScreen.tsx # Token detail view (NEW)
-│   ├── SendScreen.tsx      # Transfer with token picker
+│   ├── HomeScreen.tsx      # Account switcher, token list (UPDATED)
+│   ├── ReceiveScreen.tsx   # QR code receive (NEW)
+│   ├── TokenDetailScreen.tsx # Token detail view
+│   ├── SendScreen.tsx      # Multi-token transfer (UPDATED)
 │   ├── ActivityScreen.tsx  # Transaction history
 │   ├── ContactsScreen.tsx  # Contact management
 │   └── SettingsScreen.tsx  # Settings & export
+├── components/
+│   ├── AccountSwitcher.tsx # Account management modal (NEW)
+│   └── ...
 ├── hooks/
 │   └── useTransactionHistory.ts # Multi-token tx history
 ├── navigation/
-│   └── TabNavigator.tsx    # Bottom tabs + stack nav
+│   └── TabNavigator.tsx    # Bottom tabs + stack nav (UPDATED)
 └── lib/
-    ├── manualTokenContract.ts # Manual protobuf
+    ├── manualTokenContract.ts # Multi-token transfers (UPDATED)
+    ├── wallet.ts           # HD derivation
     ├── crypto.ts           # Polyfills
     └── constants.ts        # Network config
 ```
