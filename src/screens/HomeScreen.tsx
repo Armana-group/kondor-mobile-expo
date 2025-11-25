@@ -10,7 +10,6 @@ import {
   Platform,
   Image,
   FlatList,
-  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
@@ -25,15 +24,13 @@ import colors from '../theme/colors';
 
 export const HomeScreen = () => {
   const navigation = useNavigation<any>();
-  const { address, balance, updateBalance, accounts, getActiveAccount, renameAccount } = useWalletStore();
+  const { address, balance, updateBalance, accounts, getActiveAccount } = useWalletStore();
   const { getBalance, getMana, initialize, reset: resetKoinos } = useKoinosStore();
   const { tokens, isLoading: tokensLoading, initialize: initializeTokens, refreshBalances } = useTokenStore();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [manaPercentage, setManaPercentage] = useState<number>(0);
   const [showAccountSwitcher, setShowAccountSwitcher] = useState(false);
-  const [isEditingName, setIsEditingName] = useState(false);
-  const [editingName, setEditingName] = useState('');
 
   // Get active account info
   const activeAccount = getActiveAccount();
@@ -147,21 +144,6 @@ export const HomeScreen = () => {
     navigation.navigate('Receive');
   };
 
-  const handleStartEditName = () => {
-    if (activeAccount) {
-      setEditingName(activeAccount.name);
-      setIsEditingName(true);
-    }
-  };
-
-  const handleSaveEditName = () => {
-    if (activeAccount && editingName.trim()) {
-      renameAccount(activeAccount.id, editingName.trim());
-    }
-    setIsEditingName(false);
-    setEditingName('');
-  };
-
   const getManaColor = () => {
     if (manaPercentage < 20) return colors.error;
     if (manaPercentage < 50) return colors.warning;
@@ -193,28 +175,9 @@ export const HomeScreen = () => {
             </View>
             <View style={styles.accountDetails}>
               <View style={styles.accountNameRow}>
-                {isEditingName ? (
-                  <TextInput
-                    style={styles.accountNameInput}
-                    value={editingName}
-                    onChangeText={setEditingName}
-                    autoFocus
-                    selectTextOnFocus
-                    onBlur={handleSaveEditName}
-                    onSubmitEditing={handleSaveEditName}
-                    returnKeyType="done"
-                  />
-                ) : (
-                  <TouchableOpacity
-                    style={styles.editableNameRow}
-                    onPress={handleStartEditName}
-                  >
-                    <Text style={styles.accountName}>
-                      {activeAccount?.name || 'Account 1'}
-                    </Text>
-                    <Ionicons name="pencil" size={12} color={colors.textTertiary} style={styles.editIcon} />
-                  </TouchableOpacity>
-                )}
+                <Text style={styles.accountName}>
+                  {activeAccount?.name || 'Account 1'}
+                </Text>
                 <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
               </View>
               <TouchableOpacity onPress={handleCopyAddress} style={styles.addressRow}>
@@ -394,26 +357,7 @@ const styles = StyleSheet.create({
   accountNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-  },
-  accountNameInput: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    backgroundColor: colors.elevated,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    marginBottom: 2,
-    minWidth: 120,
-  },
-  editableNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 4,
-  },
-  editIcon: {
-    marginLeft: 2,
   },
   accountName: {
     fontSize: 16,

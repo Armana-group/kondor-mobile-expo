@@ -154,14 +154,18 @@ export const AccountSwitcher: React.FC<AccountSwitcherProps> = ({
               />
             ) : (
               <>
-                <View style={styles.nameRow}>
+                <TouchableOpacity
+                  style={styles.nameRow}
+                  onPress={() => handleStartRename(account)}
+                >
                   <Text style={styles.accountName}>{account.name}</Text>
+                  <Ionicons name="pencil" size={12} color={colors.textTertiary} />
                   {account.isImported && (
                     <View style={styles.importedBadge}>
                       <Text style={styles.importedText}>Imported</Text>
                     </View>
                   )}
-                </View>
+                </TouchableOpacity>
                 <Text style={styles.accountAddress}>
                   {truncateAddress(account.address)}
                 </Text>
@@ -174,22 +178,14 @@ export const AccountSwitcher: React.FC<AccountSwitcherProps> = ({
           )}
         </TouchableOpacity>
 
-        {!isEditing && (
+        {!isEditing && accounts.length > 1 && (
           <View style={styles.accountActions}>
             <TouchableOpacity
               style={styles.actionBtn}
-              onPress={() => handleStartRename(account)}
+              onPress={() => handleRemoveAccount(account)}
             >
-              <Ionicons name="pencil" size={18} color={colors.textTertiary} />
+              <Ionicons name="trash-outline" size={18} color={colors.error} />
             </TouchableOpacity>
-            {accounts.length > 1 && (
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={() => handleRemoveAccount(account)}
-              >
-                <Ionicons name="trash-outline" size={18} color={colors.error} />
-              </TouchableOpacity>
-            )}
           </View>
         )}
       </View>
