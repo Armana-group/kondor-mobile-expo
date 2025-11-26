@@ -1,6 +1,45 @@
 # Development Progress Summary
 
-## Latest Session: 2025-11-25 (Phase 7.5 - Core Wallet Completion)
+## Latest Session: 2025-11-25 (UI Polish & Navigation Improvements)
+
+### UI Fixes
+
+#### 1. Status Bar Fix
+- Added `StatusBar` component with `barStyle="light-content"` to Screen component
+- Time, wifi, battery icons now visible on dark background
+
+#### 2. Header Layout Fix
+- Fixed contacts/settings icons being pushed off screen
+- Added `flex: 1` to accountInfo, `flexShrink: 0` to headerActions
+
+#### 3. Navigation Restructure
+- **Removed Activity tab** from bottom navigation (now 4 tabs: Home, Collectibles, Swap, Browser)
+- **Added Activity button** to HomeScreen action row (Receive, Send, Swap, Activity)
+- Activity screen accessible from HomeStack navigation
+- Adjusted action button sizes for 4-button layout (52px icons, 8px gap)
+
+#### 4. TokenDetailScreen Layout
+- Changed token header from vertical to horizontal layout
+- Icon now displays to the left of token name/symbol
+- Better use of screen space
+
+#### 5. AccountSwitcher Improvements
+- **Inline name editing** - pencil icon next to account name
+- Tap name or pencil to start editing
+- **Green checkmark button** to confirm name change
+- Removed redundant pencil from bottom action bar
+- Bottom action bar only shows delete (when multiple accounts exist)
+
+### Files Modified
+- `src/components/Screen.tsx` - StatusBar light content
+- `src/components/AccountSwitcher.tsx` - Inline name editing with confirm button
+- `src/screens/HomeScreen.tsx` - Header layout fix, Activity button added
+- `src/screens/TokenDetailScreen.tsx` - Horizontal token header
+- `src/navigation/TabNavigator.tsx` - Removed Activity tab, added to HomeStack
+
+---
+
+## Previous Session: 2025-11-25 (Phase 7.5 - Core Wallet Completion)
 
 ### Completed Features
 

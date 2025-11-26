@@ -1,6 +1,14 @@
 # Development TODO
 
-## Status: Phase 7.5 Complete - Core Wallet Features
+## Status: UI Polish Complete - Ready for Phase 8
+
+### ✅ Completed (UI Polish)
+- ✅ Status bar fix (light content on dark background)
+- ✅ Header layout fix (icons no longer cut off)
+- ✅ Navigation restructure (Activity moved to HomeScreen actions)
+- ✅ Bottom tabs reduced to 4: Home, Collectibles, Swap, Browser
+- ✅ TokenDetailScreen horizontal layout (icon left of name)
+- ✅ AccountSwitcher inline editing with confirm button
 
 ### ✅ Completed (Phase 7.5)
 - ✅ Multi-token transfers (all 31 tokens, not just KOIN)
@@ -19,7 +27,7 @@
 - ✅ Explorer links (koiner.app)
 
 ### ✅ Completed (Phase 6)
-- ✅ Bottom tab navigation
+- ✅ Bottom tab navigation (4 tabs)
 - ✅ Contact management (add/edit/delete)
 - ✅ Settings screen with seed/key export
 - ✅ Real device testing (iOS mainnet transfer)
