@@ -8,35 +8,45 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
+  Image,
+  FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Screen } from '../components/Screen';
+import { AccountSwitcher } from '../components/AccountSwitcher';
 import { useWalletStore } from '../stores/walletStore';
 import { useKoinosStore } from '../stores/koinosStore';
+import { useTokenStore, Token } from '../stores/tokenStore';
 import { truncateAddress, formatKoinBalance } from '../lib/utils';
 import colors from '../theme/colors';
 
 export const HomeScreen = () => {
   const navigation = useNavigation<any>();
-  const { address, balance, updateBalance } = useWalletStore();
-  const { getBalance, getMana, initialize } = useKoinosStore();
+  const { address, balance, updateBalance, accounts, getActiveAccount } = useWalletStore();
+  const { getBalance, getMana, initialize, reset: resetKoinos } = useKoinosStore();
+  const { tokens, isLoading: tokensLoading, initialize: initializeTokens, refreshBalances } = useTokenStore();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [manaPercentage, setManaPercentage] = useState<number>(0);
+  const [showAccountSwitcher, setShowAccountSwitcher] = useState(false);
+
+  // Get active account info
+  const activeAccount = getActiveAccount();
 
   const initializeAndLoadBalance = useCallback(async () => {
     try {
-      if (!isInitialized) {
+      if (!isInitialized && address) {
         await initialize();
+        await initializeTokens(address);
         setIsInitialized(true);
       }
       await refreshBalance();
     } catch (error: any) {
       console.error('Failed to initialize:', error);
     }
-  }, [isInitialized]);
+  }, [isInitialized, address]);
 
   useFocusEffect(
     useCallback(() => {
@@ -53,6 +63,10 @@ export const HomeScreen = () => {
     console.log('[HomeScreen] Refreshing balance for address:', address);
     setIsRefreshing(true);
     try {
+      // Refresh token balances
+      await refreshBalances(address);
+
+      // Get KOIN balance for portfolio display
       const newBalance = await getBalance(address);
       console.log('[HomeScreen] Balance fetched successfully:', newBalance);
       updateBalance(newBalance);
@@ -73,20 +87,61 @@ export const HomeScreen = () => {
     }
   };
 
+  // Calculate total portfolio value (for now just sum of balances, no USD)
+  const totalBalance = tokens.reduce((sum, token) => {
+    const bal = parseFloat(token.balance) || 0;
+    return sum + bal;
+  }, 0);
+
+  // Get KOIN balance for display
+  const koinToken = tokens.find(t => t.symbol === 'KOIN');
+  const koinBalance = koinToken?.balance || balance || '0';
+
+  // Handle token press - navigate to token detail
+  const handleTokenPress = (token: Token) => {
+    navigation.navigate('TokenDetail', { token });
+  };
+
+  // Render token item
+  const renderTokenItem = ({ item: token }: { item: Token }) => (
+    <TouchableOpacity
+      style={styles.tokenItem}
+      onPress={() => handleTokenPress(token)}
+    >
+      <View style={styles.tokenIconContainer}>
+        {token.icon ? (
+          <Image
+            source={{ uri: token.icon }}
+            style={styles.tokenIconImage}
+            defaultSource={require('../../assets/icon.png')}
+          />
+        ) : (
+          <View style={styles.tokenIcon}>
+            <Text style={styles.tokenIconText}>{token.symbol.charAt(0)}</Text>
+          </View>
+        )}
+      </View>
+      <View style={styles.tokenInfo}>
+        <Text style={styles.tokenName}>{token.name}</Text>
+        <Text style={styles.tokenSymbol}>{token.symbol}</Text>
+      </View>
+      <View style={styles.tokenBalance}>
+        <Text style={styles.tokenAmount}>
+          {parseFloat(token.balance) > 0 ? formatKoinBalance(token.balance) : '0'}
+        </Text>
+        <Text style={styles.tokenValue}>{token.symbol}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+    </TouchableOpacity>
+  );
+
   const handleCopyAddress = async () => {
     await Clipboard.setStringAsync(address);
     Alert.alert('Copied!', 'Address copied to clipboard');
   };
 
   const handleReceive = () => {
-    Alert.alert(
-      'Receive KOIN',
-      `Share your address to receive KOIN:\n\n${address}`,
-      [
-        { text: 'Copy Address', onPress: handleCopyAddress },
-        { text: 'Close', style: 'cancel' },
-      ]
-    );
+    navigation.navigate('Receive');
   };
 
   const getManaColor = () => {
@@ -109,18 +164,33 @@ export const HomeScreen = () => {
         }>
         {/* Header */}
         <View style={styles.header}>
-          <View style={styles.accountInfo}>
+          <TouchableOpacity
+            style={styles.accountInfo}
+            onPress={() => setShowAccountSwitcher(true)}
+          >
             <View style={styles.avatar}>
-              <Text style={styles.avatarText}>A1</Text>
+              <Text style={styles.avatarText}>
+                {activeAccount?.name.charAt(0).toUpperCase() || 'A'}
+              </Text>
             </View>
-            <View>
-              <Text style={styles.accountName}>Account 1</Text>
+            <View style={styles.accountDetails}>
+              <View style={styles.accountNameRow}>
+                <Text style={styles.accountName}>
+                  {activeAccount?.name || 'Account 1'}
+                </Text>
+                <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
+              </View>
               <TouchableOpacity onPress={handleCopyAddress} style={styles.addressRow}>
                 <Text style={styles.address}>{truncateAddress(address)}</Text>
                 <Ionicons name="copy-outline" size={14} color={colors.textTertiary} style={styles.copyIcon} />
               </TouchableOpacity>
             </View>
-          </View>
+            {accounts.length > 1 && (
+              <View style={styles.accountCountBadge}>
+                <Text style={styles.accountCountText}>{accounts.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
           <View style={styles.headerActions}>
             <TouchableOpacity
               style={styles.headerButton}
@@ -142,7 +212,7 @@ export const HomeScreen = () => {
           <Text style={styles.portfolioLabel}>Portfolio</Text>
           <Text style={styles.portfolioSubLabel}>Total Balance</Text>
           <Text style={styles.portfolioValue}>
-            {formatKoinBalance(balance)} KOIN
+            {formatKoinBalance(koinBalance)} KOIN
           </Text>
 
           {/* Mana Bar */}
@@ -191,26 +261,57 @@ export const HomeScreen = () => {
             </View>
             <Text style={styles.actionLabel}>Swap</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('Activity')}>
+            <View style={styles.actionIconContainer}>
+              <Ionicons name="time-outline" size={24} color={colors.textPrimary} />
+            </View>
+            <Text style={styles.actionLabel}>Activity</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Tokens Section */}
         <View style={styles.tokensSection}>
-          <Text style={styles.sectionTitle}>Tokens</Text>
-          <TouchableOpacity style={styles.tokenItem}>
-            <View style={styles.tokenIcon}>
-              <Text style={styles.tokenIconText}>K</Text>
+          <View style={styles.tokensSectionHeader}>
+            <Text style={styles.sectionTitle}>Tokens</Text>
+            <Text style={styles.tokenCount}>{tokens.length}</Text>
+          </View>
+          {tokens.length === 0 && tokensLoading ? (
+            <View style={styles.loadingContainer}>
+              <Text style={styles.loadingText}>Loading tokens...</Text>
             </View>
-            <View style={styles.tokenInfo}>
-              <Text style={styles.tokenName}>Koinos</Text>
-              <Text style={styles.tokenSymbol}>KOIN</Text>
-            </View>
-            <View style={styles.tokenBalance}>
-              <Text style={styles.tokenAmount}>{formatKoinBalance(balance)}</Text>
-              <Text style={styles.tokenValue}>KOIN</Text>
-            </View>
-          </TouchableOpacity>
+          ) : (
+            <FlatList
+              data={tokens}
+              keyExtractor={(item) => item.contractId}
+              renderItem={renderTokenItem}
+              scrollEnabled={false}
+              ItemSeparatorComponent={() => <View style={styles.tokenSeparator} />}
+              ListEmptyComponent={
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>No tokens found</Text>
+                </View>
+              }
+            />
+          )}
         </View>
       </ScrollView>
+
+      {/* Account Switcher Modal */}
+      <AccountSwitcher
+        visible={showAccountSwitcher}
+        onClose={() => setShowAccountSwitcher(false)}
+        onAccountSwitch={() => {
+          // Reset koinos store to re-initialize with new account's private key
+          resetKoinos();
+          // Reset initialization to reload balances for new account
+          setIsInitialized(false);
+          // Refresh balance and mana for new account
+          setTimeout(() => {
+            initializeAndLoadBalance();
+          }, 100);
+        }}
+      />
     </Screen>
   );
 };
@@ -234,6 +335,7 @@ const styles = StyleSheet.create({
   accountInfo: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
   },
   avatar: {
     width: 44,
@@ -249,8 +351,30 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.purple,
   },
+  accountDetails: {
+    flex: 1,
+  },
+  accountNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
   accountName: {
     fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  accountCountBadge: {
+    backgroundColor: colors.purple,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  accountCountText: {
+    fontSize: 11,
     fontWeight: '600',
     color: colors.textPrimary,
   },
@@ -270,6 +394,7 @@ const styles = StyleSheet.create({
   headerActions: {
     flexDirection: 'row',
     gap: 12,
+    flexShrink: 0,
   },
   headerButton: {
     width: 36,
@@ -337,17 +462,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 16,
     marginBottom: 32,
-    gap: 16,
+    gap: 8,
   },
   actionButton: {
     alignItems: 'center',
     paddingVertical: 8,
-    paddingHorizontal: 20,
+    paddingHorizontal: 12,
   },
   actionIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: colors.card,
     justifyContent: 'center',
     alignItems: 'center',
@@ -362,11 +487,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 40,
   },
+  tokensSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: colors.textPrimary,
-    marginBottom: 16,
+  },
+  tokenCount: {
+    fontSize: 14,
+    color: colors.textTertiary,
+    marginLeft: 8,
+    backgroundColor: colors.elevated,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    overflow: 'hidden',
   },
   tokenItem: {
     flexDirection: 'row',
@@ -375,6 +514,9 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
   },
+  tokenIconContainer: {
+    marginRight: 12,
+  },
   tokenIcon: {
     width: 44,
     height: 44,
@@ -382,7 +524,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.purple,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+  },
+  tokenIconImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.elevated,
   },
   tokenIconText: {
     fontSize: 18,
@@ -404,6 +551,7 @@ const styles = StyleSheet.create({
   },
   tokenBalance: {
     alignItems: 'flex-end',
+    marginRight: 8,
   },
   tokenAmount: {
     fontSize: 16,
@@ -414,5 +562,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  tokenSeparator: {
+    height: 8,
+  },
+  loadingContainer: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  emptyContainer: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 14,
+    color: colors.textSecondary,
   },
 });

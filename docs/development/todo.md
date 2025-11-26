@@ -1,112 +1,122 @@
 # Development TODO
 
-## Status: ✅ Transfers Working! ✅ Transaction History Live!
+## Status: UI Polish Complete - Ready for Phase 8
 
-### ✅ Completed
-- ✅ Mana checker implementation
-- ✅ Reserved RC checking from mempool
+### ✅ Completed (UI Polish)
+- ✅ Status bar fix (light content on dark background)
+- ✅ Header layout fix (icons no longer cut off)
+- ✅ Navigation restructure (Activity moved to HomeScreen actions)
+- ✅ Bottom tabs reduced to 4: Home, Collectibles, Swap, Browser
+- ✅ TokenDetailScreen horizontal layout (icon left of name)
+- ✅ AccountSwitcher inline editing with confirm button
+
+### ✅ Completed (Phase 7.5)
+- ✅ Multi-token transfers (all 31 tokens, not just KOIN)
+- ✅ Receive screen with QR code
+- ✅ Multi-account support (HD derivation + private key import)
+- ✅ Account switcher with rename/remove
+- ✅ Copy address and share functionality
+
+### ✅ Completed (Phase 7)
+- ✅ Token store with KoinDX integration
+- ✅ Multi-token balance display (31 tokens)
+- ✅ Token detail screen with filtered transactions
+- ✅ Token picker in SendScreen
+- ✅ Transaction history multi-token support
+- ✅ Token icons in Activity screen
+- ✅ Explorer links (koiner.app)
+
+### ✅ Completed (Phase 6)
+- ✅ Bottom tab navigation (4 tabs)
+- ✅ Contact management (add/edit/delete)
+- ✅ Settings screen with seed/key export
+- ✅ Real device testing (iOS mainnet transfer)
+
+### ✅ Completed (Phase 1-5)
+- ✅ Wallet creation and import
+- ✅ Mana checking with reserved RC
 - ✅ Dynamic RC estimation via dry-run
-- ✅ Mana display in HomeScreen
-- ✅ Pre-send mana validation
-- ✅ Successful KOIN transfers
+- ✅ KOIN transfers working
 - ✅ Transaction history with auto-refresh
-- ✅ Transaction list UI with send/receive indicators
-- ✅ Pull-to-refresh functionality
 
-## Next Priority Tasks
+---
 
-### 1. Error Handling Improvements (HIGH)
-**Why:** Better user experience for error scenarios
-**Tasks:**
-- Parse and display user-friendly error messages
-- Distinguish error types:
-  - Network errors → "Connection failed, please try again"
-  - Insufficient mana → Show time estimate with mana info
-  - Invalid address → "Invalid recipient address"
-  - Insufficient balance → "Not enough KOIN for this transfer"
-- Add retry logic for network errors
-- Show error details in a dismissible modal
+## Phase 8: QR Scanner & Camera Integration
 
-### 2. Address Book / QR Scanner (MEDIUM)
-**Why:** Easier address entry
-**Tasks:**
-- Implement QR code scanner for addresses
-- Add address book to save frequent recipients
-- Validate scanned addresses before use
-- Add "Scan QR" button in SendScreen
+### Tasks
+1. **QR code scanner for sending**
+   - Camera permission handling
+   - Scan Koinos addresses
+   - Auto-fill recipient in SendScreen
+2. **Optional: Scan WalletConnect QR codes**
+   - For future WalletConnect integration
 
-**Libraries:**
-- `expo-camera` for QR scanning
-- AsyncStorage for address book persistence
+### Reference
+- expo-camera or expo-barcode-scanner
 
-### 3. Multi-Account Support (LOW)
-**Why:** Users may want multiple wallets
-**Tasks:**
-- Support creating/importing multiple accounts
-- Add account switcher in HomeScreen
-- Store multiple private keys (separate SecureStore keys)
-- Show all account balances in account list
-- Allow naming accounts
+---
 
-### 4. Token Support Beyond KOIN (LOW)
-**Why:** Support other Koinos tokens
-**Tasks:**
-- Add token contract addresses
-- Fetch token balances
-- Display token list with balances
-- Support token transfers
-- Add token icons/metadata
+## Phase 9: Apps/dApps Browser
 
-**Reference:** `../kondor` handles multiple tokens
+### Overview
+Phantom-style dApp integration where users can browse and use Koinos dApps via WebView.
 
-### 5. UI/UX Polish (LOW)
-**Tasks:**
-- Add loading states for all async operations
-- Improve transaction confirmation modal
-- Add haptic feedback for button presses
-- Better success/failure animations
-- Add "Copy Address" button with feedback
-- Improve mana bar styling
-- Add transaction pending indicators
+### Tasks
+1. **Rename Browser tab to "Apps"**
+2. **Create curated app list**
+   - KoinDX (DEX)
+   - Fogata (Mining pool)
+   - KoinScan (Explorer)
+   - Kollection (NFTs)
+3. **WebView integration**
+   - Load dApps in WebView
+   - Inject wallet provider
+   - Handle transaction signing requests
+4. **Trust system**
+   - Curated apps: No warning
+   - User-saved apps: First-time warning for custom URLs
+   - One-off URLs: Always show warning
+5. **URL bar + search**
+   - Enter arbitrary URLs
+   - Search curated apps
 
-### 6. Testing & Quality (ONGOING)
-**Tasks:**
-- Test on physical iOS device
-- Test on physical Android device
-- Test with different account balances
-- Test with low/no mana scenarios
-- Test network error handling
-- Test with very large balances
-- Add unit tests for core utilities
-- Add integration tests for transfers
+### Reference
+- Kondor3 browser implementation
+- Phantom wallet dApp browser
 
-## Quick Wins
+---
 
-These can be done quickly for immediate value:
+## Phase 10: Advanced Features
 
-1. **Copy Address Button**: Add dedicated button to copy wallet address
-2. **Better Loading States**: Show spinners during all network requests
-3. **Transaction Success Animation**: Celebratory animation on successful transfer
-4. **Mana Refresh Button**: Allow manual mana refresh without full balance refresh
-5. **Amount Shortcuts**: Add buttons for "25%", "50%", "75%", "Max" amounts
+### WalletConnect v2
+- Connect to desktop dApps
+- Transaction approval flow
+
+### NFT Support (Collectibles Tab)
+- Fetch NFTs from Kollection API
+- Display NFT gallery
+- NFT transfers
+
+---
+
+## Quick Wins (Can Do Anytime)
+
+1. **Amount shortcuts** - "25%", "50%", "Max" buttons in SendScreen
+2. **Better loading states** - Skeleton loaders instead of spinners
+3. **Transaction success animation** - Confetti or checkmark animation
+4. **Keyboard improvements** - Fix input field keyboard delay
+
+---
 
 ## Known Issues
 
-### None Currently! 🎉
+### Minor
+- Input field keyboard shows with slight delay on iOS device
+- Token list shows loading state on each refresh (could use stale-while-revalidate)
 
-All blocking issues have been resolved:
-- ✅ Protobuf extensions → Using ManualTokenContract
-- ✅ Crypto compatibility → Configured polyfills correctly
-- ✅ Mana insufficient errors → Implemented mana checker
-- ✅ RC limit too high → Using dynamic estimation
+### None Blocking
 
-## Testing Account
-
-**Current Test Account:**
-- Address: `13jqmvK2NF9yGCqUWSKjVH4msTqhRM96ac`
-- Balance: ~4.7 KOIN
-- Mana: 100% (fully regenerated)
-- Status: ✅ Working perfectly
+---
 
 ## Development Commands
 
@@ -114,23 +124,37 @@ All blocking issues have been resolved:
 # Start development
 npm start
 
-# Build and run iOS
+# Run on iOS simulator
 npm run ios
 
-# Build and run Android
-npm run android
+# Run on iOS device
+npx expo run:ios --device
 
-# Clear cache and restart
+# Clear cache
 npm start -- --clear
 
-# Build for production
+# Build for TestFlight
 eas build --platform ios --profile production
-eas build --platform android --profile production
 ```
 
-## Reference Implementations
+---
 
-- **Kondor Extension** (`../kondor`): Primary reference for blockchain operations
-- **Kondor Mobile** (`../kondor-mobile`): Secondary reference for mobile patterns
+## Testing Checklist
 
-Always check the Kondor extension for up-to-date Koinos integration patterns.
+### Before Release
+- [ ] Test wallet creation on fresh install
+- [ ] Test wallet import with seed phrase
+- [ ] Test KOIN transfer on mainnet
+- [ ] Test all 31 tokens load correctly
+- [ ] Test token detail screen navigation
+- [ ] Test multi-token transfers (VHP, etc.)
+- [ ] Test receive screen QR code
+- [ ] Test account creation (HD derivation)
+- [ ] Test account import (private key)
+- [ ] Test account switching
+- [ ] Test account rename/remove
+- [ ] Test transaction history accuracy
+- [ ] Test contact add/edit/delete
+- [ ] Test settings seed phrase export
+- [ ] Test on iOS device
+- [ ] Test on Android device

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,8 +6,12 @@ import {
   Alert,
   ActivityIndicator,
   TouchableOpacity,
+  Image,
+  Modal,
+  FlatList,
+  ScrollView,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { Button } from '../components/Button';
@@ -16,15 +20,27 @@ import { ContactPicker } from '../components/ContactPicker';
 import { useKoinosStore } from '../stores/koinosStore';
 import { useWalletStore } from '../stores/walletStore';
 import { useContactStore, Contact } from '../stores/contactStore';
-import { isValidAddress, calculateManaRegenTime, truncateAddress } from '../lib/utils';
+import { useTokenStore, Token } from '../stores/tokenStore';
+import { isValidAddress, calculateManaRegenTime, truncateAddress, formatKoinBalance } from '../lib/utils';
 import colors from '../theme/colors';
+
+type SendRouteParams = {
+  Send: { token?: Token } | undefined;
+};
 
 export const SendScreen = () => {
   const navigation = useNavigation<any>();
-  const { transfer, getMana, getBalance } = useKoinosStore();
+  const route = useRoute<RouteProp<SendRouteParams, 'Send'>>();
+  const { transfer, transferToken, getMana, getBalance } = useKoinosStore();
   const { balance, address, updateBalance } = useWalletStore();
   const { getContactByAddress } = useContactStore();
+  const { tokens, getTokenBySymbol, refreshSingleBalance } = useTokenStore();
 
+  // Get initial token from route params or default to KOIN
+  const initialToken = route.params?.token || getTokenBySymbol('KOIN') || tokens[0];
+
+  const [selectedToken, setSelectedToken] = useState<Token | null>(initialToken || null);
+  const [showTokenPicker, setShowTokenPicker] = useState(false);
   const [recipient, setRecipient] = useState('');
   const [amount, setAmount] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -35,8 +51,24 @@ export const SendScreen = () => {
     amount?: string;
   }>({});
 
+  // Update selected token when route params change
+  useEffect(() => {
+    if (route.params?.token) {
+      setSelectedToken(route.params.token);
+    }
+  }, [route.params?.token]);
+
+  // Get token balance
+  const tokenBalance = selectedToken?.balance || '0';
+
   const validateForm = (): boolean => {
     const newErrors: typeof errors = {};
+
+    // Validate token selection
+    if (!selectedToken) {
+      Alert.alert('Error', 'Please select a token to send');
+      return false;
+    }
 
     // Validate recipient address
     if (!recipient) {
@@ -52,7 +84,7 @@ export const SendScreen = () => {
       newErrors.amount = 'Amount is required';
     } else if (isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
       newErrors.amount = 'Invalid amount';
-    } else if (parseFloat(amount) > parseFloat(balance)) {
+    } else if (parseFloat(amount) > parseFloat(tokenBalance)) {
       newErrors.amount = 'Insufficient balance';
     }
 
@@ -105,7 +137,7 @@ export const SendScreen = () => {
   };
 
   const handleSend = async () => {
-    if (!validateForm()) {
+    if (!validateForm() || !selectedToken) {
       return;
     }
 
@@ -116,11 +148,11 @@ export const SendScreen = () => {
 
     const displayRecipient = selectedContact
       ? `${selectedContact.name} (${truncateAddress(recipient)})`
-      : recipient;
+      : truncateAddress(recipient);
 
     Alert.alert(
       'Confirm Transaction',
-      `Send ${amount} KOIN to\n${displayRecipient}?`,
+      `Send ${amount} ${selectedToken.symbol} to\n${displayRecipient}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -128,10 +160,18 @@ export const SendScreen = () => {
           onPress: async () => {
             setIsSending(true);
             try {
-              const txId = await transfer(recipient, amount);
+              // Use transferToken for all tokens (works with any contract)
+              const txId = await transferToken(
+                selectedToken.contractId,
+                recipient,
+                amount,
+                selectedToken.decimals
+              );
 
+              // Refresh balances
               const newBalance = await getBalance(address);
               updateBalance(newBalance);
+              await refreshSingleBalance(address, selectedToken.contractId);
 
               Alert.alert(
                 'Success!',
@@ -158,9 +198,19 @@ export const SendScreen = () => {
   };
 
   const handleMaxAmount = () => {
-    const maxAmount = Math.max(0, parseFloat(balance) - 0.01);
+    // For KOIN, leave a small amount for mana. For other tokens, use full balance.
+    const bal = parseFloat(tokenBalance);
+    const maxAmount = selectedToken?.symbol === 'KOIN'
+      ? Math.max(0, bal - 0.01)
+      : bal;
     setAmount(maxAmount.toString());
     setErrors({ ...errors, amount: undefined });
+  };
+
+  const handleTokenSelect = (token: Token) => {
+    setSelectedToken(token);
+    setShowTokenPicker(false);
+    setAmount(''); // Clear amount when changing token
   };
 
   const handleContactSelect = (contact: Contact) => {
@@ -182,11 +232,71 @@ export const SendScreen = () => {
     setRecipient('');
   };
 
+  // Render token picker modal
+  const renderTokenPicker = () => (
+    <Modal
+      visible={showTokenPicker}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={() => setShowTokenPicker(false)}
+    >
+      <View style={styles.tokenPickerContainer}>
+        <View style={styles.tokenPickerHeader}>
+          <Text style={styles.tokenPickerTitle}>Select Token</Text>
+          <TouchableOpacity onPress={() => setShowTokenPicker(false)}>
+            <Ionicons name="close" size={28} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+        <FlatList
+          data={tokens}
+          keyExtractor={(item) => item.contractId}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={[
+                styles.tokenPickerItem,
+                selectedToken?.contractId === item.contractId && styles.tokenPickerItemSelected,
+              ]}
+              onPress={() => handleTokenSelect(item)}
+            >
+              <View style={styles.tokenPickerIconContainer}>
+                {item.icon ? (
+                  <Image
+                    source={{ uri: item.icon }}
+                    style={styles.tokenPickerIcon}
+                    defaultSource={require('../../assets/icon.png')}
+                  />
+                ) : (
+                  <View style={styles.tokenPickerIconFallback}>
+                    <Text style={styles.tokenPickerIconText}>{item.symbol.charAt(0)}</Text>
+                  </View>
+                )}
+              </View>
+              <View style={styles.tokenPickerInfo}>
+                <Text style={styles.tokenPickerName}>{item.name}</Text>
+                <Text style={styles.tokenPickerSymbol}>{item.symbol}</Text>
+              </View>
+              <View style={styles.tokenPickerBalance}>
+                <Text style={styles.tokenPickerBalanceText}>
+                  {parseFloat(item.balance) > 0 ? formatKoinBalance(item.balance) : '0'}
+                </Text>
+              </View>
+              {selectedToken?.contractId === item.contractId && (
+                <Ionicons name="checkmark-circle" size={24} color={colors.purple} />
+              )}
+            </TouchableOpacity>
+          )}
+          ItemSeparatorComponent={() => <View style={styles.tokenPickerSeparator} />}
+          contentContainerStyle={styles.tokenPickerList}
+        />
+      </View>
+    </Modal>
+  );
+
   return (
     <Screen>
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.title}>Send KOIN</Text>
+          <Text style={styles.title}>Send {selectedToken?.symbol || 'Token'}</Text>
           <TouchableOpacity
             style={styles.closeButton}
             onPress={() => navigation.goBack()}
@@ -195,7 +305,42 @@ export const SendScreen = () => {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.form}>
+        <ScrollView style={styles.form} showsVerticalScrollIndicator={false}>
+          {/* Token Selector */}
+          <View style={styles.tokenSection}>
+            <Text style={styles.inputLabel}>Token</Text>
+            <TouchableOpacity
+              style={styles.tokenSelector}
+              onPress={() => setShowTokenPicker(true)}
+            >
+              {selectedToken ? (
+                <>
+                  <View style={styles.tokenSelectorIcon}>
+                    {selectedToken.icon ? (
+                      <Image
+                        source={{ uri: selectedToken.icon }}
+                        style={styles.tokenSelectorImage}
+                        defaultSource={require('../../assets/icon.png')}
+                      />
+                    ) : (
+                      <View style={styles.tokenSelectorFallback}>
+                        <Text style={styles.tokenSelectorFallbackText}>
+                          {selectedToken.symbol.charAt(0)}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.tokenSelectorInfo}>
+                    <Text style={styles.tokenSelectorName}>{selectedToken.name}</Text>
+                    <Text style={styles.tokenSelectorSymbol}>{selectedToken.symbol}</Text>
+                  </View>
+                </>
+              ) : (
+                <Text style={styles.tokenSelectorPlaceholder}>Select a token</Text>
+              )}
+              <Ionicons name="chevron-down" size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
           {/* Recipient Section */}
           <View style={styles.recipientSection}>
             <View style={styles.labelRow}>
@@ -239,7 +384,7 @@ export const SendScreen = () => {
           </View>
 
           {/* Amount Section */}
-          <View>
+          <View style={styles.amountSection}>
             <Input
               label="Amount"
               placeholder="0.00"
@@ -255,14 +400,14 @@ export const SendScreen = () => {
             />
             <View style={styles.balanceInfo}>
               <Text style={styles.balanceText}>
-                Available: {balance} KOIN
+                Available: {formatKoinBalance(tokenBalance)} {selectedToken?.symbol || ''}
               </Text>
               <TouchableOpacity style={styles.maxButton} onPress={handleMaxAmount}>
                 <Text style={styles.maxButtonText}>Max</Text>
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </ScrollView>
 
         <View style={styles.footer}>
           {isSending ? (
@@ -290,6 +435,8 @@ export const SendScreen = () => {
         onClose={() => setShowContactPicker(false)}
         onSelect={handleContactSelect}
       />
+
+      {renderTokenPicker()}
     </Screen>
   );
 };
@@ -319,7 +466,62 @@ const styles = StyleSheet.create({
   form: {
     flex: 1,
   },
+  tokenSection: {
+    marginBottom: 20,
+  },
+  tokenSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  tokenSelectorIcon: {
+    marginRight: 12,
+  },
+  tokenSelectorImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.elevated,
+  },
+  tokenSelectorFallback: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.purple,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  tokenSelectorFallbackText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  tokenSelectorInfo: {
+    flex: 1,
+  },
+  tokenSelectorName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  tokenSelectorSymbol: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  tokenSelectorPlaceholder: {
+    flex: 1,
+    fontSize: 16,
+    color: colors.textTertiary,
+  },
   recipientSection: {
+    marginBottom: 20,
+  },
+  amountSection: {
     marginBottom: 20,
   },
   labelRow: {
@@ -432,5 +634,82 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 14,
     color: colors.textSecondary,
+  },
+  // Token Picker Modal styles
+  tokenPickerContainer: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  tokenPickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  tokenPickerTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  tokenPickerList: {
+    padding: 16,
+  },
+  tokenPickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    padding: 14,
+    borderRadius: 12,
+  },
+  tokenPickerItemSelected: {
+    borderWidth: 1,
+    borderColor: colors.purple,
+  },
+  tokenPickerIconContainer: {
+    marginRight: 12,
+  },
+  tokenPickerIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.elevated,
+  },
+  tokenPickerIconFallback: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.purple,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  tokenPickerIconText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: colors.textPrimary,
+  },
+  tokenPickerInfo: {
+    flex: 1,
+  },
+  tokenPickerName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  tokenPickerSymbol: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  tokenPickerBalance: {
+    marginRight: 12,
+  },
+  tokenPickerBalanceText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  tokenPickerSeparator: {
+    height: 8,
   },
 });

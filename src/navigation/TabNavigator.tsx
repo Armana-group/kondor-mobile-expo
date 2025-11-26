@@ -7,29 +7,36 @@ import { Ionicons } from '@expo/vector-icons';
 // Screens
 import { HomeScreen } from '../screens/HomeScreen';
 import { SendScreen } from '../screens/SendScreen';
+import { ReceiveScreen } from '../screens/ReceiveScreen';
 import { ContactsScreen } from '../screens/ContactsScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { CollectiblesScreen } from '../screens/CollectiblesScreen';
 import { SwapScreen } from '../screens/SwapScreen';
 import { ActivityScreen } from '../screens/ActivityScreen';
 import { BrowserScreen } from '../screens/BrowserScreen';
+import { TokenDetailScreen } from '../screens/TokenDetailScreen';
 
 // Theme
 import colors from '../theme/colors';
 
+// Stores
+import { Token } from '../stores/tokenStore';
+
 // Types
 export type HomeStackParamList = {
   HomeMain: undefined;
-  Send: undefined;
+  Send: { token?: Token } | undefined;
+  Receive: { token?: Token } | undefined;
+  Activity: undefined;
   Contacts: undefined;
   Settings: undefined;
+  TokenDetail: { token: Token };
 };
 
 export type TabParamList = {
   HomeTab: undefined;
   Collectibles: undefined;
   Swap: undefined;
-  Activity: undefined;
   Browser: undefined;
 };
 
@@ -39,7 +46,7 @@ const HomeStack = createNativeStackNavigator<HomeStackParamList>();
 // Icon name type for Ionicons
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
-// Home stack navigator (Home + Send modal + Contacts + Settings)
+// Home stack navigator (Home + Send modal + Receive modal + Activity + Contacts + Settings + TokenDetail)
 const HomeStackNavigator = () => (
   <HomeStack.Navigator screenOptions={{ headerShown: false }}>
     <HomeStack.Screen name="HomeMain" component={HomeScreen} />
@@ -51,6 +58,17 @@ const HomeStackNavigator = () => (
       }}
     />
     <HomeStack.Screen
+      name="Receive"
+      component={ReceiveScreen}
+      options={{
+        presentation: 'modal',
+      }}
+    />
+    <HomeStack.Screen
+      name="Activity"
+      component={ActivityScreen}
+    />
+    <HomeStack.Screen
       name="Contacts"
       component={ContactsScreen}
       options={{
@@ -60,6 +78,10 @@ const HomeStackNavigator = () => (
     <HomeStack.Screen
       name="Settings"
       component={SettingsScreen}
+    />
+    <HomeStack.Screen
+      name="TokenDetail"
+      component={TokenDetailScreen}
     />
   </HomeStack.Navigator>
 );
@@ -102,16 +124,6 @@ export const TabNavigator = () => {
           tabBarLabel: 'Swap',
           tabBarIcon: ({ focused, color }) => (
             <Ionicons name={focused ? 'swap-horizontal' : 'swap-horizontal-outline'} size={24} color={color} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Activity"
-        component={ActivityScreen}
-        options={{
-          tabBarLabel: 'Activity',
-          tabBarIcon: ({ focused, color }) => (
-            <Ionicons name={focused ? 'time' : 'time-outline'} size={24} color={color} />
           ),
         }}
       />

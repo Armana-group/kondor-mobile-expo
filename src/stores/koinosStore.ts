@@ -16,6 +16,7 @@ interface KoinosState {
   getBalance: (address: string) => Promise<string>;
   getMana: (address: string) => Promise<{ current: string; reserved: string; available: string; max: string; percentage: number; availablePercentage: number }>;
   transfer: (to: string, amount: string) => Promise<string>;
+  transferToken: (contractId: string, to: string, amount: string, decimals: number) => Promise<string>;
   estimateMana: (to: string, amount: string) => Promise<string>;
   reset: () => void;
 }
@@ -37,8 +38,27 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
       const provider = new Provider(DEFAULT_NETWORK.rpcNodes);
 
       // Get private key from secure storage
+      // Try new per-account key first, then fall back to legacy key
       console.log('[KoinosStore] Getting private key from secure storage...');
-      const privateKey = await SecureStore.getItemAsync('kondor_wallet_private_key');
+
+      // Import the wallet store to get active account
+      const { useWalletStore } = await import('./walletStore');
+      const { activeAccountId } = useWalletStore.getState();
+
+      let privateKey: string | null = null;
+
+      // Try account-specific key first
+      if (activeAccountId) {
+        privateKey = await SecureStore.getItemAsync(`kondor_pk_${activeAccountId}`);
+        console.log('[KoinosStore] Tried account-specific key:', privateKey ? 'found' : 'not found');
+      }
+
+      // Fallback to legacy key
+      if (!privateKey) {
+        privateKey = await SecureStore.getItemAsync('kondor_wallet_private_key');
+        console.log('[KoinosStore] Tried legacy key:', privateKey ? 'found' : 'not found');
+      }
+
       if (!privateKey) {
         console.error('[KoinosStore] No private key found in secure storage');
         set({
@@ -269,6 +289,59 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
       console.error('[KoinosStore] Transfer error:', error);
       console.error('[KoinosStore] Error details:', error.message);
       console.error('[KoinosStore] Error stack:', error.stack);
+      set({
+        isLoading: false,
+        error: error.message || 'Failed to send transaction'
+      });
+      throw error;
+    }
+  },
+
+  transferToken: async (contractId: string, to: string, amount: string, decimals: number) => {
+    const { provider, signer, isInitialized } = get();
+
+    // Initialize if needed
+    if (!provider || !signer || !isInitialized) {
+      await get().initialize();
+    }
+
+    const currentProvider = get().provider;
+    const currentSigner = get().signer;
+
+    if (!currentProvider || !currentSigner) {
+      throw new Error('Not initialized');
+    }
+
+    try {
+      set({ isLoading: true, error: null });
+
+      console.log('[KoinosStore] Starting token transfer');
+      console.log('  - Contract:', contractId);
+      console.log('  - To:', to);
+      console.log('  - Amount:', amount);
+      console.log('  - Decimals:', decimals);
+
+      // Use ManualTokenContract with the specified token contract
+      const tokenContract = new ManualTokenContract(
+        contractId,
+        currentProvider
+      );
+
+      // Transfer using manual contract implementation with token decimals
+      const { transactionId } = await tokenContract.transfer(
+        currentSigner,
+        to,
+        amount,
+        { decimals }
+      );
+
+      console.log('[KoinosStore] Token transfer complete, transaction ID:', transactionId);
+
+      set({ isLoading: false });
+      return transactionId;
+    } catch (error: any) {
+      console.error('[KoinosStore] Token transfer error:', error);
+      console.error('[KoinosStore] Error details:', error.message);
       set({
         isLoading: false,
         error: error.message || 'Failed to send transaction'

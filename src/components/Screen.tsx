@@ -6,6 +6,7 @@ import {
   ViewStyle,
   KeyboardAvoidingView,
   Platform,
+  StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import colors from '../theme/colors';
@@ -44,6 +45,7 @@ export const Screen: React.FC<ScreenProps> = ({
   if (keyboardAvoiding) {
     return (
       <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="light-content" backgroundColor={colors.background} />
         <KeyboardAvoidingView
           style={styles.keyboardView}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -55,6 +57,7 @@ export const Screen: React.FC<ScreenProps> = ({
 
   return (
     <SafeAreaView style={[styles.safeArea, style]}>
+      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
       {content}
     </SafeAreaView>
   );

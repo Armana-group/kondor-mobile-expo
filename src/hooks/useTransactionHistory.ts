@@ -1,19 +1,22 @@
 /**
  * Transaction History Hook
  * Based on kondor3 patterns - fetches and parses transaction history from Koinos REST API
+ * Supports multi-token transactions
  */
 
 import { useState, useEffect, useCallback } from 'react';
 import { useWalletStore } from '../stores/walletStore';
+import { useTokenStore } from '../stores/tokenStore';
 import { utils } from 'koilib';
 
 export interface ParsedTransaction {
   id: string;
   type: 'send' | 'receive';
   amount: string;
-  token: string;
+  token: string; // Contract ID
   tokenSymbol: string;
   tokenDecimals: number;
+  tokenIcon?: string;
   from: string;
   to: string;
   timestamp: number;
@@ -48,6 +51,7 @@ const REFRESH_INTERVAL = 30000; // 30 seconds
  */
 export const useTransactionHistory = (): UseTransactionHistoryResult => {
   const { address } = useWalletStore();
+  const { tokens, getTokenByContractId } = useTokenStore();
   const [transactions, setTransactions] = useState<ParsedTransaction[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
@@ -56,6 +60,7 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
   /**
    * Parse raw transaction from REST API into our format
    * The REST API returns decoded operations, not protobuf
+   * Now supports multi-token by looking up token metadata
    */
   const parseTransaction = (rawTx: any, userAddress: string): ParsedTransaction | null => {
     try {
@@ -77,8 +82,13 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
       const from = args.from;
       const to = args.to;
       const amount = args.value;
-      const tokenSymbol = 'KOIN'; // TODO: Get from token metadata
-      const tokenDecimals = 8;
+      const contractId = callContract.contract_id;
+
+      // Look up token metadata from store
+      const tokenInfo = getTokenByContractId(contractId);
+      const tokenSymbol = tokenInfo?.symbol || 'UNKNOWN';
+      const tokenDecimals = tokenInfo?.decimals || 8;
+      const tokenIcon = tokenInfo?.icon;
 
       // Determine transaction type
       const type: 'send' | 'receive' = from.toLowerCase() === userAddress.toLowerCase() ? 'send' : 'receive';
@@ -99,9 +109,10 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
         id: rawTx.trx?.transaction?.id || `tx-${rawTx.seq_num}`,
         type,
         amount: utils.formatUnits(amount, tokenDecimals),
-        token: callContract.contract_id,
+        token: contractId,
         tokenSymbol,
         tokenDecimals,
+        tokenIcon,
         from,
         to,
         timestamp,

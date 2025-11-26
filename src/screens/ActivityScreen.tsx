@@ -9,9 +9,12 @@ import {
   ActivityIndicator,
   RefreshControl,
   Platform,
+  Image,
+  Linking,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
-import { useTransactionHistory } from '../hooks/useTransactionHistory';
+import { useTransactionHistory, ParsedTransaction } from '../hooks/useTransactionHistory';
 import { truncateAddress } from '../lib/utils';
 import colors from '../theme/colors';
 
@@ -36,38 +39,58 @@ const formatTransactionTime = (timestamp: number): string => {
 export const ActivityScreen = () => {
   const { transactions, loading, error, refetch } = useTransactionHistory();
 
-  const handleTransactionPress = (tx: any) => {
+  const handleTransactionPress = (tx: ParsedTransaction) => {
     Alert.alert(
       'Transaction Details',
       `Type: ${tx.type === 'send' ? 'Sent' : 'Received'}\n` +
       `Amount: ${tx.amount} ${tx.tokenSymbol}\n` +
       `${tx.type === 'send' ? 'To' : 'From'}: ${tx.type === 'send' ? tx.to : tx.from}\n` +
-      `Fee: ${tx.fee} mana\n` +
       `Block: ${tx.blockHeight || 'N/A'}\n` +
       `Time: ${new Date(tx.timestamp).toLocaleString()}`,
-      [{ text: 'OK' }]
+      [
+        {
+          text: 'View on Explorer',
+          onPress: () => {
+            const url = `https://koiner.app/transactions/${tx.id}`;
+            Linking.openURL(url);
+          },
+        },
+        { text: 'Close', style: 'cancel' },
+      ]
     );
   };
 
-  const renderTransaction = ({ item: tx }: { item: any }) => (
+  const renderTransaction = ({ item: tx }: { item: ParsedTransaction }) => (
     <TouchableOpacity
       style={styles.transactionItem}
       onPress={() => handleTransactionPress(tx)}
     >
-      <View style={[
-        styles.transactionIcon,
-        { backgroundColor: tx.type === 'send' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(34, 197, 94, 0.1)' }
-      ]}>
-        <Text style={[
-          styles.transactionIconText,
-          { color: tx.type === 'send' ? colors.error : colors.success }
+      <View style={styles.transactionIconContainer}>
+        {tx.tokenIcon ? (
+          <Image
+            source={{ uri: tx.tokenIcon }}
+            style={styles.tokenIconImage}
+            defaultSource={require('../../assets/icon.png')}
+          />
+        ) : (
+          <View style={styles.tokenIconFallback}>
+            <Text style={styles.tokenIconText}>{tx.tokenSymbol.charAt(0)}</Text>
+          </View>
+        )}
+        <View style={[
+          styles.transactionTypeIndicator,
+          { backgroundColor: tx.type === 'send' ? colors.error : colors.success }
         ]}>
-          {tx.type === 'send' ? '↑' : '↓'}
-        </Text>
+          <Ionicons
+            name={tx.type === 'send' ? 'arrow-up' : 'arrow-down'}
+            size={10}
+            color={colors.textPrimary}
+          />
+        </View>
       </View>
       <View style={styles.transactionDetails}>
         <Text style={styles.transactionType}>
-          {tx.type === 'send' ? 'Sent' : 'Received'}
+          {tx.type === 'send' ? 'Sent' : 'Received'} {tx.tokenSymbol}
         </Text>
         <Text style={styles.transactionAddress}>
           {tx.type === 'send' ? truncateAddress(tx.to) : truncateAddress(tx.from)}
@@ -78,7 +101,7 @@ export const ActivityScreen = () => {
           styles.transactionAmountText,
           { color: tx.type === 'send' ? colors.error : colors.success }
         ]}>
-          {tx.type === 'send' ? '-' : '+'}{tx.amount} {tx.tokenSymbol}
+          {tx.type === 'send' ? '-' : '+'}{tx.amount}
         </Text>
         <Text style={styles.transactionTime}>
           {formatTransactionTime(tx.timestamp)}
@@ -90,7 +113,7 @@ export const ActivityScreen = () => {
   const renderEmpty = () => (
     <View style={styles.emptyState}>
       <View style={styles.emptyIconContainer}>
-        <Text style={styles.emptyIcon}>📋</Text>
+        <Ionicons name="document-text-outline" size={36} color={colors.textTertiary} />
       </View>
       <Text style={styles.emptyTitle}>No Transactions</Text>
       <Text style={styles.emptyDescription}>
@@ -178,17 +201,40 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
   },
-  transactionIcon: {
+  transactionIconContainer: {
+    position: 'relative',
+    marginRight: 12,
+  },
+  tokenIconImage: {
     width: 44,
     height: 44,
     borderRadius: 22,
+    backgroundColor: colors.elevated,
+  },
+  tokenIconFallback: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.purple,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
   },
-  transactionIconText: {
-    fontSize: 20,
+  tokenIconText: {
+    fontSize: 18,
     fontWeight: 'bold',
+    color: colors.textPrimary,
+  },
+  transactionTypeIndicator: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.card,
   },
   transactionDetails: {
     flex: 1,
@@ -260,9 +306,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
-  },
-  emptyIcon: {
-    fontSize: 36,
   },
   emptyTitle: {
     fontSize: 18,
