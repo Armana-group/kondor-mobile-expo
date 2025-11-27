@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.kondorwallet.mobile",
+      "bundleIdentifier": "io.armana.kondor",
       "buildNumber": "1",
       "infoPlist": {
         "NSFaceIDUsageDescription": "Kondor uses Face ID to secure your wallet and authorize transactions.",
@@ -27,7 +27,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#181818"
       },
-      "package": "com.kondorwallet.mobile",
+      "package": "io.armana.kondor",
       "versionCode": 1,
       "permissions": ["USE_BIOMETRIC", "USE_FINGERPRINT", "CAMERA"]
     },
