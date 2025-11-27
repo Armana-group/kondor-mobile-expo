@@ -13,6 +13,7 @@ import { Screen } from '../components/Screen';
 import { Button } from '../components/Button';
 import { useWalletStore } from '../stores/walletStore';
 import { generateMnemonic } from '../lib/wallet';
+import { colors } from '../theme/colors';
 
 export const CreateWalletScreen = () => {
   const navigation = useNavigation<any>();
@@ -131,19 +132,19 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#333',
+    color: colors.textPrimary,
     marginBottom: 8,
   },
   description: {
     fontSize: 16,
-    color: '#666',
+    color: colors.textSecondary,
     marginBottom: 24,
   },
   content: {
     flex: 1,
   },
   infoBox: {
-    backgroundColor: '#E8F4FD',
+    backgroundColor: colors.purpleLight,
     padding: 16,
     borderRadius: 8,
     marginBottom: 24,
@@ -151,31 +152,31 @@ const styles = StyleSheet.create({
   infoTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#0066CC',
+    color: colors.purple,
     marginBottom: 8,
   },
   infoText: {
     fontSize: 14,
-    color: '#555',
+    color: colors.textSecondary,
     lineHeight: 20,
   },
   warningBox: {
-    backgroundColor: '#FFF3CD',
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
     padding: 16,
     borderRadius: 8,
     marginBottom: 24,
     borderWidth: 1,
-    borderColor: '#FFE69C',
+    borderColor: colors.warning,
   },
   warningText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#856404',
+    color: colors.warning,
     marginBottom: 4,
   },
   warningSubtext: {
     fontSize: 12,
-    color: '#856404',
+    color: colors.warning,
   },
   mnemonicContainer: {
     flex: 1,
@@ -185,11 +186,11 @@ const styles = StyleSheet.create({
     maxHeight: 300,
   },
   mnemonicBox: {
-    backgroundColor: '#FFF',
+    backgroundColor: colors.card,
     padding: 16,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#DDD',
+    borderColor: colors.border,
     flexDirection: 'row',
     flexWrap: 'wrap',
   },
@@ -200,14 +201,14 @@ const styles = StyleSheet.create({
   },
   wordNumber: {
     fontSize: 12,
-    color: '#999',
+    color: colors.textTertiary,
     marginRight: 6,
     width: 20,
   },
   word: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
+    color: colors.textPrimary,
   },
   copyButton: {
     alignSelf: 'center',
@@ -216,7 +217,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   copyButtonText: {
-    color: '#007AFF',
+    color: colors.purple,
     fontSize: 14,
     fontWeight: '500',
   },

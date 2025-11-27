@@ -1,8 +1,8 @@
 {
   "fill" : {
     "linear-gradient" : [
-      "display-p3:0.70761,0.19836,1.00000,1.00000",
-      "display-p3:0.29794,0.00000,0.91917,1.00000"
+      "display-p3:0.47989,0.22484,0.93687,1.00000",
+      "display-p3:0.47989,0.22484,0.93687,1.00000"
     ],
     "orientation" : {
       "start" : {
@@ -19,10 +19,10 @@
     {
       "layers" : [
         {
-          "image-name" : "kondor-2-logo.png",
-          "name" : "kondor-2-logo",
+          "image-name" : "kondor-mark-white.svg",
+          "name" : "kondor-mark-white",
           "position" : {
-            "scale" : 0.36,
+            "scale" : 0.32,
             "translation-in-points" : [
               0,
               0

@@ -6,6 +6,7 @@ import { Button } from '../components/Button';
 import { Input } from '../components/Input';
 import { useWalletStore } from '../stores/walletStore';
 import { validateMnemonic } from '../lib/wallet';
+import { colors } from '../theme/colors';
 
 export const ImportWalletScreen = () => {
   const navigation = useNavigation<any>();
@@ -104,12 +105,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#333',
+    color: colors.textPrimary,
     marginBottom: 8,
   },
   description: {
     fontSize: 16,
-    color: '#666',
+    color: colors.textSecondary,
     marginBottom: 24,
   },
   content: {
@@ -120,14 +121,14 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   infoBox: {
-    backgroundColor: '#F0F0F0',
+    backgroundColor: colors.elevated,
     padding: 12,
     borderRadius: 8,
     marginTop: 16,
   },
   infoText: {
     fontSize: 14,
-    color: '#666',
+    color: colors.textSecondary,
     textAlign: 'center',
   },
   buttons: {
