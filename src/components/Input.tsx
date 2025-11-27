@@ -7,6 +7,7 @@ import {
   TextInputProps,
   ViewStyle,
 } from 'react-native';
+import { colors } from '../theme/colors';
 
 interface InputProps extends TextInputProps {
   label?: string;
@@ -32,7 +33,7 @@ export const Input: React.FC<InputProps> = ({
             rightIcon ? styles.inputWithIcon : null,
             error ? styles.inputError : null,
           ]}
-          placeholderTextColor="#999"
+          placeholderTextColor={colors.textMuted}
           autoCapitalize="none"
           autoCorrect={false}
           {...props}
@@ -50,7 +51,7 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 14,
-    color: '#333',
+    color: colors.textSecondary,
     marginBottom: 6,
     fontWeight: '500',
   },
@@ -59,12 +60,13 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderColor: '#DDD',
+    borderColor: colors.border,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 12,
     fontSize: 16,
-    backgroundColor: '#FFF',
+    backgroundColor: colors.card,
+    color: colors.textPrimary,
   },
   inputWithIcon: {
     paddingRight: 48,
@@ -78,11 +80,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   inputError: {
-    borderColor: '#DC3545',
+    borderColor: colors.error,
   },
   error: {
     fontSize: 12,
-    color: '#DC3545',
+    color: colors.error,
     marginTop: 4,
   },
 });

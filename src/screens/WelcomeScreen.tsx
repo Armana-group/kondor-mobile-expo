@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Screen } from '../components/Screen';
 import { Button } from '../components/Button';
+import { colors } from '../theme/colors';
 
 export const WelcomeScreen = () => {
   const navigation = useNavigation<any>();
@@ -11,10 +12,12 @@ export const WelcomeScreen = () => {
     <Screen>
       <View style={styles.container}>
         <View style={styles.header}>
-          <View style={styles.logoContainer}>
-            <Text style={styles.logo}>K</Text>
-          </View>
-          <Text style={styles.title}>Kondor Mobile</Text>
+          <Image
+            source={require('../../assets/splash-icon.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+          <Text style={styles.title}>Kondor</Text>
           <Text style={styles.subtitle}>
             Your gateway to the Koinos blockchain
           </Text>
@@ -51,29 +54,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 60,
   },
-  logoContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#007AFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
   logo: {
-    fontSize: 48,
-    fontWeight: 'bold',
-    color: 'white',
+    width: 120,
+    height: 120,
+    marginBottom: 24,
   },
   title: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#333',
+    color: colors.textPrimary,
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#666',
+    color: colors.textSecondary,
     textAlign: 'center',
   },
   buttons: {
@@ -84,6 +78,6 @@ const styles = StyleSheet.create({
   },
   version: {
     fontSize: 12,
-    color: '#999',
+    color: colors.textTertiary,
   },
 });
