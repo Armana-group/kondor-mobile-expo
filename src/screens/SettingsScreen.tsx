@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { Screen } from '../components/Screen';
 import { useWalletStore } from '../stores/walletStore';
+import { HapticFeedback } from '../lib/haptics';
 import colors from '../theme/colors';
 
 export const SettingsScreen = () => {
@@ -42,6 +43,7 @@ export const SettingsScreen = () => {
                       text: 'Copy',
                       onPress: async () => {
                         await Clipboard.setStringAsync(mnemonic);
+                        await HapticFeedback.success();
                         Alert.alert('Copied', 'Recovery phrase copied to clipboard');
                       },
                     },
@@ -83,6 +85,7 @@ export const SettingsScreen = () => {
                       text: 'Copy',
                       onPress: async () => {
                         await Clipboard.setStringAsync(privateKey);
+                        await HapticFeedback.success();
                         Alert.alert('Copied', 'Private key copied to clipboard');
                       },
                     },

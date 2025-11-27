@@ -48,6 +48,8 @@
     <string>Kondor uses the camera to scan QR codes</string>
     <key>NSFaceIDUsageDescription</key>
     <string>Kondor uses Face ID to secure your wallet</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Allow $(PRODUCT_NAME) to access your microphone</string>
     <key>RCTNewArchEnabled</key>
     <true/>
     <key>UILaunchStoryboardName</key>

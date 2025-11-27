@@ -16,6 +16,7 @@
     "@react-navigation/native-stack": "^7.6.3",
     "ethers": "^5.8.0",
     "expo": "~54.0.25",
+    "expo-camera": "~17.0.9",
     "expo-clipboard": "~8.0.7",
     "expo-constants": "~18.0.10",
     "expo-crypto": "~15.0.7",

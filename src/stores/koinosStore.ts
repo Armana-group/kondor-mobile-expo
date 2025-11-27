@@ -3,6 +3,7 @@ import { Provider, Signer, Contract, utils } from 'koilib';
 import * as SecureStore from 'expo-secure-store';
 import { DEFAULT_NETWORK, DEFAULT_RC_LIMIT } from '../lib/constants';
 import { ManualTokenContract } from '../lib/manualTokenContract';
+import { koinosLogger as log } from '../lib/logger';
 
 interface KoinosState {
   provider: Provider | null;
@@ -29,17 +30,17 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
   error: null,
 
   initialize: async () => {
-    console.log('[KoinosStore] Initializing provider and signer...');
+    log.debug(' Initializing provider and signer...');
     try {
       set({ isLoading: true, error: null });
 
       // Create provider with multiple nodes for reliability
-      console.log('[KoinosStore] Creating provider with nodes:', DEFAULT_NETWORK.rpcNodes);
+      log.debug(' Creating provider with nodes:', DEFAULT_NETWORK.rpcNodes);
       const provider = new Provider(DEFAULT_NETWORK.rpcNodes);
 
       // Get private key from secure storage
       // Try new per-account key first, then fall back to legacy key
-      console.log('[KoinosStore] Getting private key from secure storage...');
+      log.debug(' Getting private key from secure storage...');
 
       // Import the wallet store to get active account
       const { useWalletStore } = await import('./walletStore');
@@ -50,17 +51,17 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
       // Try account-specific key first
       if (activeAccountId) {
         privateKey = await SecureStore.getItemAsync(`kondor_pk_${activeAccountId}`);
-        console.log('[KoinosStore] Tried account-specific key:', privateKey ? 'found' : 'not found');
+        log.debug(' Tried account-specific key:', privateKey ? 'found' : 'not found');
       }
 
       // Fallback to legacy key
       if (!privateKey) {
         privateKey = await SecureStore.getItemAsync('kondor_wallet_private_key');
-        console.log('[KoinosStore] Tried legacy key:', privateKey ? 'found' : 'not found');
+        log.debug(' Tried legacy key:', privateKey ? 'found' : 'not found');
       }
 
       if (!privateKey) {
-        console.error('[KoinosStore] No private key found in secure storage');
+        log.error(' No private key found in secure storage');
         set({
           isLoading: false,
           error: 'No wallet found. Please create or import a wallet first.'
@@ -68,26 +69,26 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
         return;
       }
 
-      console.log('[KoinosStore] Private key found, length:', privateKey.length);
+      log.debug(' Private key found, length:', privateKey.length);
 
       // Handle both hex and WIF formats
       // We store as hex (64 chars) but can also handle WIF (52 chars)
       let signer: Signer;
       if (privateKey.length === 64) {
         // Hex format (our standard storage format)
-        console.log('[KoinosStore] Creating signer from hex private key');
+        log.debug(' Creating signer from hex private key');
         signer = new Signer({
           privateKey: privateKey,
           provider
         });
       } else {
         // WIF format (for compatibility)
-        console.log('[KoinosStore] Creating signer from WIF private key');
+        log.debug(' Creating signer from WIF private key');
         signer = Signer.fromWif(privateKey);
         signer.provider = provider;
       }
 
-      console.log('[KoinosStore] Signer created, address:', signer.getAddress());
+      log.debug(' Signer created, address:', signer.getAddress());
 
       set({
         provider,
@@ -96,10 +97,10 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
         isLoading: false,
         error: null
       });
-      console.log('[KoinosStore] Initialization complete');
+      log.debug(' Initialization complete');
     } catch (error: any) {
-      console.error('[KoinosStore] Initialization error:', error);
-      console.error('[KoinosStore] Error stack:', error.stack);
+      log.error(' Initialization error:', error);
+      log.error(' Error stack:', error.stack);
       set({
         isLoading: false,
         error: error.message || 'Failed to initialize Koinos connection'
@@ -109,28 +110,28 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
   },
 
   getBalance: async (address: string) => {
-    console.log('[KoinosStore] getBalance called for address:', address);
+    log.debug(' getBalance called for address:', address);
     const { provider, isInitialized } = get();
 
     // Initialize if needed
     if (!provider || !isInitialized) {
-      console.log('[KoinosStore] Provider not initialized, initializing...');
+      log.debug(' Provider not initialized, initializing...');
       await get().initialize();
     }
 
     const currentProvider = get().provider;
     if (!currentProvider) {
-      console.error('[KoinosStore] Provider still not initialized after init attempt');
+      log.error(' Provider still not initialized after init attempt');
       throw new Error('Provider not initialized');
     }
 
     try {
       set({ isLoading: true, error: null });
 
-      console.log('[KoinosStore] Creating ManualTokenContract to avoid protobuf issues');
-      console.log('  - Contract ID:', DEFAULT_NETWORK.koinContract);
-      console.log('  - Network:', DEFAULT_NETWORK.name);
-      console.log('  - RPC Nodes:', DEFAULT_NETWORK.rpcNodes);
+      log.debug(' Creating ManualTokenContract to avoid protobuf issues');
+      log.debug('Contract ID:', DEFAULT_NETWORK.koinContract);
+      log.debug('Network:', DEFAULT_NETWORK.name);
+      log.debug('RPC Nodes:', DEFAULT_NETWORK.rpcNodes);
 
       // Use ManualTokenContract to avoid protobuf extension issues
       const tokenContract = new ManualTokenContract(
@@ -138,18 +139,18 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
         currentProvider
       );
 
-      console.log('[KoinosStore] ManualTokenContract created, calling getBalance...');
+      log.debug(' ManualTokenContract created, calling getBalance...');
 
       // Get balance using the simplified implementation
       const balance = await tokenContract.getBalance(address);
 
-      console.log('[KoinosStore] Got balance:', balance);
+      log.debug(' Got balance:', balance);
 
       set({ isLoading: false });
       return balance;
     } catch (error: any) {
-      console.error('[KoinosStore] Balance fetch error:', error);
-      console.error('[KoinosStore] Error stack:', error.stack);
+      log.error(' Balance fetch error:', error);
+      log.error(' Error stack:', error.stack);
       set({
         isLoading: false,
         error: error.message || 'Failed to get balance'
@@ -159,30 +160,30 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
   },
 
   getMana: async (address: string) => {
-    console.log('[KoinosStore] getMana called for address:', address);
+    log.debug(' getMana called for address:', address);
     const { provider, isInitialized } = get();
 
     // Initialize if needed
     if (!provider || !isInitialized) {
-      console.log('[KoinosStore] Provider not initialized, initializing...');
+      log.debug(' Provider not initialized, initializing...');
       await get().initialize();
     }
 
     const currentProvider = get().provider;
     if (!currentProvider) {
-      console.error('[KoinosStore] Provider still not initialized after init attempt');
+      log.error(' Provider still not initialized after init attempt');
       throw new Error('Provider not initialized');
     }
 
     try {
-      console.log('[KoinosStore] Fetching account resource credits...');
+      log.debug(' Fetching account resource credits...');
 
       // Get current mana using chain.get_account_rc RPC call
       const rcResult = await currentProvider.call('chain.get_account_rc', {
         account: address
       });
 
-      console.log('[KoinosStore] RC result:', rcResult);
+      log.debug(' RC result:', rcResult);
 
       const currentMana = rcResult.rc || '0';
 
@@ -193,9 +194,9 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
           account: address
         });
         reservedMana = reservedResult.rc || '0';
-        console.log('[KoinosStore] Reserved mana in mempool:', reservedMana);
+        log.debug(' Reserved mana in mempool:', reservedMana);
       } catch (error) {
-        console.log('[KoinosStore] Could not fetch reserved mana (mempool may be empty)');
+        log.debug(' Could not fetch reserved mana (mempool may be empty)');
       }
 
       // Get balance to calculate max mana
@@ -205,9 +206,9 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
       const balanceInSatoshis = utils.parseUnits(balance, 8);
       const maxMana = balanceInSatoshis;
 
-      console.log('[KoinosStore] Current mana:', currentMana);
-      console.log('[KoinosStore] Reserved mana:', reservedMana);
-      console.log('[KoinosStore] Max mana:', maxMana);
+      log.debug(' Current mana:', currentMana);
+      log.debug(' Reserved mana:', reservedMana);
+      log.debug(' Max mana:', maxMana);
 
       // Calculate available mana (current - reserved)
       const currentManaBigInt = BigInt(currentMana);
@@ -218,7 +219,7 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
         ? currentManaBigInt - reservedManaBigInt
         : 0n;
 
-      console.log('[KoinosStore] Available mana:', availableManaBigInt.toString());
+      log.debug(' Available mana:', availableManaBigInt.toString());
 
       // Calculate percentages
       let percentage = 0;
@@ -229,8 +230,8 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
         availablePercentage = Number((availableManaBigInt * 100n) / maxManaBigInt);
       }
 
-      console.log('[KoinosStore] Current mana percentage:', percentage);
-      console.log('[KoinosStore] Available mana percentage:', availablePercentage);
+      log.debug(' Current mana percentage:', percentage);
+      log.debug(' Available mana percentage:', availablePercentage);
 
       return {
         current: currentMana,
@@ -241,8 +242,8 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
         availablePercentage
       };
     } catch (error: any) {
-      console.error('[KoinosStore] Get mana error:', error);
-      console.error('[KoinosStore] Error stack:', error.stack);
+      log.error(' Get mana error:', error);
+      log.error(' Error stack:', error.stack);
       throw error;
     }
   },
@@ -265,7 +266,7 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
     try {
       set({ isLoading: true, error: null });
 
-      console.log('[KoinosStore] Starting transfer to:', to, 'amount:', amount);
+      log.debug(' Starting transfer to:', to, 'amount:', amount);
 
       // Use ManualTokenContract to avoid protobuf extension issues
       const tokenContract = new ManualTokenContract(
@@ -281,14 +282,14 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
         amount
       );
 
-      console.log('[KoinosStore] Transfer complete, transaction ID:', transactionId);
+      log.debug(' Transfer complete, transaction ID:', transactionId);
 
       set({ isLoading: false });
       return transactionId;
     } catch (error: any) {
-      console.error('[KoinosStore] Transfer error:', error);
-      console.error('[KoinosStore] Error details:', error.message);
-      console.error('[KoinosStore] Error stack:', error.stack);
+      log.error(' Transfer error:', error);
+      log.error(' Error details:', error.message);
+      log.error(' Error stack:', error.stack);
       set({
         isLoading: false,
         error: error.message || 'Failed to send transaction'
@@ -315,11 +316,11 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
     try {
       set({ isLoading: true, error: null });
 
-      console.log('[KoinosStore] Starting token transfer');
-      console.log('  - Contract:', contractId);
-      console.log('  - To:', to);
-      console.log('  - Amount:', amount);
-      console.log('  - Decimals:', decimals);
+      log.debug(' Starting token transfer');
+      log.debug('Contract:', contractId);
+      log.debug('To:', to);
+      log.debug('Amount:', amount);
+      log.debug('Decimals:', decimals);
 
       // Use ManualTokenContract with the specified token contract
       const tokenContract = new ManualTokenContract(
@@ -335,13 +336,13 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
         { decimals }
       );
 
-      console.log('[KoinosStore] Token transfer complete, transaction ID:', transactionId);
+      log.debug(' Token transfer complete, transaction ID:', transactionId);
 
       set({ isLoading: false });
       return transactionId;
     } catch (error: any) {
-      console.error('[KoinosStore] Token transfer error:', error);
-      console.error('[KoinosStore] Error details:', error.message);
+      log.error(' Token transfer error:', error);
+      log.error(' Error details:', error.message);
       set({
         isLoading: false,
         error: error.message || 'Failed to send transaction'
@@ -389,7 +390,7 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
       // The operation object may not have rc_limit directly accessible
       return DEFAULT_RC_LIMIT.toString();
     } catch (error: any) {
-      console.error('Failed to estimate mana:', error);
+      log.error('Failed to estimate mana:', error);
       return DEFAULT_RC_LIMIT.toString();
     }
   },

@@ -6,6 +6,7 @@ import * as Crypto from 'expo-crypto';
 import { createWalletFromMnemonic, createWalletFromPrivateKey, validateMnemonic } from '../lib/wallet';
 import { requireBiometricAuth } from '../lib/biometrics';
 import { HapticFeedback } from '../lib/haptics';
+import { walletLogger as log } from '../lib/logger';
 
 // Keys for secure storage
 const MNEMONIC_KEY = 'kondor_wallet_mnemonic';
@@ -101,7 +102,7 @@ export const useWalletStore = create<WalletState>()(
 
           await HapticFeedback.walletCreated();
         } catch (error) {
-          console.error('Failed to create wallet:', error);
+          log.error('Failed to create wallet:', error);
           await HapticFeedback.error();
           throw error;
         }
@@ -161,7 +162,7 @@ export const useWalletStore = create<WalletState>()(
 
           return false;
         } catch (error) {
-          console.error('Failed to load wallet:', error);
+          log.error('Failed to load wallet:', error);
           return false;
         }
       },
@@ -188,7 +189,7 @@ export const useWalletStore = create<WalletState>()(
             isWalletCreated: false,
           });
         } catch (error) {
-          console.error('Failed to clear wallet:', error);
+          log.error('Failed to clear wallet:', error);
           throw error;
         }
       },
@@ -199,7 +200,7 @@ export const useWalletStore = create<WalletState>()(
         try {
           const authenticated = await requireBiometricAuth('access your private key');
           if (!authenticated) {
-            console.log('Biometric authentication failed or was cancelled');
+            log.debug('Biometric authentication failed or was cancelled');
             return null;
           }
 
@@ -227,7 +228,7 @@ export const useWalletStore = create<WalletState>()(
 
           return privateKey;
         } catch (error) {
-          console.error('Failed to get private key:', error);
+          log.error('Failed to get private key:', error);
           return null;
         }
       },
@@ -236,12 +237,12 @@ export const useWalletStore = create<WalletState>()(
         try {
           const authenticated = await requireBiometricAuth('access your recovery phrase');
           if (!authenticated) {
-            console.log('Biometric authentication failed or was cancelled');
+            log.debug('Biometric authentication failed or was cancelled');
             return null;
           }
           return await SecureStore.getItemAsync(MNEMONIC_KEY);
         } catch (error) {
-          console.error('Failed to get mnemonic:', error);
+          log.error('Failed to get mnemonic:', error);
           return null;
         }
       },
