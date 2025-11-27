@@ -17,6 +17,7 @@ import { Screen } from '../components/Screen';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
 import { ContactPicker } from '../components/ContactPicker';
+import { QRScannerModal, ParsedQRData } from '../components/QRScannerModal';
 import { useKoinosStore } from '../stores/koinosStore';
 import { useWalletStore } from '../stores/walletStore';
 import { useContactStore, Contact } from '../stores/contactStore';
@@ -45,6 +46,7 @@ export const SendScreen = () => {
   const [amount, setAmount] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [showContactPicker, setShowContactPicker] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [errors, setErrors] = useState<{
     recipient?: string;
@@ -232,6 +234,30 @@ export const SendScreen = () => {
     setRecipient('');
   };
 
+  const handleQRScan = (data: ParsedQRData) => {
+    // Set recipient address
+    setRecipient(data.address);
+    setErrors({ ...errors, recipient: undefined });
+
+    // Check if this address matches a contact
+    const contact = getContactByAddress(data.address);
+    setSelectedContact(contact || null);
+
+    // If amount was included in QR, set it
+    if (data.amount) {
+      setAmount(data.amount);
+      setErrors((prev) => ({ ...prev, amount: undefined }));
+    }
+
+    // If token was specified, try to select it
+    if (data.token) {
+      const token = getTokenBySymbol(data.token.toUpperCase());
+      if (token) {
+        setSelectedToken(token);
+      }
+    }
+  };
+
   // Render token picker modal
   const renderTokenPicker = () => (
     <Modal
@@ -379,6 +405,14 @@ export const SendScreen = () => {
                 error={errors.recipient}
                 autoCapitalize="none"
                 autoCorrect={false}
+                rightIcon={
+                  <TouchableOpacity
+                    onPress={() => setShowScanner(true)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="qr-code-outline" size={22} color={colors.purple} />
+                  </TouchableOpacity>
+                }
               />
             )}
           </View>
@@ -434,6 +468,12 @@ export const SendScreen = () => {
         visible={showContactPicker}
         onClose={() => setShowContactPicker(false)}
         onSelect={handleContactSelect}
+      />
+
+      <QRScannerModal
+        visible={showScanner}
+        onClose={() => setShowScanner(false)}
+        onScan={handleQRScan}
       />
 
       {renderTokenPicker()}

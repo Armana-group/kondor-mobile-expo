@@ -1,6 +1,51 @@
 # Development Progress Summary
 
-## Latest Session: 2025-11-25 (UI Polish & Navigation Improvements)
+## Latest Session: 2025-11-26 (Phase 8 - QR Scanner)
+
+### Completed Features
+
+#### QR Code Scanner for SendScreen
+Added camera-based QR scanning to auto-fill recipient addresses.
+
+- **QRScannerModal** (`src/components/QRScannerModal.tsx`)
+  - Camera permission handling with user prompt
+  - Visual scan frame overlay with corner decorations
+  - Support for plain addresses and `koinos:` URI scheme
+  - Graceful fallback when camera not available (Expo Go)
+  - Helpful messaging for development build requirement
+
+- **Input Component** (`src/components/Input.tsx`)
+  - Added `rightIcon` prop for inline action buttons
+  - Used for QR scan button in recipient input
+
+- **SendScreen Updates** (`src/screens/SendScreen.tsx`)
+  - QR icon button in recipient address input
+  - Auto-fills address, amount, and token from scanned QR
+  - Contact auto-detection when scanned address matches
+
+### QR Format Support
+```
+# Plain address
+1ABC123...
+
+# URI scheme with optional parameters
+koinos:1ABC123?amount=100&token=KOIN&memo=Payment
+```
+
+### New Dependencies
+- `expo-camera` ~17.0.9
+
+### Note
+Requires development build for camera access. Run:
+```bash
+npx expo prebuild
+cd ios && pod install && cd ..
+# Then build in Xcode
+```
+
+---
+
+## Previous Session: 2025-11-25 (UI Polish & Navigation Improvements)
 
 ### UI Fixes
 
@@ -171,7 +216,8 @@ Full HD wallet support with multiple accounts.
 - **Multi-account support** (HD derivation + private key import)
 - Multi-token balance display (31 tokens from KoinDX)
 - **All token transfers** (not just KOIN)
-- **Receive screen with QR code**
+- **Receive screen with QR code generation**
+- **QR code scanning for recipient addresses**
 - Token detail view with filtered transactions
 - Transaction history with auto-refresh
 - Contact management
@@ -214,7 +260,9 @@ src/
 │   ├── ContactsScreen.tsx  # Contact management
 │   └── SettingsScreen.tsx  # Settings & export
 ├── components/
-│   ├── AccountSwitcher.tsx # Account management modal (NEW)
+│   ├── AccountSwitcher.tsx # Account management modal
+│   ├── QRScannerModal.tsx  # Camera QR scanner (NEW)
+│   ├── Input.tsx           # Input with rightIcon (UPDATED)
 │   └── ...
 ├── hooks/
 │   └── useTransactionHistory.ts # Multi-token tx history
