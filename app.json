@@ -1,29 +1,31 @@
 {
   "expo": {
-    "name": "Kondor Mobile",
+    "name": "Kondor",
     "slug": "kondor-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
+    "scheme": "kondor",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#007AFF"
+      "backgroundColor": "#181818"
     },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.kondorwallet.mobile",
       "buildNumber": "1",
       "infoPlist": {
-        "NSFaceIDUsageDescription": "Kondor uses Face ID to secure your wallet",
-        "NSCameraUsageDescription": "Kondor uses the camera to scan QR codes"
+        "NSFaceIDUsageDescription": "Kondor uses Face ID to secure your wallet and authorize transactions.",
+        "NSCameraUsageDescription": "Kondor uses the camera to scan QR codes for sending tokens.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#007AFF"
+        "backgroundColor": "#181818"
       },
       "package": "com.kondorwallet.mobile",
       "versionCode": 1,
@@ -31,7 +33,13 @@
     },
     "plugins": [
       "expo-secure-store",
-      "expo-local-authentication"
+      "expo-local-authentication",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Kondor needs camera access to scan QR codes for sending tokens."
+        }
+      ]
     ]
   }
 }

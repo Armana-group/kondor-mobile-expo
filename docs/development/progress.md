@@ -1,6 +1,60 @@
 # Development Progress Summary
 
-## Latest Session: 2025-11-26 (Phase 8 - QR Scanner)
+## Latest Session: 2025-11-26 (Polish & Bug Fixes)
+
+### Completed Tasks
+
+#### 1. Logger Utility ✅
+Created dev-only logging system to replace console.log throughout the app.
+
+**New File:** `src/lib/logger.ts`
+- Only logs in development mode (`__DEV__`)
+- Pre-configured loggers: `walletLogger`, `koinosLogger`, `tokenLogger`, `txLogger`
+- Methods: `debug()`, `info()`, `warn()`, `error()`
+- Errors always logged (even in production)
+
+**Console cleanup results:**
+- Reduced from 184 → 85 console statements (54% reduction)
+- Main stores updated: koinosStore, tokenStore, walletStore
+- Core modules updated: manualTokenContract
+
+#### 2. Haptic Feedback ✅
+Added tactile feedback to key user interactions.
+
+**Updated screens:**
+- `HomeScreen.tsx` - Copy address
+- `ReceiveScreen.tsx` - Copy address
+- `SettingsScreen.tsx` - Copy seed phrase, copy private key
+- `QRScannerModal.tsx` - Scan success/failure
+
+#### 3. Empty States UI ✅
+Improved HomeScreen empty state for when no tokens exist.
+
+**Changes:**
+- Added icon (wallet-outline)
+- Better title: "No Tokens Yet"
+- Helpful description text
+- Consistent styling with other empty states
+
+#### 4. Already Implemented ✅
+- Pull-to-refresh: Already on HomeScreen, ActivityScreen, TokenDetailScreen
+- Contact empty state: Already in ContactsScreen
+- Activity empty state: Already in ActivityScreen
+
+### Files Modified
+- `src/lib/logger.ts` (NEW)
+- `src/stores/koinosStore.ts`
+- `src/stores/tokenStore.ts`
+- `src/stores/walletStore.ts`
+- `src/lib/manualTokenContract.ts`
+- `src/screens/HomeScreen.tsx`
+- `src/screens/ReceiveScreen.tsx`
+- `src/screens/SettingsScreen.tsx`
+- `src/components/QRScannerModal.tsx`
+
+---
+
+## Previous Session: 2025-11-26 (Phase 8 - QR Scanner)
 
 ### Completed Features
 
