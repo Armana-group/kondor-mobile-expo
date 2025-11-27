@@ -5,6 +5,9 @@
 
 import { Provider, Signer, utils, Transaction } from 'koilib';
 import * as protobuf from 'protobufjs/minimal';
+import { createLogger } from './logger';
+
+const log = createLogger('TokenContract');
 
 // Configure protobufjs for the environment
 if (typeof window !== 'undefined' && window.Buffer) {
@@ -37,7 +40,7 @@ export class ManualTokenContract {
 
       return writer.finish();
     } catch (error) {
-      console.error('[ManualTokenContract] Error encoding args:', error);
+      log.error(' Error encoding args:', error);
       throw error;
     }
   }
@@ -66,7 +69,7 @@ export class ManualTokenContract {
 
       return value;
     } catch (error) {
-      console.error('[ManualTokenContract] Error decoding result:', error);
+      log.error(' Error decoding result:', error);
       return '0';
     }
   }
@@ -97,18 +100,18 @@ export class ManualTokenContract {
 
       return writer.finish();
     } catch (error) {
-      console.error('[ManualTokenContract] Error encoding transfer args:', error);
+      log.error(' Error encoding transfer args:', error);
       throw error;
     }
   }
 
   async getBalance(address: string, decimals: number = 8): Promise<string> {
     try {
-      console.log('[ManualTokenContract] Getting balance for:', address);
+      log.debug(' Getting balance for:', address);
 
       // Encode the arguments
       const encodedArgs = this.encodeBalanceOfArgs(address);
-      console.log('[ManualTokenContract] Encoded args length:', encodedArgs.length);
+      log.debug(' Encoded args length:', encodedArgs.length);
 
       // Make the RPC call
       const result = await this.provider.call('chain.read_contract', {
@@ -117,10 +120,10 @@ export class ManualTokenContract {
         args: utils.encodeBase64url(encodedArgs)
       });
 
-      console.log('[ManualTokenContract] Got RPC result');
+      log.debug(' Got RPC result');
 
       if (!result || !result.result) {
-        console.log('[ManualTokenContract] No result returned, balance is 0');
+        log.debug(' No result returned, balance is 0');
         return '0';
       }
 
@@ -130,11 +133,11 @@ export class ManualTokenContract {
 
       // Format the balance with the token's decimals
       const balance = utils.formatUnits(value, decimals);
-      console.log('[ManualTokenContract] Formatted balance:', balance);
+      log.debug(' Formatted balance:', balance);
 
       return balance;
     } catch (error) {
-      console.error('[ManualTokenContract] Error getting balance:', error);
+      log.error(' Error getting balance:', error);
       throw error;
     }
   }
@@ -151,23 +154,23 @@ export class ManualTokenContract {
   ): Promise<{ transactionId: string }> {
     try {
       const decimals = options.decimals ?? 8;
-      console.log('[ManualTokenContract] Starting transfer to:', to, 'amount:', amount, 'decimals:', decimals);
+      log.debug(' Starting transfer to:', to, 'amount:', amount, 'decimals:', decimals);
 
       const from = signer.getAddress();
 
       // Convert amount to smallest unit using the token's decimals
       const value = utils.parseUnits(amount, decimals);
-      console.log('[ManualTokenContract] Parsed amount:', value);
+      log.debug(' Parsed amount:', value);
 
       // Encode transfer arguments
       const encodedArgs = this.encodeTransferArgs(from, to, value);
-      console.log('[ManualTokenContract] Encoded transfer args');
+      log.debug(' Encoded transfer args');
 
       let rcLimit = options.rcLimit;
 
       // If no RC limit provided, estimate it via dry-run (Kondor pattern)
       if (!rcLimit) {
-        console.log('[ManualTokenContract] No RC limit provided, estimating via dry-run...');
+        log.debug(' No RC limit provided, estimating via dry-run...');
 
         // Get account's available RC for dry-run estimation
         let estimationLimit = 100000000; // Default 100M for estimation
@@ -178,9 +181,9 @@ export class ManualTokenContract {
           const availableRc = Number(rcResult.rc || 0);
           // Use 90% of available RC for estimation to be safe
           estimationLimit = Math.floor(availableRc * 0.9);
-          console.log('[ManualTokenContract] Using', estimationLimit, 'RC for dry-run (90% of', availableRc, ')');
+          log.debug(' Using', estimationLimit, 'RC for dry-run (90% of', availableRc, ')');
         } catch (error) {
-          console.log('[ManualTokenContract] Could not fetch RC, using default:', estimationLimit);
+          log.debug(' Could not fetch RC, using default:', estimationLimit);
         }
 
         // Create a test transaction for estimation
@@ -202,15 +205,15 @@ export class ManualTokenContract {
         });
 
         // Dry-run: send with broadcast: false to get actual RC usage
-        console.log('[ManualTokenContract] Performing dry-run...');
+        log.debug(' Performing dry-run...');
         const dryRunReceipt = await estimateTx.send({ broadcast: false });
-        console.log('[ManualTokenContract] Dry-run receipt:', dryRunReceipt);
+        log.debug(' Dry-run receipt:', dryRunReceipt);
 
         // Add 10% buffer to estimated RC (Kondor pattern)
         const rcUsed = Number(dryRunReceipt.rc_used || 0);
         rcLimit = Math.floor(1.1 * rcUsed);
-        console.log('[ManualTokenContract] Estimated RC used:', rcUsed);
-        console.log('[ManualTokenContract] RC limit with 10% buffer:', rcLimit);
+        log.debug(' Estimated RC used:', rcUsed);
+        log.debug(' RC limit with 10% buffer:', rcLimit);
       }
 
       // Create the actual transaction with estimated RC limit
@@ -222,7 +225,7 @@ export class ManualTokenContract {
         }
       });
 
-      console.log('[ManualTokenContract] Preparing transaction with RC limit:', tx.header?.rc_limit);
+      log.debug(' Preparing transaction with RC limit:', tx.header?.rc_limit);
 
       // Add the transfer operation
       await tx.pushOperation({
@@ -233,21 +236,21 @@ export class ManualTokenContract {
         }
       });
 
-      console.log('[ManualTokenContract] Transaction prepared, ID:', tx.id);
+      log.debug(' Transaction prepared, ID:', tx.id);
 
       // Send transaction (broadcast: true)
-      console.log('[ManualTokenContract] Sending transaction...');
+      log.debug(' Sending transaction...');
       const receipt = await tx.send();
-      console.log('[ManualTokenContract] Transaction sent, receipt:', receipt);
+      log.debug(' Transaction sent, receipt:', receipt);
 
       // Wait for confirmation
-      console.log('[ManualTokenContract] Waiting for confirmation...');
+      log.debug(' Waiting for confirmation...');
       await tx.wait();
-      console.log('[ManualTokenContract] Transaction confirmed!');
+      log.debug(' Transaction confirmed!');
 
       return { transactionId: receipt.id };
     } catch (error) {
-      console.error('[ManualTokenContract] Transfer error:', error);
+      log.error(' Transfer error:', error);
       throw error;
     }
   }

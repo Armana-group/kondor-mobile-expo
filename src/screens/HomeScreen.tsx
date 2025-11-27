@@ -20,6 +20,7 @@ import { useWalletStore } from '../stores/walletStore';
 import { useKoinosStore } from '../stores/koinosStore';
 import { useTokenStore, Token } from '../stores/tokenStore';
 import { truncateAddress, formatKoinBalance } from '../lib/utils';
+import { HapticFeedback } from '../lib/haptics';
 import colors from '../theme/colors';
 
 export const HomeScreen = () => {
@@ -137,6 +138,7 @@ export const HomeScreen = () => {
 
   const handleCopyAddress = async () => {
     await Clipboard.setStringAsync(address);
+    await HapticFeedback.success();
     Alert.alert('Copied!', 'Address copied to clipboard');
   };
 
@@ -289,7 +291,13 @@ export const HomeScreen = () => {
               ItemSeparatorComponent={() => <View style={styles.tokenSeparator} />}
               ListEmptyComponent={
                 <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyText}>No tokens found</Text>
+                  <View style={styles.emptyIconContainer}>
+                    <Ionicons name="wallet-outline" size={32} color={colors.textTertiary} />
+                  </View>
+                  <Text style={styles.emptyTitle}>No Tokens Yet</Text>
+                  <Text style={styles.emptyText}>
+                    Tokens will appear here once you receive them
+                  </Text>
                 </View>
               }
             />
@@ -578,8 +586,24 @@ const styles = StyleSheet.create({
     padding: 40,
     alignItems: 'center',
   },
+  emptyIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.elevated,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: 8,
+  },
   emptyText: {
     fontSize: 14,
     color: colors.textSecondary,
+    textAlign: 'center',
   },
 });

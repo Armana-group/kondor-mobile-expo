@@ -20,6 +20,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { Screen } from '../components/Screen';
 import { useWalletStore } from '../stores/walletStore';
 import { Token } from '../stores/tokenStore';
+import { HapticFeedback } from '../lib/haptics';
 import colors from '../theme/colors';
 
 type ReceiveRouteParams = {
@@ -35,6 +36,7 @@ export const ReceiveScreen = () => {
 
   const handleCopyAddress = async () => {
     await Clipboard.setStringAsync(address);
+    await HapticFeedback.success();
     Alert.alert('Copied!', 'Address copied to clipboard');
   };
 

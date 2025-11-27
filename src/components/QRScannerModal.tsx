@@ -9,6 +9,7 @@ import {
   Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { HapticFeedback } from '../lib/haptics';
 import colors from '../theme/colors';
 
 // Dynamically import camera to handle missing native module gracefully
@@ -108,9 +109,11 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     const parsed = parseKoinosQR(data);
     if (parsed) {
       setScanned(true);
+      HapticFeedback.success();
       onScan(parsed);
       onClose();
     } else {
+      HapticFeedback.error();
       setScanned(true);
       Alert.alert(
         'Invalid QR Code',

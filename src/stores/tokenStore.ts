@@ -9,6 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Provider, utils } from 'koilib';
 import * as protobuf from 'protobufjs/minimal';
 import { DEFAULT_NETWORK } from '../lib/constants';
+import { tokenLogger as log } from '../lib/logger';
 
 // Token metadata interface
 export interface Token {
@@ -111,7 +112,7 @@ function decodeBalanceOfResult(data: Uint8Array): string {
 
     return value;
   } catch (error) {
-    console.error('[TokenStore] Error decoding result:', error);
+    log.error(' Error decoding result:', error);
     return '0';
   }
 }
@@ -142,7 +143,7 @@ async function getTokenBalance(
     const value = decodeBalanceOfResult(resultBytes);
     return utils.formatUnits(value, decimals);
   } catch (error) {
-    console.error(`[TokenStore] Error getting balance for ${contractId}:`, error);
+    log.error(`Error getting balance for ${contractId}:`, error);
     throw error;
   }
 }
@@ -152,7 +153,7 @@ async function getTokenBalance(
  */
 async function fetchKoinDXTokenList(): Promise<KoinDXToken[]> {
   try {
-    console.log('[TokenStore] Fetching KoinDX token list...');
+    log.debug(' Fetching KoinDX token list...');
     const response = await fetch(KOINDX_TOKEN_LIST_URL);
 
     if (!response.ok) {
@@ -162,10 +163,10 @@ async function fetchKoinDXTokenList(): Promise<KoinDXToken[]> {
     const data = await response.json();
     // API returns { chainId, tokens: [...] }, not a raw array
     const tokens = data.tokens || [];
-    console.log('[TokenStore] Fetched', tokens.length, 'tokens from KoinDX');
+    log.debug(' Fetched', tokens.length, 'tokens from KoinDX');
     return tokens;
   } catch (error) {
-    console.error('[TokenStore] Error fetching token list:', error);
+    log.error(' Error fetching token list:', error);
     throw error;
   }
 }
@@ -185,13 +186,13 @@ export const useTokenStore = create<TokenState>()(
 
         // Skip if recently fetched
         if (isInitialized && now - lastFetch < TOKEN_LIST_CACHE_DURATION) {
-          console.log('[TokenStore] Using cached token list');
+          log.debug(' Using cached token list');
           // Still refresh balances
           await get().refreshBalances(address);
           return;
         }
 
-        console.log('[TokenStore] Initializing token store for:', address);
+        log.debug(' Initializing token store for:', address);
         set({ isLoading: true, error: null });
 
         try {
@@ -235,7 +236,7 @@ export const useTokenStore = create<TokenState>()(
           }
 
           const tokens = Array.from(tokenMap.values());
-          console.log('[TokenStore] Built token list with', tokens.length, 'tokens');
+          log.debug(' Built token list with', tokens.length, 'tokens');
 
           set({
             tokens,
@@ -247,7 +248,7 @@ export const useTokenStore = create<TokenState>()(
           // Fetch balances for all tokens
           await get().refreshBalances(address);
         } catch (error: any) {
-          console.error('[TokenStore] Initialization error:', error);
+          log.error(' Initialization error:', error);
           set({
             isLoading: false,
             error: error.message || 'Failed to initialize tokens',
@@ -258,11 +259,11 @@ export const useTokenStore = create<TokenState>()(
       refreshBalances: async (address: string) => {
         const { tokens } = get();
         if (tokens.length === 0) {
-          console.log('[TokenStore] No tokens to refresh');
+          log.debug(' No tokens to refresh');
           return;
         }
 
-        console.log('[TokenStore] Refreshing balances for', tokens.length, 'tokens');
+        log.debug(' Refreshing balances for', tokens.length, 'tokens');
 
         const provider = new Provider(DEFAULT_NETWORK.rpcNodes);
 
@@ -295,7 +296,7 @@ export const useTokenStore = create<TokenState>()(
                   error: undefined,
                 };
               } catch (error: any) {
-                console.error(`[TokenStore] Error fetching ${token.symbol}:`, error);
+                log.error(`Error fetching ${token.symbol}:`, error);
                 updatedTokens[tokenIndex] = {
                   ...token,
                   balance: '0',
@@ -310,7 +311,7 @@ export const useTokenStore = create<TokenState>()(
           set({ tokens: [...updatedTokens] });
         }
 
-        console.log('[TokenStore] Finished refreshing balances');
+        log.debug(' Finished refreshing balances');
       },
 
       refreshSingleBalance: async (address: string, contractId: string) => {
@@ -318,7 +319,7 @@ export const useTokenStore = create<TokenState>()(
         const tokenIndex = tokens.findIndex((t) => t.contractId === contractId);
 
         if (tokenIndex === -1) {
-          console.log('[TokenStore] Token not found:', contractId);
+          log.debug(' Token not found:', contractId);
           return;
         }
 
@@ -346,7 +347,7 @@ export const useTokenStore = create<TokenState>()(
           };
           set({ tokens: updatedTokens });
         } catch (error: any) {
-          console.error(`[TokenStore] Error refreshing ${token.symbol}:`, error);
+          log.error(`Error refreshing ${token.symbol}:`, error);
           updatedTokens[tokenIndex] = {
             ...token,
             isLoading: false,
