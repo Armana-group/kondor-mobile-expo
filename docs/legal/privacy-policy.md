@@ -93,7 +93,7 @@ To remove all App data, simply uninstall the application from your device.
 If you have questions about this privacy policy, please contact us at:
 
 - **Website:** https://armana.io
-- **Email:** privacy@armana.io
+- **Email:** support@armana.io
 
 ## Open Source
 
