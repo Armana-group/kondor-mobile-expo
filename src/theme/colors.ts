@@ -5,7 +5,7 @@
 
 export const colors = {
   // Backgrounds
-  background: '#111111',      // Slightly lighter black
+  background: '#181818',      // Brand black background
   card: '#1A1A1A',            // Card backgrounds
   elevated: '#272727',        // neutral-800 - Elevated surfaces, hover states
   border: '#404040',          // neutral-700 - Borders, dividers
@@ -17,8 +17,8 @@ export const colors = {
   textMuted: '#525252',       // neutral-600 - Muted text
 
   // Accent
-  purple: '#A855F7',          // purple-500 - Active indicators, accents
-  purpleLight: 'rgba(168, 85, 247, 0.2)', // purple-500/20 - Background accents
+  purple: '#BB29F5',          // Brand purple - Active indicators, accents
+  purpleLight: 'rgba(187, 41, 245, 0.2)', // Brand purple/20 - Background accents
 
   // Status
   success: '#22C55E',         // green-500
@@ -26,7 +26,7 @@ export const colors = {
   warning: '#F59E0B',         // amber-500
 
   // Legacy (for gradual migration)
-  primary: '#A855F7',         // Main accent color
+  primary: '#BB29F5',         // Brand purple - Main accent color
   secondary: '#272727',       // Secondary backgrounds
 };
 

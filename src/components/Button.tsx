@@ -7,6 +7,7 @@ import {
   ViewStyle,
   TextStyle,
 } from 'react-native';
+import { colors } from '../theme/colors';
 
 interface ButtonProps {
   title: string;
@@ -59,19 +60,19 @@ const styles = StyleSheet.create({
     minHeight: 48,
   },
   primary: {
-    backgroundColor: '#007AFF',
+    backgroundColor: colors.purple,
   },
   secondary: {
-    backgroundColor: '#6C757D',
+    backgroundColor: colors.elevated,
   },
   danger: {
-    backgroundColor: '#DC3545',
+    backgroundColor: colors.error,
   },
   disabled: {
     opacity: 0.5,
   },
   text: {
-    color: 'white',
+    color: colors.textPrimary,
     fontSize: 16,
     fontWeight: '600',
   },
