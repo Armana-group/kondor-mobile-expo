@@ -37,7 +37,7 @@ export type TabParamList = {
   HomeTab: undefined;
   Collectibles: undefined;
   Swap: undefined;
-  Browser: undefined;
+  Apps: undefined;
 };
 
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -128,12 +128,12 @@ export const TabNavigator = () => {
         }}
       />
       <Tab.Screen
-        name="Browser"
+        name="Apps"
         component={BrowserScreen}
         options={{
-          tabBarLabel: 'Browser',
+          tabBarLabel: 'Apps',
           tabBarIcon: ({ focused, color }) => (
-            <Ionicons name={focused ? 'globe' : 'globe-outline'} size={24} color={color} />
+            <Ionicons name={focused ? 'apps' : 'apps-outline'} size={24} color={color} />
           ),
         }}
       />

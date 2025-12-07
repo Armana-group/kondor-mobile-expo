@@ -1,6 +1,11 @@
 # Development TODO
 
-## Status: UI Polish Complete - Ready for Phase 8
+## Status: Phase 8 Complete - Ready for Phase 9 (dApps Browser)
+
+### ✅ Completed (2025-12-07 - Build & Bug Fixes)
+- ✅ iOS build pipeline fixed (prebuild, pods, signing, local network)
+- ✅ QR Scanner CameraView warning fix (sibling positioning)
+- ✅ HomeScreen auto-refresh bug fix (silent vs manual refresh)
 
 ### ✅ Completed (UI Polish)
 - ✅ Status bar fix (light content on dark background)
@@ -41,18 +46,16 @@
 
 ---
 
-## Phase 8: QR Scanner & Camera Integration
+## ✅ Phase 8: QR Scanner & Camera Integration (COMPLETE)
 
-### Tasks
-1. **QR code scanner for sending**
+### Completed Tasks
+1. **QR code scanner for sending** ✅
    - Camera permission handling
    - Scan Koinos addresses
    - Auto-fill recipient in SendScreen
-2. **Optional: Scan WalletConnect QR codes**
-   - For future WalletConnect integration
-
-### Reference
-- expo-camera or expo-barcode-scanner
+   - Support for `koinos:` URI scheme with amount/token params
+2. **CameraView fix** ✅ (2025-12-07)
+   - Restructured overlay as sibling with absolute positioning
 
 ---
 

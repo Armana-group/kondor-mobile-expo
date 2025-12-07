@@ -177,13 +177,15 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     }
 
     return (
-      <CameraView
-        style={styles.camera}
-        barcodeScannerSettings={{
-          barcodeTypes: ['qr'],
-        }}
-        onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
-      >
+      <View style={styles.cameraWrapper}>
+        <CameraView
+          style={StyleSheet.absoluteFill}
+          barcodeScannerSettings={{
+            barcodeTypes: ['qr'],
+          }}
+          onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
+        />
+        {/* Overlay positioned absolutely on top of camera */}
         <View style={styles.overlay}>
           {/* Top overlay */}
           <View style={styles.overlaySection} />
@@ -208,7 +210,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
             </Text>
           </View>
         </View>
-      </CameraView>
+      </View>
     );
   };
 
@@ -268,6 +270,10 @@ const styles = StyleSheet.create({
   camera: {
     flex: 1,
   },
+  cameraWrapper: {
+    flex: 1,
+    position: 'relative',
+  },
   centered: {
     flex: 1,
     justifyContent: 'center',
@@ -314,7 +320,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   overlay: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'transparent',
   },
   overlaySection: {

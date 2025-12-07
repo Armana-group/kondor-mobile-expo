@@ -20,7 +20,8 @@
         "NSFaceIDUsageDescription": "Kondor uses Face ID to secure your wallet and authorize transactions.",
         "NSCameraUsageDescription": "Kondor uses the camera to scan QR codes for sending tokens.",
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "appleTeamId": "2H28Q35Z7Y"
     },
     "android": {
       "adaptiveIcon": {
@@ -29,7 +30,15 @@
       },
       "package": "io.armana.kondor",
       "versionCode": 1,
-      "permissions": ["USE_BIOMETRIC", "USE_FINGERPRINT", "CAMERA"]
+      "permissions": [
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "CAMERA",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "plugins": [
       "expo-secure-store",

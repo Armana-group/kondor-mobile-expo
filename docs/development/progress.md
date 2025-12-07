@@ -1,6 +1,51 @@
 # Development Progress Summary
 
-## Latest Session: 2025-11-26 (Polish & Bug Fixes)
+## Latest Session: 2025-12-07 (Build & QR Scanner Fix)
+
+### Completed Tasks
+
+#### 1. iOS Build Issues Resolved ✅
+Fixed build pipeline for physical device testing.
+
+**Issues Fixed:**
+- Missing native iOS project (needed `npx expo prebuild`)
+- CocoaPods sync error (ran `pod install`)
+- Provisioning profile error (enabled automatic signing in Xcode)
+- Local network permission for Metro bundler connection
+
+#### 2. QR Scanner CameraView Warning Fix ✅
+Fixed expo-camera warning: "CameraView does not support children"
+
+**File Modified:** `src/components/QRScannerModal.tsx`
+
+**Changes:**
+- Restructured camera and overlay as siblings instead of parent-child
+- Camera now uses `StyleSheet.absoluteFill`
+- Overlay uses `StyleSheet.absoluteFillObject` for absolute positioning
+- Added `cameraWrapper` container style
+
+#### 3. HomeScreen Auto-Refresh Bug Fix ✅
+Fixed issue where HomeScreen kept showing pull-to-refresh spinner automatically.
+
+**File Modified:** `src/screens/HomeScreen.tsx`
+
+**Problem:** `useFocusEffect` triggered balance refresh on every screen focus, always showing spinner.
+
+**Solution:**
+- Separated silent refresh (`fetchBalances`) from manual refresh (`handleManualRefresh`)
+- Replaced `useFocusEffect` with `useEffect` for one-time initialization
+- Only show spinner on user-initiated pull-to-refresh
+- Account switching now uses silent refresh
+
+**Behavior now:**
+- Initial load: Silent fetch (no spinner)
+- Pull-to-refresh: Shows spinner (manual only)
+- Account switch: Silent refresh
+- Navigate back: No refresh
+
+---
+
+## Previous Session: 2025-11-26 (Polish & Bug Fixes)
 
 ### Completed Tasks
 
