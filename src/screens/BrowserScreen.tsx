@@ -9,86 +9,90 @@ import {
   TextInput,
   Linking,
   Alert,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
-import { CURATED_DAPPS, DAPP_CATEGORIES, DApp, getFeaturedDApps } from '../constants/dapps';
+import { CURATED_DAPPS, DApp } from '../constants/dapps';
 import colors from '../theme/colors';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const GRID_PADDING = 20;
+const GRID_GAP = 16;
+const NUM_COLUMNS = 3;
+const CARD_SIZE = (SCREEN_WIDTH - (GRID_PADDING * 2) - (GRID_GAP * (NUM_COLUMNS - 1))) / NUM_COLUMNS;
 
 export const BrowserScreen = () => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
-  const featuredApps = getFeaturedDApps();
-
-  // Filter apps based on search and category
+  // Filter apps based on search
   const filteredApps = CURATED_DAPPS.filter(app => {
-    const matchesSearch = searchQuery === '' ||
-      app.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    if (searchQuery === '') return true;
+    return app.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       app.description.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = !selectedCategory || app.category === selectedCategory;
-    return matchesSearch && matchesCategory;
   });
 
   const handleAppPress = (app: DApp) => {
     Alert.alert(
       app.name,
-      `Open ${app.name} in browser?\n\nNote: In-app browser with wallet connection coming soon!`,
+      `Open ${app.name} in browser?\n\nIn-app browser coming soon!`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Open in Browser',
+          text: 'Open',
           onPress: () => Linking.openURL(app.url)
         },
       ]
     );
   };
 
-  const renderAppCard = (app: DApp, size: 'large' | 'small' = 'small') => (
+  const handleAddApp = () => {
+    Alert.alert(
+      'Add Custom App',
+      'Custom app support coming soon!',
+      [{ text: 'OK' }]
+    );
+  };
+
+  const renderAppCard = (app: DApp) => (
     <TouchableOpacity
       key={app.id}
-      style={[styles.appCard, size === 'large' && styles.appCardLarge]}
+      style={styles.appCard}
       onPress={() => handleAppPress(app)}
       activeOpacity={0.7}
     >
-      <View style={[styles.appIconContainer, size === 'large' && styles.appIconContainerLarge]}>
+      <View style={styles.appIconContainer}>
         <Image
           source={{ uri: app.icon }}
-          style={[styles.appIcon, size === 'large' && styles.appIconLarge]}
+          style={styles.appIcon}
           defaultSource={require('../../assets/icon.png')}
         />
       </View>
-      <View style={styles.appInfo}>
-        <Text style={[styles.appName, size === 'large' && styles.appNameLarge]} numberOfLines={1}>
-          {app.name}
-        </Text>
-        <Text style={styles.appDescription} numberOfLines={size === 'large' ? 2 : 1}>
-          {app.description}
-        </Text>
-        <View style={styles.categoryBadge}>
-          <Ionicons
-            name={DAPP_CATEGORIES[app.category].icon as any}
-            size={10}
-            color={colors.textTertiary}
-          />
-          <Text style={styles.categoryText}>
-            {DAPP_CATEGORIES[app.category].label}
-          </Text>
-        </View>
-      </View>
-      <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+      <Text style={styles.appName} numberOfLines={1}>
+        {app.name}
+      </Text>
     </TouchableOpacity>
   );
 
-  const categories = Object.entries(DAPP_CATEGORIES);
+  const renderAddAppCard = () => (
+    <TouchableOpacity
+      style={[styles.appCard, styles.addAppCard]}
+      onPress={handleAddApp}
+      activeOpacity={0.7}
+    >
+      <View style={styles.addAppIconContainer}>
+        <Ionicons name="add" size={32} color={colors.textTertiary} />
+      </View>
+      <Text style={styles.addAppText}>Add App</Text>
+    </TouchableOpacity>
+  );
 
   return (
     <Screen scroll={false}>
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Apps</Text>
-          <Text style={styles.subtitle}>Explore the Koinos ecosystem</Text>
+          <Text style={styles.title}>Applications</Text>
         </View>
 
         {/* Search Bar */}
@@ -96,7 +100,7 @@ export const BrowserScreen = () => {
           <Ionicons name="search" size={20} color={colors.textTertiary} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search apps..."
+            placeholder="Search applications"
             placeholderTextColor={colors.textTertiary}
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -108,85 +112,18 @@ export const BrowserScreen = () => {
           )}
         </View>
 
-        {/* Category Filter */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.categoriesContainer}
-          contentContainerStyle={styles.categoriesContent}
-        >
-          <TouchableOpacity
-            style={[
-              styles.categoryChip,
-              !selectedCategory && styles.categoryChipActive
-            ]}
-            onPress={() => setSelectedCategory(null)}
-          >
-            <Text style={[
-              styles.categoryChipText,
-              !selectedCategory && styles.categoryChipTextActive
-            ]}>
-              All
-            </Text>
-          </TouchableOpacity>
-          {categories.map(([key, { label, icon }]) => (
-            <TouchableOpacity
-              key={key}
-              style={[
-                styles.categoryChip,
-                selectedCategory === key && styles.categoryChipActive
-              ]}
-              onPress={() => setSelectedCategory(selectedCategory === key ? null : key)}
-            >
-              <Ionicons
-                name={icon as any}
-                size={14}
-                color={selectedCategory === key ? colors.textPrimary : colors.textSecondary}
-              />
-              <Text style={[
-                styles.categoryChipText,
-                selectedCategory === key && styles.categoryChipTextActive
-              ]}>
-                {label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        {/* Apps Grid */}
+        <View style={styles.gridContainer}>
+          {filteredApps.map(app => renderAppCard(app))}
+          {!searchQuery && renderAddAppCard()}
+        </View>
 
-        {/* Featured Section (only when no search/filter) */}
-        {!searchQuery && !selectedCategory && featuredApps.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Featured</Text>
-            {featuredApps.slice(0, 2).map(app => renderAppCard(app, 'large'))}
+        {filteredApps.length === 0 && searchQuery && (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="search-outline" size={48} color={colors.textTertiary} />
+            <Text style={styles.emptyText}>No apps found</Text>
           </View>
         )}
-
-        {/* All Apps Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            {selectedCategory
-              ? DAPP_CATEGORIES[selectedCategory as keyof typeof DAPP_CATEGORIES].label
-              : searchQuery
-                ? 'Search Results'
-                : 'All Apps'}
-          </Text>
-          {filteredApps.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Ionicons name="search-outline" size={48} color={colors.textTertiary} />
-              <Text style={styles.emptyText}>No apps found</Text>
-            </View>
-          ) : (
-            filteredApps.map(app => renderAppCard(app))
-          )}
-        </View>
-
-        {/* Coming Soon Note */}
-        <View style={styles.comingSoonNote}>
-          <Ionicons name="information-circle-outline" size={20} color={colors.purple} />
-          <Text style={styles.comingSoonText}>
-            In-app browser with wallet connection coming soon!
-          </Text>
-        </View>
       </ScrollView>
     </Screen>
   );
@@ -198,28 +135,25 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   header: {
-    paddingHorizontal: 20,
+    paddingHorizontal: GRID_PADDING,
     paddingTop: 16,
-    paddingBottom: 8,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
   title: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
     color: colors.textPrimary,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginTop: 4,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.card,
-    marginHorizontal: 20,
-    marginVertical: 16,
+    marginHorizontal: GRID_PADDING,
+    marginVertical: 20,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderRadius: 12,
     gap: 12,
   },
@@ -228,107 +162,63 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.textPrimary,
   },
-  categoriesContainer: {
-    marginBottom: 8,
-  },
-  categoriesContent: {
-    paddingHorizontal: 20,
-    gap: 8,
-  },
-  categoryChip: {
+  gridContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.card,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 8,
-    gap: 6,
-  },
-  categoryChipActive: {
-    backgroundColor: colors.purple,
-  },
-  categoryChipText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: colors.textSecondary,
-  },
-  categoryChipTextActive: {
-    color: colors.textPrimary,
-  },
-  section: {
-    paddingHorizontal: 20,
-    marginTop: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    marginBottom: 12,
+    flexWrap: 'wrap',
+    paddingHorizontal: GRID_PADDING,
+    gap: GRID_GAP,
+    paddingBottom: 40,
   },
   appCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    width: CARD_SIZE,
+    height: CARD_SIZE + 24,
     backgroundColor: colors.card,
-    padding: 16,
     borderRadius: 16,
-    marginBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
   },
-  appCardLarge: {
-    padding: 20,
+  addAppCard: {
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderColor: colors.elevated,
+    borderStyle: 'dashed',
   },
   appIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+    width: CARD_SIZE - 32,
+    height: CARD_SIZE - 32,
+    borderRadius: 16,
     backgroundColor: colors.elevated,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 14,
     overflow: 'hidden',
   },
-  appIconContainerLarge: {
-    width: 56,
-    height: 56,
-    borderRadius: 14,
-  },
   appIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-  },
-  appIconLarge: {
-    width: 56,
-    height: 56,
-    borderRadius: 14,
-  },
-  appInfo: {
-    flex: 1,
-    marginRight: 8,
+    width: CARD_SIZE - 32,
+    height: CARD_SIZE - 32,
+    borderRadius: 16,
   },
   appName: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '500',
     color: colors.textPrimary,
-    marginBottom: 2,
+    marginTop: 8,
+    textAlign: 'center',
+    paddingHorizontal: 4,
   },
-  appNameLarge: {
-    fontSize: 18,
-  },
-  appDescription: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginBottom: 6,
-    lineHeight: 18,
-  },
-  categoryBadge: {
-    flexDirection: 'row',
+  addAppIconContainer: {
+    width: CARD_SIZE - 32,
+    height: CARD_SIZE - 32,
+    borderRadius: 16,
+    backgroundColor: colors.elevated,
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 4,
   },
-  categoryText: {
-    fontSize: 11,
+  addAppText: {
+    fontSize: 12,
+    fontWeight: '500',
     color: colors.textTertiary,
+    marginTop: 8,
   },
   emptyContainer: {
     alignItems: 'center',
@@ -338,22 +228,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textSecondary,
     marginTop: 12,
-  },
-  comingSoonNote: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.card,
-    marginHorizontal: 20,
-    marginTop: 24,
-    marginBottom: 40,
-    padding: 16,
-    borderRadius: 12,
-    gap: 12,
-  },
-  comingSoonText: {
-    flex: 1,
-    fontSize: 13,
-    color: colors.textSecondary,
-    lineHeight: 18,
   },
 });
