@@ -53,14 +53,16 @@ export const DAppWebViewScreen = () => {
   // Send response back to WebView
   const sendResponse = useCallback((response: KondorResponse) => {
     if (webViewRef.current) {
-      // Use the direct callback for reliable communication
+      console.log('[Kondor] Sending response:', response.id, response.error ? 'error' : 'success');
+      // Use both the direct callback AND postMessage for maximum compatibility
       const script = `
         (function() {
-          if (window.__kondorResponse) {
-            window.__kondorResponse(${JSON.stringify(response)});
-          } else {
-            window.postMessage(${JSON.stringify(response)}, '*');
+          console.log('[Kondor Mobile] Injecting response for:', '${response.id}');
+          if (window.__kondorMobileResponse) {
+            window.__kondorMobileResponse(${JSON.stringify(response)});
           }
+          // Also post message for kondor-js compatibility
+          window.postMessage(${JSON.stringify(response)}, '*');
         })();
         true;
       `;

@@ -3,36 +3,50 @@
  *
  * This script is injected into WebViews to provide the window.kondor interface
  * that dApps use to interact with the wallet.
+ *
+ * Strategy:
+ * 1. Create our own window.kondor BEFORE the page loads
+ * 2. Also intercept any window.postMessage calls (in case dApp uses kondor-js directly)
+ * 3. Route all commands to React Native via ReactNativeWebView.postMessage
  */
 
 export const KONDOR_PROVIDER_SCRIPT = `
 (function() {
   // Prevent double injection
-  if (window.kondor) {
+  if (window.__kondorMobileInjected) {
     return;
   }
+  window.__kondorMobileInjected = true;
 
-  // Message ID counter for tracking requests
-  let messageId = 0;
+  console.log('[Kondor Mobile] Starting provider injection...');
+
+  // Generate UUID for message IDs
+  function generateId() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
+  // Track pending requests
   const pendingRequests = new Map();
 
   // Send message to React Native and return a promise
-  function sendMessage(command, args = {}) {
-    console.log('[Kondor Mobile] Sending command:', command, args);
+  function sendToNative(command, args = {}) {
+    const id = generateId();
+    console.log('[Kondor Mobile] Sending:', command, id);
+
     return new Promise((resolve, reject) => {
-      const id = ++messageId;
       pendingRequests.set(id, { resolve, reject });
 
-      const message = {
+      window.ReactNativeWebView.postMessage(JSON.stringify({
         type: 'kondor',
-        id,
-        command,
-        args
-      };
-      console.log('[Kondor Mobile] Posting message:', message);
-      window.ReactNativeWebView.postMessage(JSON.stringify(message));
+        id: id,
+        command: command,
+        args: args
+      }));
 
-      // Timeout after 5 minutes (for user approval flows)
+      // Timeout after 5 minutes
       setTimeout(() => {
         if (pendingRequests.has(id)) {
           pendingRequests.delete(id);
@@ -43,35 +57,8 @@ export const KONDOR_PROVIDER_SCRIPT = `
   }
 
   // Handle responses from React Native
-  // React Native WebView sends messages to both window and document
-  function handleResponse(event) {
-    try {
-      const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-      console.log('[Kondor Mobile] Received message:', data);
-      if (data.type === 'kondor-response' && data.id) {
-        const pending = pendingRequests.get(data.id);
-        if (pending) {
-          pendingRequests.delete(data.id);
-          if (data.error) {
-            console.log('[Kondor Mobile] Rejecting with error:', data.error);
-            pending.reject(new Error(data.error));
-          } else {
-            console.log('[Kondor Mobile] Resolving with result:', data.result);
-            pending.resolve(data.result);
-          }
-        }
-      }
-    } catch (e) {
-      // Ignore non-JSON messages
-    }
-  }
-
-  window.addEventListener('message', handleResponse);
-  document.addEventListener('message', handleResponse);
-
-  // Also expose a direct callback for React Native
-  window.__kondorResponse = function(response) {
-    console.log('[Kondor Mobile] Direct response:', response);
+  window.__kondorMobileResponse = function(response) {
+    console.log('[Kondor Mobile] Response received:', response.id);
     const pending = pendingRequests.get(response.id);
     if (pending) {
       pendingRequests.delete(response.id);
@@ -83,124 +70,140 @@ export const KONDOR_PROVIDER_SCRIPT = `
     }
   };
 
+  // Also listen for postMessage responses (for kondor-js compatibility)
+  window.addEventListener('message', function(event) {
+    if (event.source !== window) return;
+    const data = event.data;
+
+    // Handle response messages (no command, has id)
+    if (data && typeof data === 'object' && data.id && !data.command) {
+      const pending = pendingRequests.get(data.id);
+      if (pending) {
+        pendingRequests.delete(data.id);
+        if (data.error) {
+          pending.reject(new Error(data.error));
+        } else {
+          pending.resolve(data.result);
+        }
+      }
+    }
+
+    // Intercept kondor-js requests (has command)
+    if (data && typeof data === 'object' && data.command && data.id) {
+      console.log('[Kondor Mobile] Intercepted postMessage request:', data.command);
+
+      // Store the request for later response
+      if (!pendingRequests.has(data.id)) {
+        // This is a request from kondor-js, forward to native
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'kondor',
+          id: data.id,
+          command: data.command,
+          args: data.args || {}
+        }));
+      }
+    }
+  });
+
   // Create Provider object (compatible with koilib)
   const provider = {
-    call: (method, params) => sendMessage('provider:call', { method, params }),
-    getNonce: (account) => sendMessage('provider:getNonce', { account }),
-    getNextNonce: (account) => sendMessage('provider:getNextNonce', { account }),
-    getAccountRc: (account) => sendMessage('provider:getAccountRc', { account }),
-    getTransactionsById: (transactionIds) => sendMessage('provider:getTransactionsById', { transactionIds }),
-    getBlocksById: (blockIds) => sendMessage('provider:getBlocksById', { blockIds }),
-    getHeadInfo: () => sendMessage('provider:getHeadInfo', {}),
-    getChainId: () => sendMessage('provider:getChainId', {}),
-    getBlocks: (height, numBlocks, idRef, opts) => sendMessage('provider:getBlocks', { height, numBlocks, idRef, opts }),
-    getBlock: (height, opts) => sendMessage('provider:getBlock', { height, opts }),
-    wait: (txId, type, timeout) => sendMessage('provider:wait', { txId, type, timeout }),
-    sendTransaction: (transaction, broadcast) => sendMessage('provider:sendTransaction', { transaction, broadcast }),
-    submitBlock: (block) => sendMessage('provider:submitBlock', { block }),
-    readContract: (operation) => sendMessage('provider:readContract', { operation }),
-    getForkHeads: () => sendMessage('provider:getForkHeads', {}),
-    getResourceLimits: () => sendMessage('provider:getResourceLimits', {}),
-    invokeGetContractMetadata: (contractId) => sendMessage('provider:invokeGetContractMetadata', { contractId }),
+    call: (method, params) => sendToNative('provider:call', { method, params }),
+    getNonce: (account) => sendToNative('provider:getNonce', { account }),
+    getNextNonce: (account) => sendToNative('provider:getNextNonce', { account }),
+    getAccountRc: (account) => sendToNative('provider:getAccountRc', { account }),
+    getTransactionsById: (transactionIds) => sendToNative('provider:getTransactionsById', { transactionIds }),
+    getBlocksById: (blockIds) => sendToNative('provider:getBlocksById', { blockIds }),
+    getHeadInfo: () => sendToNative('provider:getHeadInfo', {}),
+    getChainId: () => sendToNative('provider:getChainId', {}),
+    getBlocks: (height, numBlocks, idRef, opts) => sendToNative('provider:getBlocks', { height, numBlocks, idRef, opts }),
+    getBlock: (height, opts) => sendToNative('provider:getBlock', { height, opts }),
+    wait: (txId, type, timeout) => sendToNative('provider:wait', { txId, type, timeout }),
+    sendTransaction: (transaction, broadcast) => sendToNative('provider:sendTransaction', { transaction, broadcast }),
+    submitBlock: (block) => sendToNative('provider:submitBlock', { block }),
+    readContract: (operation) => sendToNative('provider:readContract', { operation }),
+    getForkHeads: () => sendToNative('provider:getForkHeads', {}),
+    getResourceLimits: () => sendToNative('provider:getResourceLimits', {}),
+    invokeGetContractMetadata: (contractId) => sendToNative('provider:invokeGetContractMetadata', { contractId }),
   };
 
-  // Create Signer factory function
-  function getSigner(address) {
-    return {
-      getAddress: () => Promise.resolve(address),
-      signHash: (hash) => sendMessage('signer:signHash', { signerAddress: address, hash }),
-      signMessage: (message) => sendMessage('signer:signMessage', { signerAddress: address, message }),
-      signTransaction: (transaction, abis) => sendMessage('signer:signTransaction', { signerAddress: address, transaction, abis }),
-      sendTransaction: (transaction, abis) => sendMessage('signer:sendTransaction', { signerAddress: address, transaction, abis }),
-      prepareTransaction: (transaction) => sendMessage('signer:prepareTransaction', { signerAddress: address, transaction }),
-    };
-  }
-
-  // Legacy signer object (deprecated but maintained for compatibility)
-  const legacySigner = {
-    signHash: (hash, signerAddress) => sendMessage('signer:signHash', { signerAddress, hash }),
-    signMessage: (message, signerAddress) => sendMessage('signer:signMessage', { signerAddress, message }),
-    signTransaction: (transaction, signerAddress, abis) => sendMessage('signer:signTransaction', { signerAddress, transaction, abis }),
-    sendTransaction: (transaction, signerAddress, abis) => sendMessage('signer:sendTransaction', { signerAddress, transaction, abis }),
-    prepareTransaction: (transaction, signerAddress) => sendMessage('signer:prepareTransaction', { signerAddress, transaction }),
-  };
-
-  // getProvider function (returns provider for a specific network)
+  // getProvider function
   function getProvider(network) {
-    console.log('[Kondor Mobile] getProvider called with network:', network);
+    console.log('[Kondor Mobile] getProvider called:', network);
     return provider;
   }
 
   // KondorSigner class (matches kondor-js API)
   class KondorSigner {
-    constructor(signerAddress, options = {}) {
-      this.signerAddress = signerAddress;
-      this.provider = options.provider || provider;
+    constructor(opts) {
+      if (typeof opts === 'string') {
+        this.address = opts;
+        this.provider = provider;
+      } else {
+        this.address = opts.address;
+        this.provider = opts.provider || provider;
+      }
     }
 
     getAddress() {
-      return this.signerAddress;
+      return this.address;
     }
 
     async signHash(hash) {
-      return sendMessage('signer:signHash', { signerAddress: this.signerAddress, hash });
+      return sendToNative('signer:signHash', { signerAddress: this.address, hash });
     }
 
     async signMessage(message) {
-      return sendMessage('signer:signMessage', { signerAddress: this.signerAddress, message });
+      return sendToNative('signer:signMessage', { signerAddress: this.address, message });
     }
 
     async signTransaction(transaction, abis) {
-      return sendMessage('signer:signTransaction', { signerAddress: this.signerAddress, transaction, abis });
+      return sendToNative('signer:signTransaction', { signerAddress: this.address, transaction, abis });
     }
 
     async sendTransaction(transaction, options) {
-      return sendMessage('signer:sendTransaction', { signerAddress: this.signerAddress, transaction, options });
+      return sendToNative('signer:sendTransaction', { signerAddress: this.address, transaction, options });
     }
 
     async prepareTransaction(transaction) {
-      return sendMessage('signer:prepareTransaction', { signerAddress: this.signerAddress, transaction });
+      return sendToNative('signer:prepareTransaction', { signerAddress: this.address, transaction });
     }
+
+    async prepareBlock() {
+      throw new Error('prepareBlock not available in Kondor Mobile');
+    }
+
+    async signBlock() {
+      throw new Error('signBlock not available in Kondor Mobile');
+    }
+  }
+
+  // getSigner function
+  function getSigner(signerAddress, options) {
+    console.log('[Kondor Mobile] getSigner called:', signerAddress);
+    return new KondorSigner({ address: signerAddress, ...options });
+  }
+
+  // getAccounts function
+  async function getAccounts() {
+    console.log('[Kondor Mobile] getAccounts called');
+    return sendToNative('getAccounts', {});
   }
 
   // Define window.kondor (matching kondor-js structure exactly)
   window.kondor = {
-    // Get available accounts
-    getAccounts: () => {
-      console.log('[Kondor Mobile] getAccounts called');
-      return sendMessage('getAccounts', {});
-    },
-
-    // Provider for blockchain queries
     provider: provider,
-
-    // Get provider for specific network
     getProvider: getProvider,
-
-    // Signer class
+    getSigner: getSigner,
+    getAccounts: getAccounts,
     KondorSigner: KondorSigner,
-
-    // Signer factory (recommended)
-    getSigner: function(signerAddress, options) {
-      console.log('[Kondor Mobile] getSigner called with:', signerAddress);
-      return new KondorSigner(signerAddress, options);
-    },
-
-    // Legacy signer (deprecated)
-    signer: legacySigner,
-
-    // Version info
-    version: '1.0.0',
-    isKondorMobile: true,
   };
 
-  // Also set on globalThis for module contexts
-  globalThis.kondor = window.kondor;
+  // Also set on globalThis
+  if (typeof globalThis !== 'undefined') {
+    globalThis.kondor = window.kondor;
+  }
 
-  // Dispatch event to notify dApps that kondor is ready
-  window.dispatchEvent(new Event('kondor#initialized'));
-
-  console.log('[Kondor Mobile] Provider injected');
+  console.log('[Kondor Mobile] window.kondor injected:', Object.keys(window.kondor));
 })();
 `;
 
@@ -209,14 +212,14 @@ export const KONDOR_PROVIDER_SCRIPT = `
  */
 export interface KondorMessage {
   type: 'kondor';
-  id: number;
+  id: string;
   command: string;
   args: Record<string, unknown>;
+  to?: string;
 }
 
 export interface KondorResponse {
-  type: 'kondor-response';
-  id: number;
+  id: string;
   result?: unknown;
   error?: string;
 }
