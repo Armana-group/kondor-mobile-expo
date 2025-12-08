@@ -93,41 +93,61 @@ Kondor Mini Apps - tightly integrated dApps with pre-authenticated wallet access
 3. ~~**getSigner()** - return signer interface~~ ✅
 4. ~~**Provider methods** - call, getNonce, etc.~~ ✅
 
-### Phase 9.3: Transaction Signing
+### Phase 9.3: Transaction Signing (NEXT)
 1. **Native approval modal** for transactions
 2. **Operation decoding** (transfer, contract calls)
 3. **Biometric confirmation** before signing
 4. **Sign and broadcast** flow
 
-### Phase 9.4: Mini App SDK
+**Implementation Notes:**
+- Handle `signer:signTransaction` and `signer:sendTransaction` commands
+- Decode transaction operations to show human-readable details
+- Use existing biometric auth from walletStore
+- Reference Kondor3's SignSendTransaction popup for UI patterns
+
+### Phase 9.4: WalletConnect v2
+WalletConnect provides an alternative connection method when provider injection doesn't work.
+
+1. **Install** `@walletconnect/react-native-compat` and `@armana/walletconnect-koinos-sdk-js`
+2. **QR Scanner** - scan WalletConnect QR codes from desktop dApps
+3. **Session management** - approve/reject connection requests
+4. **Transaction signing** - reuse approval modal from Phase 9.3
+
+**Benefits:**
+- Fallback for dApps like KoinDX that have different detection
+- Connect to desktop browser dApps
+- Industry standard protocol
+
+### Phase 9.5: Mini App SDK (Future)
 1. **KondorMiniApp** SDK injection
 2. **Pre-authenticated** wallet context
 3. **UI API** (haptics, toasts, theme)
 4. **Storage API** (per-app persistence)
 
-### Phase 9.5: Ecosystem
+### Phase 9.6: Ecosystem (Future)
 1. **Mini App manifest** spec
 2. **Developer documentation**
 3. **App submission** process
 4. **Community apps** gallery
 
 ### Reference
-- `/docs/features/mini-apps.md` - Full specification
-- Telegram Mini Apps
-- Kondor3 browser implementation
+- `/docs/features/mini-apps.md` - Full Mini Apps specification
+- Kondor3 browser implementation (`/Users/ron/devstuff/projects/armana/apps/kondor3`)
+- `@armana/walletconnect-koinos-sdk-js` - WalletConnect for Koinos
 
 ---
 
 ## Phase 10: Advanced Features
 
-### WalletConnect v2
-- Connect to desktop dApps
-- Transaction approval flow
-
 ### NFT Support (Collectibles Tab)
 - Fetch NFTs from Kollection API
 - Display NFT gallery
 - NFT transfers
+
+### Additional Features
+- Transaction history in dApp browser
+- Favorites/bookmarks for dApps
+- Custom URL entry for unlisted dApps
 
 ---
 
