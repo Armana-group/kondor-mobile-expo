@@ -192,9 +192,10 @@ eas build --platform ios --profile production
 - [ ] Test on Android device
 
 ### dApp Browser Testing
-- [ ] Test WebView loads KoinDX
-- [ ] Test WebView loads Fogata
-- [ ] Test navigation controls (back, forward, refresh)
-- [ ] Test wallet connection prompt (getAccounts)
+- [x] Test WebView loads KoinDX
+- [x] Test WebView loads Kollection
+- [x] Test navigation controls (back, forward, refresh)
+- [x] Test wallet connection prompt (getAccounts)
 - [ ] Test provider methods work (balance queries)
-- [ ] Test connected status indicator
+- [x] Test connected status indicator
+- [ ] Test transaction signing flow (Phase 9.3)

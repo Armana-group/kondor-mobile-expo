@@ -21,16 +21,23 @@ Implemented in-app browser for loading Koinos dApps with wallet integration.
 #### 2. window.kondor Provider Injection ✅
 Injected the `window.kondor` interface into WebViews for dApp compatibility.
 
-**Provider Methods:**
+**Provider Methods (matching kondor-js API):**
 - `kondor.getAccounts()` - Get wallet accounts (with permission prompt)
 - `kondor.provider.*` - All koilib Provider methods (getNonce, getAccountRc, readContract, etc.)
-- `kondor.getSigner(address)` - Modern signer factory
-- `kondor.signer.*` - Legacy signer interface
+- `kondor.getProvider(network)` - Get provider for specific network
+- `kondor.getSigner(address)` - Get signer instance
+- `kondor.KondorSigner` - Signer class for transaction signing
 
 **Communication:**
 - Uses `injectedJavaScriptBeforeContentLoaded` for early injection
-- `postMessage` / `onMessage` bridge between WebView and React Native
-- Proper request/response correlation with message IDs
+- `ReactNativeWebView.postMessage` for WebView → React Native
+- `injectJavaScript` for React Native → WebView responses
+- Also intercepts `window.postMessage` for kondor-js library compatibility
+- UUID-based request/response correlation
+
+**Tested Working:**
+- Kollection (NFT marketplace) - connects successfully
+- KoinDX - detects wallet but uses different connection flow (needs investigation)
 
 #### 3. Message Handler System ✅
 Implemented command routing for wallet requests.
