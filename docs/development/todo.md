@@ -59,33 +59,54 @@
 
 ---
 
-## Phase 9: Apps/dApps Browser
+## Phase 9: Mini Apps Platform
 
 ### Overview
-Phantom-style dApp integration where users can browse and use Koinos dApps via WebView.
+Kondor Mini Apps - tightly integrated dApps with pre-authenticated wallet access and native UI components. Inspired by Telegram Mini Apps.
 
-### Tasks
-1. **Rename Browser tab to "Apps"**
-2. **Create curated app list**
-   - KoinDX (DEX)
-   - Fogata (Mining pool)
-   - KoinScan (Explorer)
-   - Kollection (NFTs)
-3. **WebView integration**
-   - Load dApps in WebView
-   - Inject wallet provider
-   - Handle transaction signing requests
-4. **Trust system**
-   - Curated apps: No warning
-   - User-saved apps: First-time warning for custom URLs
-   - One-off URLs: Always show warning
-5. **URL bar + search**
-   - Enter arbitrary URLs
-   - Search curated apps
+**Full Spec:** See `/docs/features/mini-apps.md`
+
+### Completed
+- [x] Rename Browser tab to "Apps"
+- [x] Create curated app list (8 Koinos dApps)
+- [x] Grid layout matching Kondor extension design
+- [x] Search functionality
+- [x] "Add App" placeholder
+
+### Phase 9.1: Basic WebView Browser
+1. **WebView screen** for loading dApps
+2. **Navigation** (back, forward, refresh, close)
+3. **URL bar** with current URL display
+4. **Loading states** and error handling
+
+### Phase 9.2: Legacy Provider Injection
+1. **`window.kondor`** injection (backwards compatible)
+2. **getAccounts()** - return connected account
+3. **getSigner()** - return signer interface
+4. **Provider methods** - call, getNonce, etc.
+
+### Phase 9.3: Transaction Signing
+1. **Native approval modal** for transactions
+2. **Operation decoding** (transfer, contract calls)
+3. **Biometric confirmation** before signing
+4. **Sign and broadcast** flow
+
+### Phase 9.4: Mini App SDK
+1. **KondorMiniApp** SDK injection
+2. **Pre-authenticated** wallet context
+3. **UI API** (haptics, toasts, theme)
+4. **Storage API** (per-app persistence)
+
+### Phase 9.5: Ecosystem
+1. **Mini App manifest** spec
+2. **Developer documentation**
+3. **App submission** process
+4. **Community apps** gallery
 
 ### Reference
+- `/docs/features/mini-apps.md` - Full specification
+- Telegram Mini Apps
 - Kondor3 browser implementation
-- Phantom wallet dApp browser
 
 ---
 

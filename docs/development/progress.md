@@ -37,11 +37,46 @@ Fixed issue where HomeScreen kept showing pull-to-refresh spinner automatically.
 - Only show spinner on user-initiated pull-to-refresh
 - Account switching now uses silent refresh
 
-**Behavior now:**
-- Initial load: Silent fetch (no spinner)
-- Pull-to-refresh: Shows spinner (manual only)
-- Account switch: Silent refresh
-- Navigate back: No refresh
+#### 4. Phase 9: Apps Gallery ✅
+Implemented the Applications screen with curated Koinos dApps.
+
+**New Files:**
+- `src/constants/dapps.ts` - Curated dApps list (8 apps)
+
+**Modified Files:**
+- `src/navigation/TabNavigator.tsx` - Renamed Browser to Apps
+- `src/screens/BrowserScreen.tsx` - Complete redesign
+
+**Features:**
+- Grid layout matching Kondor extension design
+- Square app cards with icons and names
+- Search functionality
+- "Add App" placeholder card
+- 8 curated Koinos dApps (KoinDX, Fogata, Kollection, etc.)
+
+#### 5. UI Polish: Remove Header Borders ✅
+Removed bottom borders from all screen title bars for cleaner look.
+
+**Files Modified:**
+- `src/screens/BrowserScreen.tsx`
+- `src/screens/TokenDetailScreen.tsx`
+- `src/screens/SettingsScreen.tsx`
+- `src/screens/SendScreen.tsx`
+- `src/screens/ContactsScreen.tsx`
+- `src/screens/ActivityScreen.tsx`
+
+#### 6. Mini Apps Architecture Documentation ✅
+Designed the Kondor Mini Apps platform spec.
+
+**New Documentation:**
+- `docs/features/mini-apps.md` - Full specification
+
+**Key Concepts:**
+- Two modes: Legacy (`window.kondor`) and Mini App (`KondorMiniApp` SDK)
+- Pre-authenticated wallet access for Mini Apps
+- Native UI components (haptics, toasts, theme)
+- Permission system with approval flows
+- App tiers: Curated, Community, Custom URL
 
 ---
 
