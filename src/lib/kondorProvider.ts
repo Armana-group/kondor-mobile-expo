@@ -125,16 +125,66 @@ export const KONDOR_PROVIDER_SCRIPT = `
     prepareTransaction: (transaction, signerAddress) => sendMessage('signer:prepareTransaction', { signerAddress, transaction }),
   };
 
-  // Define window.kondor
+  // getProvider function (returns provider for a specific network)
+  function getProvider(network) {
+    console.log('[Kondor Mobile] getProvider called with network:', network);
+    return provider;
+  }
+
+  // KondorSigner class (matches kondor-js API)
+  class KondorSigner {
+    constructor(signerAddress, options = {}) {
+      this.signerAddress = signerAddress;
+      this.provider = options.provider || provider;
+    }
+
+    getAddress() {
+      return this.signerAddress;
+    }
+
+    async signHash(hash) {
+      return sendMessage('signer:signHash', { signerAddress: this.signerAddress, hash });
+    }
+
+    async signMessage(message) {
+      return sendMessage('signer:signMessage', { signerAddress: this.signerAddress, message });
+    }
+
+    async signTransaction(transaction, abis) {
+      return sendMessage('signer:signTransaction', { signerAddress: this.signerAddress, transaction, abis });
+    }
+
+    async sendTransaction(transaction, options) {
+      return sendMessage('signer:sendTransaction', { signerAddress: this.signerAddress, transaction, options });
+    }
+
+    async prepareTransaction(transaction) {
+      return sendMessage('signer:prepareTransaction', { signerAddress: this.signerAddress, transaction });
+    }
+  }
+
+  // Define window.kondor (matching kondor-js structure exactly)
   window.kondor = {
     // Get available accounts
-    getAccounts: () => sendMessage('getAccounts', {}),
+    getAccounts: () => {
+      console.log('[Kondor Mobile] getAccounts called');
+      return sendMessage('getAccounts', {});
+    },
 
     // Provider for blockchain queries
     provider: provider,
 
+    // Get provider for specific network
+    getProvider: getProvider,
+
+    // Signer class
+    KondorSigner: KondorSigner,
+
     // Signer factory (recommended)
-    getSigner: getSigner,
+    getSigner: function(signerAddress, options) {
+      console.log('[Kondor Mobile] getSigner called with:', signerAddress);
+      return new KondorSigner(signerAddress, options);
+    },
 
     // Legacy signer (deprecated)
     signer: legacySigner,
