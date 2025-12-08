@@ -15,12 +15,14 @@ import { SwapScreen } from '../screens/SwapScreen';
 import { ActivityScreen } from '../screens/ActivityScreen';
 import { BrowserScreen } from '../screens/BrowserScreen';
 import { TokenDetailScreen } from '../screens/TokenDetailScreen';
+import { DAppWebViewScreen } from '../screens/DAppWebViewScreen';
 
 // Theme
 import colors from '../theme/colors';
 
 // Stores
 import { Token } from '../stores/tokenStore';
+import { DApp } from '../constants/dapps';
 
 // Types
 export type HomeStackParamList = {
@@ -33,6 +35,11 @@ export type HomeStackParamList = {
   TokenDetail: { token: Token };
 };
 
+export type AppsStackParamList = {
+  AppsMain: undefined;
+  DAppWebView: { app: DApp };
+};
+
 export type TabParamList = {
   HomeTab: undefined;
   Collectibles: undefined;
@@ -42,6 +49,7 @@ export type TabParamList = {
 
 const Tab = createBottomTabNavigator<TabParamList>();
 const HomeStack = createNativeStackNavigator<HomeStackParamList>();
+const AppsStack = createNativeStackNavigator<AppsStackParamList>();
 
 // Icon name type for Ionicons
 type IoniconsName = keyof typeof Ionicons.glyphMap;
@@ -84,6 +92,21 @@ const HomeStackNavigator = () => (
       component={TokenDetailScreen}
     />
   </HomeStack.Navigator>
+);
+
+// Apps stack navigator (Apps gallery + WebView)
+const AppsStackNavigator = () => (
+  <AppsStack.Navigator screenOptions={{ headerShown: false }}>
+    <AppsStack.Screen name="AppsMain" component={BrowserScreen} />
+    <AppsStack.Screen
+      name="DAppWebView"
+      component={DAppWebViewScreen}
+      options={{
+        presentation: 'fullScreenModal',
+        animation: 'slide_from_bottom',
+      }}
+    />
+  </AppsStack.Navigator>
 );
 
 export const TabNavigator = () => {
@@ -129,7 +152,7 @@ export const TabNavigator = () => {
       />
       <Tab.Screen
         name="Apps"
-        component={BrowserScreen}
+        component={AppsStackNavigator}
         options={{
           tabBarLabel: 'Apps',
           tabBarIcon: ({ focused, color }) => (

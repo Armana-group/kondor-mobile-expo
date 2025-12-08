@@ -1,6 +1,14 @@
 # Development TODO
 
-## Status: Phase 8 Complete - Ready for Phase 9 (dApps Browser)
+## Status: Phase 9.2 Complete - Ready for Phase 9.3 (Transaction Signing)
+
+### ✅ Completed (2025-12-07 - Phase 9.1 & 9.2)
+- ✅ WebView browser with navigation controls
+- ✅ `window.kondor` provider injection
+- ✅ Provider methods (blockchain queries)
+- ✅ `getAccounts()` with permission prompt
+- ✅ Message handler system
+- ✅ Connection status indicator
 
 ### ✅ Completed (2025-12-07 - Build & Bug Fixes)
 - ✅ iOS build pipeline fixed (prebuild, pods, signing, local network)
@@ -73,17 +81,17 @@ Kondor Mini Apps - tightly integrated dApps with pre-authenticated wallet access
 - [x] Search functionality
 - [x] "Add App" placeholder
 
-### Phase 9.1: Basic WebView Browser
-1. **WebView screen** for loading dApps
-2. **Navigation** (back, forward, refresh, close)
-3. **URL bar** with current URL display
-4. **Loading states** and error handling
+### Phase 9.1: Basic WebView Browser ✅
+1. ~~**WebView screen** for loading dApps~~ ✅
+2. ~~**Navigation** (back, forward, refresh, close)~~ ✅
+3. ~~**URL bar** with current URL display~~ ✅
+4. ~~**Loading states** and error handling~~ ✅
 
-### Phase 9.2: Legacy Provider Injection
-1. **`window.kondor`** injection (backwards compatible)
-2. **getAccounts()** - return connected account
-3. **getSigner()** - return signer interface
-4. **Provider methods** - call, getNonce, etc.
+### Phase 9.2: Legacy Provider Injection ✅
+1. ~~**`window.kondor`** injection (backwards compatible)~~ ✅
+2. ~~**getAccounts()** - return connected account~~ ✅
+3. ~~**getSigner()** - return signer interface~~ ✅
+4. ~~**Provider methods** - call, getNonce, etc.~~ ✅
 
 ### Phase 9.3: Transaction Signing
 1. **Native approval modal** for transactions
@@ -182,3 +190,11 @@ eas build --platform ios --profile production
 - [ ] Test settings seed phrase export
 - [ ] Test on iOS device
 - [ ] Test on Android device
+
+### dApp Browser Testing
+- [ ] Test WebView loads KoinDX
+- [ ] Test WebView loads Fogata
+- [ ] Test navigation controls (back, forward, refresh)
+- [ ] Test wallet connection prompt (getAccounts)
+- [ ] Test provider methods work (balance queries)
+- [ ] Test connected status indicator

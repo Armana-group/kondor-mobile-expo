@@ -1,6 +1,67 @@
 # Development Progress Summary
 
-## Latest Session: 2025-12-07 (Build & QR Scanner Fix)
+## Latest Session: 2025-12-07 (Phase 9.1 - dApps Browser)
+
+### Completed Tasks
+
+#### 1. WebView Browser Implementation ✅
+Implemented in-app browser for loading Koinos dApps with wallet integration.
+
+**New Files:**
+- `src/lib/kondorProvider.ts` - Injected JavaScript provider script
+- `src/screens/DAppWebViewScreen.tsx` - WebView browser screen
+
+**Features:**
+- Full WebView browser with navigation controls (back, forward, refresh)
+- URL bar showing current domain with SSL indicator
+- Loading states and error handling with retry
+- Bottom navigation bar
+- Connected indicator when wallet is linked
+
+#### 2. window.kondor Provider Injection ✅
+Injected the `window.kondor` interface into WebViews for dApp compatibility.
+
+**Provider Methods:**
+- `kondor.getAccounts()` - Get wallet accounts (with permission prompt)
+- `kondor.provider.*` - All koilib Provider methods (getNonce, getAccountRc, readContract, etc.)
+- `kondor.getSigner(address)` - Modern signer factory
+- `kondor.signer.*` - Legacy signer interface
+
+**Communication:**
+- Uses `injectedJavaScriptBeforeContentLoaded` for early injection
+- `postMessage` / `onMessage` bridge between WebView and React Native
+- Proper request/response correlation with message IDs
+
+#### 3. Message Handler System ✅
+Implemented command routing for wallet requests.
+
+**Background Commands (no approval needed):**
+- All `provider:*` commands route to koilib Provider
+- Handles blockchain queries, contract reads, etc.
+
+**Approval Commands (user consent):**
+- `getAccounts` - Shows native Alert for permission
+- `signer:*` - Placeholder for transaction signing (coming next)
+
+**Features:**
+- Connection status tracking
+- "Connected" badge in header after approval
+- Error handling with messages back to dApp
+
+#### 4. Navigation Stack Setup ✅
+Added AppsStack navigator for dApp browsing.
+
+**Modified:** `src/navigation/TabNavigator.tsx`
+- Created `AppsStackParamList` with AppsMain and DAppWebView routes
+- Full screen modal presentation for WebView
+- Slide-up animation from apps gallery
+
+**New Dependencies:**
+- `react-native-webview` - Native WebView component
+
+---
+
+## Previous Session: 2025-12-07 (Build & QR Scanner Fix)
 
 ### Completed Tasks
 

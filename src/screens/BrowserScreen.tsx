@@ -7,14 +7,18 @@ import {
   TouchableOpacity,
   Image,
   TextInput,
-  Linking,
   Alert,
   Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Screen } from '../components/Screen';
 import { CURATED_DAPPS, DApp } from '../constants/dapps';
+import { AppsStackParamList } from '../navigation/TabNavigator';
 import colors from '../theme/colors';
+
+type NavigationProp = NativeStackNavigationProp<AppsStackParamList, 'AppsMain'>;
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GRID_PADDING = 20;
@@ -23,6 +27,7 @@ const NUM_COLUMNS = 3;
 const CARD_SIZE = (SCREEN_WIDTH - (GRID_PADDING * 2) - (GRID_GAP * (NUM_COLUMNS - 1))) / NUM_COLUMNS;
 
 export const BrowserScreen = () => {
+  const navigation = useNavigation<NavigationProp>();
   const [searchQuery, setSearchQuery] = useState('');
 
   // Filter apps based on search
@@ -33,17 +38,7 @@ export const BrowserScreen = () => {
   });
 
   const handleAppPress = (app: DApp) => {
-    Alert.alert(
-      app.name,
-      `Open ${app.name} in browser?\n\nIn-app browser coming soon!`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Open',
-          onPress: () => Linking.openURL(app.url)
-        },
-      ]
-    );
+    navigation.navigate('DAppWebView', { app });
   };
 
   const handleAddApp = () => {
