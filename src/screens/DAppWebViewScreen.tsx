@@ -53,7 +53,17 @@ export const DAppWebViewScreen = () => {
   // Send response back to WebView
   const sendResponse = useCallback((response: KondorResponse) => {
     if (webViewRef.current) {
-      const script = `window.postMessage(${JSON.stringify(response)}, '*');`;
+      // Use the direct callback for reliable communication
+      const script = `
+        (function() {
+          if (window.__kondorResponse) {
+            window.__kondorResponse(${JSON.stringify(response)});
+          } else {
+            window.postMessage(${JSON.stringify(response)}, '*');
+          }
+        })();
+        true;
+      `;
       webViewRef.current.injectJavaScript(script);
     }
   }, []);

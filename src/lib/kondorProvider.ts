@@ -18,16 +18,19 @@ export const KONDOR_PROVIDER_SCRIPT = `
 
   // Send message to React Native and return a promise
   function sendMessage(command, args = {}) {
+    console.log('[Kondor Mobile] Sending command:', command, args);
     return new Promise((resolve, reject) => {
       const id = ++messageId;
       pendingRequests.set(id, { resolve, reject });
 
-      window.ReactNativeWebView.postMessage(JSON.stringify({
+      const message = {
         type: 'kondor',
         id,
         command,
         args
-      }));
+      };
+      console.log('[Kondor Mobile] Posting message:', message);
+      window.ReactNativeWebView.postMessage(JSON.stringify(message));
 
       // Timeout after 5 minutes (for user approval flows)
       setTimeout(() => {
@@ -40,16 +43,20 @@ export const KONDOR_PROVIDER_SCRIPT = `
   }
 
   // Handle responses from React Native
-  window.addEventListener('message', function(event) {
+  // React Native WebView sends messages to both window and document
+  function handleResponse(event) {
     try {
       const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+      console.log('[Kondor Mobile] Received message:', data);
       if (data.type === 'kondor-response' && data.id) {
         const pending = pendingRequests.get(data.id);
         if (pending) {
           pendingRequests.delete(data.id);
           if (data.error) {
+            console.log('[Kondor Mobile] Rejecting with error:', data.error);
             pending.reject(new Error(data.error));
           } else {
+            console.log('[Kondor Mobile] Resolving with result:', data.result);
             pending.resolve(data.result);
           }
         }
@@ -57,7 +64,24 @@ export const KONDOR_PROVIDER_SCRIPT = `
     } catch (e) {
       // Ignore non-JSON messages
     }
-  });
+  }
+
+  window.addEventListener('message', handleResponse);
+  document.addEventListener('message', handleResponse);
+
+  // Also expose a direct callback for React Native
+  window.__kondorResponse = function(response) {
+    console.log('[Kondor Mobile] Direct response:', response);
+    const pending = pendingRequests.get(response.id);
+    if (pending) {
+      pendingRequests.delete(response.id);
+      if (response.error) {
+        pending.reject(new Error(response.error));
+      } else {
+        pending.resolve(response.result);
+      }
+    }
+  };
 
   // Create Provider object (compatible with koilib)
   const provider = {
