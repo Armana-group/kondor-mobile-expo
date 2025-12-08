@@ -12,7 +12,8 @@ import {
 import { WebView, WebViewNavigation, WebViewMessageEvent } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { Provider } from 'koilib';
+import { Provider, Signer, Transaction, TransactionJson } from 'koilib';
+import * as SecureStore from 'expo-secure-store';
 import { DApp } from '../constants/dapps';
 import colors from '../theme/colors';
 import { useWalletStore } from '../stores/walletStore';
@@ -24,12 +25,24 @@ import {
   BACKGROUND_COMMANDS,
   APPROVAL_COMMANDS,
 } from '../lib/kondorProvider';
+import {
+  TransactionApprovalModal,
+  TransactionRequest,
+  SigningResult,
+} from '../components/TransactionApprovalModal';
 
 type DAppWebViewRouteParams = {
   DAppWebView: {
     app: DApp;
   };
 };
+
+// Pending request for transaction signing
+interface PendingSignRequest {
+  id: string;
+  request: TransactionRequest;
+  isSend: boolean;
+}
 
 export const DAppWebViewScreen = () => {
   const navigation = useNavigation();
@@ -44,8 +57,12 @@ export const DAppWebViewScreen = () => {
   const [error, setError] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
 
+  // Transaction approval modal state
+  const [showApprovalModal, setShowApprovalModal] = useState(false);
+  const [pendingRequest, setPendingRequest] = useState<PendingSignRequest | null>(null);
+
   // Wallet state
-  const { accounts, address, getActiveAccount } = useWalletStore();
+  const { accounts, address, getActiveAccount, activeAccountId } = useWalletStore();
 
   // Provider for blockchain queries
   const providerRef = useRef<Provider>(new Provider(DEFAULT_NETWORK.rpcNodes));
@@ -140,12 +157,145 @@ export const DAppWebViewScreen = () => {
     }
   }, []);
 
+  // Handle signer:prepareTransaction command
+  const handlePrepareTransaction = useCallback(async (args: Record<string, unknown>): Promise<TransactionJson> => {
+    const { signerAddress, transaction } = args as { signerAddress: string; transaction: TransactionJson };
+    const provider = providerRef.current;
+
+    // Get private key to create signer for prepare
+    let privateKey = await SecureStore.getItemAsync(`kondor_pk_${activeAccountId}`);
+    if (!privateKey) {
+      privateKey = await SecureStore.getItemAsync('kondor_wallet_private_key');
+    }
+
+    if (!privateKey) {
+      throw new Error('Private key not found');
+    }
+
+    let signer: Signer;
+    if (privateKey.length === 64) {
+      signer = new Signer({ privateKey, provider });
+    } else {
+      signer = Signer.fromWif(privateKey);
+      signer.provider = provider;
+    }
+
+    // Prepare transaction
+    let tx = { ...transaction };
+
+    if (!tx.header) {
+      tx.header = { payer: signerAddress };
+    }
+    if (!tx.header.payer) {
+      tx.header.payer = signerAddress;
+    }
+    if (!tx.header.chain_id) {
+      tx.header.chain_id = DEFAULT_NETWORK.chainId;
+    }
+
+    const txObj = new Transaction({ signer, provider });
+    txObj.transaction = tx;
+    await txObj.prepare();
+
+    return txObj.transaction;
+  }, [activeAccountId]);
+
   // Handle signer commands (require user approval)
-  const handleSignerCommand = useCallback(async (command: string, args: Record<string, unknown>): Promise<unknown> => {
-    // For now, return a placeholder that signing is not yet implemented
-    // Full implementation will require an approval modal
-    throw new Error('Transaction signing coming soon. Please use the Kondor browser extension for now.');
-  }, []);
+  const handleSignerCommand = useCallback(async (
+    id: string,
+    command: string,
+    args: Record<string, unknown>
+  ): Promise<unknown> => {
+    // Handle prepareTransaction without approval (just prepares, no signing)
+    if (command === 'signer:prepareTransaction') {
+      return handlePrepareTransaction(args);
+    }
+
+    // Handle signHash and signMessage
+    if (command === 'signer:signHash' || command === 'signer:signMessage') {
+      throw new Error('Message signing not yet implemented');
+    }
+
+    // For signTransaction and sendTransaction, show approval modal
+    if (command === 'signer:signTransaction' || command === 'signer:sendTransaction') {
+      const isSend = command === 'signer:sendTransaction';
+      const { signerAddress, transaction, options, abis } = args as {
+        signerAddress: string;
+        transaction: TransactionJson;
+        options?: { broadcast?: boolean };
+        abis?: Record<string, unknown>;
+      };
+
+      // Create pending request and show modal
+      const request: TransactionRequest = {
+        signerAddress,
+        transaction,
+        options,
+        abis,
+      };
+
+      setPendingRequest({ id, request, isSend });
+      setShowApprovalModal(true);
+
+      // Return a promise that will be resolved when modal completes
+      // The actual response is sent in handleApproveTransaction/handleRejectTransaction
+      return new Promise(() => {
+        // This promise never resolves here - response is sent via sendResponse
+      });
+    }
+
+    throw new Error(`Unknown signer command: ${command}`);
+  }, [handlePrepareTransaction]);
+
+  // Handle transaction approval
+  const handleApproveTransaction = useCallback((result: SigningResult) => {
+    if (pendingRequest) {
+      console.log('[Kondor] Transaction approved:', pendingRequest.id);
+
+      // Send the result back to the dApp
+      if (pendingRequest.isSend) {
+        sendResponse({
+          type: 'kondor-response',
+          id: pendingRequest.id,
+          result: {
+            receipt: result.receipt,
+            transaction: result.transaction,
+          },
+        });
+      } else {
+        sendResponse({
+          type: 'kondor-response',
+          id: pendingRequest.id,
+          result: result.transaction,
+        });
+      }
+    }
+    setShowApprovalModal(false);
+    setPendingRequest(null);
+  }, [pendingRequest, sendResponse]);
+
+  // Handle transaction rejection
+  const handleRejectTransaction = useCallback((error: string) => {
+    if (pendingRequest) {
+      console.log('[Kondor] Transaction rejected:', pendingRequest.id);
+      sendResponse({
+        type: 'kondor-response',
+        id: pendingRequest.id,
+        error,
+      });
+    }
+    setShowApprovalModal(false);
+    setPendingRequest(null);
+  }, [pendingRequest, sendResponse]);
+
+  // Close approval modal
+  const handleCloseApprovalModal = useCallback(() => {
+    if (pendingRequest) {
+      handleRejectTransaction('User cancelled');
+    } else {
+      setShowApprovalModal(false);
+    }
+  }, [pendingRequest, handleRejectTransaction]);
 
   // Handle getAccounts command
   const handleGetAccounts = useCallback(async (): Promise<unknown> => {
@@ -200,15 +350,24 @@ export const DAppWebViewScreen = () => {
 
         if (command === 'getAccounts') {
           result = await handleGetAccounts();
+          sendResponse({ type: 'kondor-response', id, result });
+        } else if (command === 'signer:prepareTransaction') {
+          // prepareTransaction doesn't need approval, but needs signer access
+          result = await handleSignerCommand(id, command, args);
+          sendResponse({ type: 'kondor-response', id, result });
+        } else if (command === 'signer:signTransaction' || command === 'signer:sendTransaction') {
+          // These require approval modal - modal handles the response
+          await handleSignerCommand(id, command, args);
+        } else if (command === 'signer:signHash' || command === 'signer:signMessage') {
+          // Message signing - handled by handleSignerCommand (throws error for now)
+          result = await handleSignerCommand(id, command, args);
+          sendResponse({ type: 'kondor-response', id, result });
         } else if (BACKGROUND_COMMANDS.includes(command)) {
           result = await handleProviderCommand(command, args);
-        } else if (APPROVAL_COMMANDS.includes(command)) {
-          result = await handleSignerCommand(command, args);
+          sendResponse({ type: 'kondor-response', id, result });
         } else {
           throw new Error(`Unknown command: ${command}`);
         }
-
-        sendResponse({ type: 'kondor-response', id, result });
       } catch (err: any) {
         console.error('[Kondor] Command error:', err);
         sendResponse({ type: 'kondor-response', id, error: err.message });
@@ -381,6 +540,18 @@ export const DAppWebViewScreen = () => {
           <Ionicons name="share-outline" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
       </View>
+
+      {/* Transaction Approval Modal */}
+      <TransactionApprovalModal
+        visible={showApprovalModal}
+        request={pendingRequest?.request || null}
+        appName={app.name}
+        appOrigin={app.url}
+        isSend={pendingRequest?.isSend || false}
+        onApprove={handleApproveTransaction}
+        onReject={handleRejectTransaction}
+        onClose={handleCloseApprovalModal}
+      />
     </SafeAreaView>
   );
 };

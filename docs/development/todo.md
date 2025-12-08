@@ -1,6 +1,19 @@
 # Development TODO
 
-## Status: Phase 9.2 Complete - Ready for Phase 9.3 (Transaction Signing)
+## Status: Phase 9.3 Complete - Ready for Phase 9.4 (WalletConnect)
+
+### ✅ Completed (2025-12-08)
+- ✅ Custom URL entry in Apps browser ("Add App" opens URL modal)
+
+### ✅ Completed (2025-12-07 - Phase 9.3)
+- ✅ TransactionApprovalModal component
+- ✅ Transaction operation decoding (contract calls, uploads, system calls)
+- ✅ Known contract/entry point mapping (KOIN, VHP, transfer, swap, etc.)
+- ✅ `signer:signTransaction` command handling
+- ✅ `signer:sendTransaction` command handling
+- ✅ `signer:prepareTransaction` command handling
+- ✅ Biometric authentication before signing
+- ✅ Transaction broadcast and receipt handling
 
 ### ✅ Completed (2025-12-07 - Phase 9.1 & 9.2)
 - ✅ WebView browser with navigation controls
@@ -93,17 +106,17 @@ Kondor Mini Apps - tightly integrated dApps with pre-authenticated wallet access
 3. ~~**getSigner()** - return signer interface~~ ✅
 4. ~~**Provider methods** - call, getNonce, etc.~~ ✅
 
-### Phase 9.3: Transaction Signing (NEXT)
-1. **Native approval modal** for transactions
-2. **Operation decoding** (transfer, contract calls)
-3. **Biometric confirmation** before signing
-4. **Sign and broadcast** flow
+### Phase 9.3: Transaction Signing ✅ COMPLETE
+1. ~~**Native approval modal** for transactions~~ ✅
+2. ~~**Operation decoding** (transfer, contract calls)~~ ✅
+3. ~~**Biometric confirmation** before signing~~ ✅
+4. ~~**Sign and broadcast** flow~~ ✅
 
-**Implementation Notes:**
-- Handle `signer:signTransaction` and `signer:sendTransaction` commands
-- Decode transaction operations to show human-readable details
-- Use existing biometric auth from walletStore
-- Reference Kondor3's SignSendTransaction popup for UI patterns
+**Implementation Details:**
+- `TransactionApprovalModal` component with operation decoding
+- Known contracts (KOIN, VHP, KoinDX) and entry points (transfer, swap, mint)
+- Biometric auth via `requireBiometricAuth()` before signing
+- Full sign and broadcast flow with receipt handling
 
 ### Phase 9.4: WalletConnect v2
 WalletConnect provides an alternative connection method when provider injection doesn't work.
@@ -219,3 +232,9 @@ eas build --platform ios --profile production
 - [ ] Test provider methods work (balance queries)
 - [x] Test connected status indicator
 - [ ] Test transaction signing flow (Phase 9.3)
+  - [ ] Test signTransaction returns signed transaction
+  - [ ] Test sendTransaction broadcasts and returns receipt
+  - [ ] Test biometric authentication prompt appears
+  - [ ] Test rejection sends error to dApp
+  - [ ] Test with Kollection (NFT purchase)
+  - [ ] Test with KoinDX (swap)

@@ -1,6 +1,79 @@
 # Development Progress Summary
 
-## Latest Session: 2025-12-07 (Phase 9.1 - dApps Browser)
+## Latest Session: 2025-12-08 (Custom URL Support)
+
+### Completed Tasks
+
+#### Custom URL Entry for Apps Browser ✅
+Added ability to open any URL in the dApps browser.
+
+**File Modified:** `src/screens/BrowserScreen.tsx`
+
+**Features:**
+- Tapping "Add App" now opens a URL input modal
+- URL validation with auto-prefix (adds `https://` if missing)
+- Extracts domain name for display in WebView header
+- Keyboard "Go" button support for quick navigation
+- Clean modal UI with Cancel/Open buttons
+
+**Use Cases:**
+- Test wallet integration with any dApp
+- Access dApps not in the curated list
+- Debug provider injection issues
+
+---
+
+## Previous Session: 2025-12-07 (Phase 9.3 - Transaction Signing)
+
+### Completed Tasks
+
+#### 1. Transaction Approval Modal ✅
+Implemented native approval UI for dApp transaction signing requests.
+
+**New File:** `src/components/TransactionApprovalModal.tsx`
+
+**Features:**
+- Full-screen modal with pageSheet presentation
+- Shows dApp origin and simplified domain name
+- Decodes transaction operations with human-readable labels
+- Expandable operation details with contract info
+- Advanced mode showing transaction header (nonce, rc_limit, payer, payee)
+- Warning about interacting with unknown contracts
+- Biometric authentication required before signing
+- Sign or Send action based on request type
+
+**Operation Decoding:**
+- Known contracts: KOIN, VHP, KoinDX Router, Kollection
+- Known entry points: transfer, mint, burn, approve, swap, etc.
+- Falls back to hex display for unknown contracts/entry points
+- Displays contract call arguments (truncated if long)
+
+#### 2. Signer Commands Integration ✅
+Updated `DAppWebViewScreen.tsx` to handle transaction signing flow.
+
+**Handled Commands:**
+- `signer:prepareTransaction` - Prepares transaction (nonce, rc_limit, chain_id) without approval
+- `signer:signTransaction` - Signs transaction with approval modal, returns signed tx
+- `signer:sendTransaction` - Signs and broadcasts transaction, returns receipt + tx
+- `signer:signHash` / `signer:signMessage` - Placeholder (not yet implemented)
+
+**Flow:**
+1. dApp calls `signer.signTransaction(tx)` or `signer.sendTransaction(tx)`
+2. WebView sends command to React Native
+3. TransactionApprovalModal displayed with operation details
+4. User reviews operations and taps Sign/Send
+5. Biometric authentication required
+6. Private key retrieved from SecureStore
+7. Transaction signed with koilib Signer
+8. For sendTransaction: transaction broadcast to network
+9. Result sent back to dApp via injected JavaScript
+
+#### 3. KondorResponse Type Update ✅
+Added `type: 'kondor-response'` to response interface for consistency.
+
+---
+
+## Previous Session: 2025-12-07 (Phase 9.1 - dApps Browser)
 
 ### Completed Tasks
 
@@ -426,6 +499,8 @@ Full HD wallet support with multiple accounts.
 - Settings with seed/key export
 - Bottom tab navigation
 - Real device builds (iOS tested)
+- **dApp Browser** with `window.kondor` provider injection
+- **Transaction signing** for dApps with biometric auth
 
 ### ✅ Technical Setup
 - Bare React Native with Expo SDK 54
@@ -434,6 +509,8 @@ Full HD wallet support with multiple accounts.
 - koilib for blockchain operations
 - Manual protobuf encoding (bypasses ABI issues)
 - QR code generation (react-native-qrcode-svg)
+- WebView with injected JavaScript provider
+- Biometric authentication (expo-local-authentication)
 
 ---
 
@@ -449,32 +526,87 @@ Full HD wallet support with multiple accounts.
 ```
 src/
 ├── stores/
-│   ├── walletStore.ts      # Multi-account wallet (UPDATED)
-│   ├── koinosStore.ts      # Blockchain operations (UPDATED)
+│   ├── walletStore.ts      # Multi-account wallet, biometric auth
+│   ├── koinosStore.ts      # Blockchain operations
 │   ├── tokenStore.ts       # Multi-token support
 │   └── contactStore.ts     # Contacts
 ├── screens/
-│   ├── HomeScreen.tsx      # Account switcher, token list (UPDATED)
-│   ├── ReceiveScreen.tsx   # QR code receive (NEW)
+│   ├── HomeScreen.tsx      # Account switcher, token list
+│   ├── ReceiveScreen.tsx   # QR code receive
 │   ├── TokenDetailScreen.tsx # Token detail view
-│   ├── SendScreen.tsx      # Multi-token transfer (UPDATED)
+│   ├── SendScreen.tsx      # Multi-token transfer
 │   ├── ActivityScreen.tsx  # Transaction history
 │   ├── ContactsScreen.tsx  # Contact management
-│   └── SettingsScreen.tsx  # Settings & export
+│   ├── SettingsScreen.tsx  # Settings & export
+│   ├── BrowserScreen.tsx   # Apps gallery (dApps list)
+│   └── DAppWebViewScreen.tsx # WebView browser with wallet integration
 ├── components/
 │   ├── AccountSwitcher.tsx # Account management modal
-│   ├── QRScannerModal.tsx  # Camera QR scanner (NEW)
-│   ├── Input.tsx           # Input with rightIcon (UPDATED)
+│   ├── QRScannerModal.tsx  # Camera QR scanner
+│   ├── TransactionApprovalModal.tsx # dApp tx approval (NEW)
+│   ├── Input.tsx           # Input with rightIcon
 │   └── ...
 ├── hooks/
 │   └── useTransactionHistory.ts # Multi-token tx history
 ├── navigation/
-│   └── TabNavigator.tsx    # Bottom tabs + stack nav (UPDATED)
-└── lib/
-    ├── manualTokenContract.ts # Multi-token transfers (UPDATED)
-    ├── wallet.ts           # HD derivation
-    ├── crypto.ts           # Polyfills
-    └── constants.ts        # Network config
+│   └── TabNavigator.tsx    # Bottom tabs + stack nav
+├── lib/
+│   ├── kondorProvider.ts   # Injected JS for window.kondor (NEW)
+│   ├── manualTokenContract.ts # Multi-token transfers
+│   ├── biometrics.ts       # Biometric authentication
+│   ├── wallet.ts           # HD derivation
+│   ├── crypto.ts           # Polyfills
+│   └── constants.ts        # Network config
+└── constants/
+    └── dapps.ts            # Curated dApps list
+```
+
+---
+
+## dApp Browser Architecture
+
+### Provider Injection
+The `window.kondor` object is injected into WebViews before page load, providing the same API as the Kondor browser extension:
+
+```javascript
+window.kondor = {
+  provider: { /* koilib Provider methods */ },
+  getProvider: (network) => provider,
+  getSigner: (address) => new KondorSigner(address),
+  getAccounts: () => Promise<Account[]>,
+  KondorSigner: class { /* signer methods */ }
+}
+```
+
+### Message Flow
+1. **dApp → React Native**: `ReactNativeWebView.postMessage(JSON.stringify(message))`
+2. **React Native → dApp**: `webViewRef.injectJavaScript(script)`
+
+### Command Types
+- **Background Commands**: Blockchain queries (no approval needed)
+  - `provider:call`, `provider:getNonce`, `provider:readContract`, etc.
+- **Approval Commands**: User consent required
+  - `getAccounts` - Connection permission
+  - `signer:signTransaction` - Sign transaction
+  - `signer:sendTransaction` - Sign and broadcast
+
+### Transaction Signing Flow
+```
+dApp calls signer.sendTransaction(tx)
+    ↓
+WebView posts message to React Native
+    ↓
+TransactionApprovalModal displays
+    ↓
+User reviews operations
+    ↓
+Biometric authentication
+    ↓
+Sign with koilib Signer
+    ↓
+Broadcast to network
+    ↓
+Return receipt to dApp
 ```
 
 ---

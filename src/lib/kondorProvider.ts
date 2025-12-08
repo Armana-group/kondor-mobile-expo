@@ -219,6 +219,7 @@ export interface KondorMessage {
 }
 
 export interface KondorResponse {
+  type: 'kondor-response';
   id: string;
   result?: unknown;
   error?: string;

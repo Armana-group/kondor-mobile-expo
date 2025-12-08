@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,9 @@ import {
   TextInput,
   Alert,
   Dimensions,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -29,6 +32,9 @@ const CARD_SIZE = (SCREEN_WIDTH - (GRID_PADDING * 2) - (GRID_GAP * (NUM_COLUMNS 
 export const BrowserScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const [searchQuery, setSearchQuery] = useState('');
+  const [showUrlModal, setShowUrlModal] = useState(false);
+  const [customUrl, setCustomUrl] = useState('');
+  const urlInputRef = useRef<TextInput>(null);
 
   // Filter apps based on search
   const filteredApps = CURATED_DAPPS.filter(app => {
@@ -42,11 +48,54 @@ export const BrowserScreen = () => {
   };
 
   const handleAddApp = () => {
-    Alert.alert(
-      'Add Custom App',
-      'Custom app support coming soon!',
-      [{ text: 'OK' }]
-    );
+    setCustomUrl('https://');
+    setShowUrlModal(true);
+    setTimeout(() => urlInputRef.current?.focus(), 100);
+  };
+
+  const handleOpenCustomUrl = () => {
+    let url = customUrl.trim();
+
+    // Basic URL validation
+    if (!url) {
+      Alert.alert('Error', 'Please enter a URL');
+      return;
+    }
+
+    // Add https:// if no protocol specified
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'https://' + url;
+    }
+
+    // Validate URL format
+    try {
+      new URL(url);
+    } catch {
+      Alert.alert('Invalid URL', 'Please enter a valid URL');
+      return;
+    }
+
+    setShowUrlModal(false);
+    setCustomUrl('');
+
+    // Extract domain for app name
+    let name = 'Custom App';
+    try {
+      const urlObj = new URL(url);
+      name = urlObj.hostname.replace('www.', '');
+    } catch {}
+
+    // Navigate with custom app
+    const customApp: DApp = {
+      id: 'custom-' + Date.now(),
+      name: name,
+      description: 'Custom URL',
+      url: url,
+      icon: '', // Will use default icon
+      category: 'other',
+    };
+
+    navigation.navigate('DAppWebView', { app: customApp });
   };
 
   const renderAppCard = (app: DApp) => (
@@ -120,6 +169,69 @@ export const BrowserScreen = () => {
           </View>
         )}
       </ScrollView>
+
+      {/* Custom URL Modal */}
+      <Modal
+        visible={showUrlModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowUrlModal(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowUrlModal(false)}
+          />
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Enter URL</Text>
+            <Text style={styles.modalSubtitle}>
+              Open any website with wallet integration
+            </Text>
+
+            <View style={styles.urlInputContainer}>
+              <Ionicons name="globe-outline" size={20} color={colors.textTertiary} />
+              <TextInput
+                ref={urlInputRef}
+                style={styles.urlInput}
+                placeholder="https://example.com"
+                placeholderTextColor={colors.textTertiary}
+                value={customUrl}
+                onChangeText={setCustomUrl}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                returnKeyType="go"
+                onSubmitEditing={handleOpenCustomUrl}
+                selectTextOnFocus
+              />
+              {customUrl.length > 0 && (
+                <TouchableOpacity onPress={() => setCustomUrl('')}>
+                  <Ionicons name="close-circle" size={20} color={colors.textTertiary} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setShowUrlModal(false)}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.openButton}
+                onPress={handleOpenCustomUrl}
+              >
+                <Text style={styles.openButtonText}>Open</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </Screen>
   );
 };
@@ -221,5 +333,79 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textSecondary,
     marginTop: 12,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+  },
+  modalContent: {
+    width: SCREEN_WIDTH - 48,
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    padding: 24,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: colors.textPrimary,
+    textAlign: 'center',
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  urlInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.elevated,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 12,
+  },
+  urlInput: {
+    flex: 1,
+    fontSize: 16,
+    color: colors.textPrimary,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    marginTop: 20,
+    gap: 12,
+  },
+  cancelButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.elevated,
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  openButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.purple,
+  },
+  openButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
   },
 });
