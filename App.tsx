@@ -1,5 +1,4 @@
 import 'react-native-gesture-handler';
-import '@walletconnect/react-native-compat';
 import './src/lib/crypto';
 import { setupCrypto } from './src/lib/crypto';
 

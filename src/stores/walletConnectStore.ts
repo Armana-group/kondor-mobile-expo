@@ -8,10 +8,40 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Core } from '@walletconnect/core';
-import { WalletKit, WalletKitTypes } from '@reown/walletkit';
-import { buildApprovedNamespaces, getSdkError } from '@walletconnect/utils';
 import { TransactionJson } from 'koilib';
+
+// WalletConnect imports are done dynamically to avoid initialization issues
+let Core: any = null;
+let WalletKit: any = null;
+let buildApprovedNamespaces: any = null;
+let getSdkError: any = null;
+let wcImported = false;
+
+// Lazy load WalletConnect modules
+async function importWalletConnect() {
+  if (wcImported) return;
+
+  try {
+    // Import compat shim first
+    await import('@walletconnect/react-native-compat');
+
+    // Then import the actual modules
+    const coreModule = await import('@walletconnect/core');
+    const walletKitModule = await import('@reown/walletkit');
+    const utilsModule = await import('@walletconnect/utils');
+
+    Core = coreModule.Core;
+    WalletKit = walletKitModule.WalletKit;
+    buildApprovedNamespaces = utilsModule.buildApprovedNamespaces;
+    getSdkError = utilsModule.getSdkError;
+
+    wcImported = true;
+    console.log('[WalletConnect] Modules imported successfully');
+  } catch (error) {
+    console.error('[WalletConnect] Failed to import modules:', error);
+    throw error;
+  }
+}
 
 // Koinos chain IDs from @armana/walletconnect-koinos-sdk-js
 export const KOINOS_CHAIN_IDS = {
@@ -102,9 +132,6 @@ export interface WCTransactionRequest {
   };
 }
 
-// WalletKit instance type
-type WalletKitInstance = Awaited<ReturnType<typeof WalletKit.init>>;
-
 interface WalletConnectState {
   // State
   initialized: boolean;
@@ -124,9 +151,9 @@ interface WalletConnectState {
   rejectRequest: (id: number, topic: string, message?: string) => Promise<void>;
   clearPendingTransaction: () => void;
 
-  // Internal
-  _walletKit: WalletKitInstance | null;
-  _setWalletKit: (kit: WalletKitInstance | null) => void;
+  // Internal (using any for WalletKit since it's dynamically imported)
+  _walletKit: any | null;
+  _setWalletKit: (kit: any | null) => void;
   _setPendingProposal: (proposal: WCSessionProposal | null) => void;
   _setPendingRequest: (request: WCPendingRequest | null) => void;
   _setPendingTransaction: (request: WCTransactionRequest | null) => void;
@@ -192,6 +219,13 @@ export const useWalletConnectStore = create<WalletConnectState>()(
 
         try {
           console.log('[WalletConnect] Initializing...');
+
+          // Import WalletConnect modules first
+          await importWalletConnect();
+
+          if (!Core || !WalletKit) {
+            throw new Error('WalletConnect modules not loaded');
+          }
 
           // Create Core instance
           const core = new Core({
