@@ -54,9 +54,8 @@ const SUPPORTED_METHODS = Object.values(KOINOS_METHODS);
 // Events (none for now, but required by WalletConnect)
 const SUPPORTED_EVENTS: string[] = [];
 
-// WalletConnect Project ID - you need to get this from https://cloud.walletconnect.com
-// For development, we use a placeholder
-const WALLETCONNECT_PROJECT_ID = process.env.EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID || 'your-project-id';
+// WalletConnect Project ID from https://cloud.walletconnect.com
+const WALLETCONNECT_PROJECT_ID = '1f1d0d8789bef28db46761b0c0facc6d';
 
 // Session info for display
 export interface WCSession {
