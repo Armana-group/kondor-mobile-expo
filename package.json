@@ -30,6 +30,7 @@
     "expo-random": "^14.0.1",
     "expo-secure-store": "~15.0.7",
     "expo-status-bar": "~3.0.8",
+    "fast-text-encoding": "^1.0.6",
     "koilib": "^9.1.0",
     "protobufjs": "^7.5.4",
     "react": "19.1.0",

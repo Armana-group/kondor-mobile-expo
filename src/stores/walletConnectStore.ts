@@ -4,17 +4,19 @@
  * Manages WalletConnect v2 sessions and handles incoming requests
  * from dApps that connect via WalletConnect protocol.
  *
- * NOTE: WalletConnect is currently disabled due to compatibility issues
- * with the React Native/Expo build system. The feature will be re-enabled
- * once the bundler issues are resolved.
+ * IMPORTANT: @walletconnect/react-native-compat MUST be imported at the
+ * very top of the app entry point (index.ts) BEFORE any other imports.
  */
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TransactionJson } from 'koilib';
+import { Core } from '@walletconnect/core';
+import { WalletKit } from '@reown/walletkit';
+import { buildApprovedNamespaces, getSdkError } from '@walletconnect/utils';
 
-// WalletConnect - may work in production builds (TestFlight/App Store) but not dev client
+// WalletConnect feature flag
 const WALLETCONNECT_ENABLED = true;
 
 // Koinos chain IDs from @armana/walletconnect-koinos-sdk-js
@@ -200,10 +202,6 @@ export const useWalletConnectStore = create<WalletConnectState>()(
         try {
           console.log('[WalletConnect] Initializing...');
 
-          // Dynamic imports for WalletConnect
-          const { Core } = await import('@walletconnect/core');
-          const { WalletKit } = await import('@reown/walletkit');
-
           // Create Core instance
           const core = new Core({
             projectId: WALLETCONNECT_PROJECT_ID,
@@ -339,8 +337,6 @@ export const useWalletConnectStore = create<WalletConnectState>()(
         try {
           console.log('[WalletConnect] Approving session:', pendingProposal.id);
 
-          const { buildApprovedNamespaces } = await import('@walletconnect/utils');
-
           // Build approved namespaces for Koinos
           const approvedNamespaces = buildApprovedNamespaces({
             proposal: pendingProposal.params,
@@ -379,8 +375,6 @@ export const useWalletConnectStore = create<WalletConnectState>()(
         try {
           console.log('[WalletConnect] Rejecting session:', pendingProposal.id);
 
-          const { getSdkError } = await import('@walletconnect/utils');
-
           await _walletKit.rejectSession({
             id: pendingProposal.id,
             reason: getSdkError('USER_REJECTED'),
@@ -405,8 +399,6 @@ export const useWalletConnectStore = create<WalletConnectState>()(
         try {
           console.log('[WalletConnect] Disconnecting session:', topic);
 
-          const { getSdkError } = await import('@walletconnect/utils');
-
           await _walletKit.disconnectSession({
             topic,
             reason: getSdkError('USER_DISCONNECTED'),
@@ -427,8 +419,6 @@ export const useWalletConnectStore = create<WalletConnectState>()(
         if (!_walletKit) return;
 
         try {
-          const { getSdkError } = await import('@walletconnect/utils');
-
           for (const session of sessions) {
             await _walletKit.disconnectSession({
               topic: session.topic,
