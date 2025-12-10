@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,10 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Screen } from '../components/Screen';
 import { CURATED_DAPPS, DApp } from '../constants/dapps';
 import { AppsStackParamList } from '../navigation/TabNavigator';
+import { WalletConnectQRModal } from '../components/WalletConnectQRModal';
+import { useWalletStore } from '../stores/walletStore';
+import { useWalletConnectStore, WCSession } from '../stores/walletConnectStore';
+import { HapticFeedback } from '../lib/haptics';
 import colors from '../theme/colors';
 
 type NavigationProp = NativeStackNavigationProp<AppsStackParamList, 'AppsMain'>;
@@ -34,7 +38,63 @@ export const BrowserScreen = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showUrlModal, setShowUrlModal] = useState(false);
   const [customUrl, setCustomUrl] = useState('');
+  const [showWCScanner, setShowWCScanner] = useState(false);
   const urlInputRef = useRef<TextInput>(null);
+
+  // Wallet and WalletConnect state
+  const { address, isWalletCreated } = useWalletStore();
+  const {
+    initialized,
+    initialize,
+    pair,
+    sessions,
+    disconnectSession
+  } = useWalletConnectStore();
+
+  // Initialize WalletConnect on mount
+  useEffect(() => {
+    if (isWalletCreated && address && !initialized) {
+      initialize(address).catch((error) => {
+        console.error('[BrowserScreen] WC init error:', error);
+      });
+    }
+  }, [isWalletCreated, address, initialized, initialize]);
+
+  // Handle WalletConnect QR scan
+  const handleWCScan = useCallback(async (wcUri: string) => {
+    try {
+      console.log('[BrowserScreen] Pairing with URI:', wcUri.slice(0, 50) + '...');
+      await pair(wcUri);
+      HapticFeedback.success();
+    } catch (error: any) {
+      console.error('[BrowserScreen] Pairing error:', error);
+      HapticFeedback.error();
+      Alert.alert('Connection Failed', error.message || 'Failed to connect. Please try again.');
+    }
+  }, [pair]);
+
+  // Handle session disconnect
+  const handleDisconnectSession = useCallback((session: WCSession) => {
+    Alert.alert(
+      'Disconnect',
+      `Disconnect from ${session.peerMeta.name}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Disconnect',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await disconnectSession(session.topic);
+              HapticFeedback.success();
+            } catch (error) {
+              console.error('[BrowserScreen] Disconnect error:', error);
+            }
+          },
+        },
+      ]
+    );
+  }, [disconnectSession]);
 
   // Filter apps based on search
   const filteredApps = CURATED_DAPPS.filter(app => {
@@ -131,12 +191,77 @@ export const BrowserScreen = () => {
     </TouchableOpacity>
   );
 
+  // Render WalletConnect session card
+  const renderWCSessionCard = (session: WCSession) => (
+    <TouchableOpacity
+      key={session.topic}
+      style={styles.wcSessionCard}
+      onPress={() => handleDisconnectSession(session)}
+      activeOpacity={0.7}
+    >
+      <View style={styles.wcSessionIcon}>
+        {session.peerMeta.icons?.[0] ? (
+          <Image
+            source={{ uri: session.peerMeta.icons[0] }}
+            style={styles.wcSessionImage}
+          />
+        ) : (
+          <Ionicons name="globe-outline" size={24} color={colors.textSecondary} />
+        )}
+      </View>
+      <View style={styles.wcSessionInfo}>
+        <Text style={styles.wcSessionName} numberOfLines={1}>
+          {session.peerMeta.name}
+        </Text>
+        <Text style={styles.wcSessionUrl} numberOfLines={1}>
+          {session.peerMeta.url.replace(/^https?:\/\//, '')}
+        </Text>
+      </View>
+      <View style={styles.wcSessionStatus}>
+        <View style={styles.wcStatusDot} />
+        <Text style={styles.wcStatusText}>Connected</Text>
+      </View>
+    </TouchableOpacity>
+  );
+
   return (
     <Screen scroll={false}>
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.title}>Applications</Text>
+        </View>
+
+        {/* WalletConnect Section */}
+        <View style={styles.wcSection}>
+          <View style={styles.wcHeader}>
+            <View style={styles.wcTitleRow}>
+              <Ionicons name="link" size={18} color="#3B99FC" />
+              <Text style={styles.wcTitle}>WalletConnect</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.wcScanButton}
+              onPress={() => setShowWCScanner(true)}
+            >
+              <Ionicons name="qr-code-outline" size={18} color={colors.textPrimary} />
+              <Text style={styles.wcScanButtonText}>Scan</Text>
+            </TouchableOpacity>
+          </View>
+
+          {sessions.length > 0 ? (
+            <View style={styles.wcSessionsList}>
+              {sessions.map(session => renderWCSessionCard(session))}
+            </View>
+          ) : (
+            <View style={styles.wcEmptyState}>
+              <Text style={styles.wcEmptyText}>
+                No active connections
+              </Text>
+              <Text style={styles.wcEmptySubtext}>
+                Scan a QR code to connect to a desktop dApp
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Search Bar */}
@@ -169,6 +294,13 @@ export const BrowserScreen = () => {
           </View>
         )}
       </ScrollView>
+
+      {/* WalletConnect QR Scanner */}
+      <WalletConnectQRModal
+        visible={showWCScanner}
+        onClose={() => setShowWCScanner(false)}
+        onScan={handleWCScan}
+      />
 
       {/* Custom URL Modal */}
       <Modal
@@ -407,5 +539,109 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: colors.textPrimary,
+  },
+  // WalletConnect styles
+  wcSection: {
+    marginHorizontal: GRID_PADDING,
+    marginBottom: 8,
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    padding: 16,
+  },
+  wcHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  wcTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  wcTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  wcScanButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#3B99FC',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
+  },
+  wcScanButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  wcSessionsList: {
+    gap: 8,
+  },
+  wcSessionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.elevated,
+    padding: 12,
+    borderRadius: 12,
+    gap: 12,
+  },
+  wcSessionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: colors.card,
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  wcSessionImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+  },
+  wcSessionInfo: {
+    flex: 1,
+  },
+  wcSessionName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  wcSessionUrl: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  wcSessionStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  wcStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.success,
+  },
+  wcStatusText: {
+    fontSize: 11,
+    color: colors.success,
+  },
+  wcEmptyState: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  wcEmptyText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  wcEmptySubtext: {
+    fontSize: 12,
+    color: colors.textTertiary,
+    marginTop: 4,
   },
 });

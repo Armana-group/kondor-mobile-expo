@@ -1,6 +1,16 @@
 # Development TODO
 
-## Status: Phase 9.3 Complete - Ready for Phase 9.4 (WalletConnect)
+## Status: Phase 9.4 Complete - WalletConnect Integration Done
+
+### ✅ Completed (2025-12-09 - Phase 9.4)
+- ✅ WalletConnect v2 integration with `@reown/walletkit`
+- ✅ WalletConnect store for session management
+- ✅ QR scanner extended for WalletConnect URIs (`wc:` protocol)
+- ✅ Session approval modal (WCSessionApprovalModal)
+- ✅ WalletConnect method handlers for all Koinos methods
+- ✅ Transaction signing via existing TransactionApprovalModal
+- ✅ WalletConnect UI section in Apps screen
+- ✅ Active sessions display with disconnect
 
 ### ✅ Completed (2025-12-08)
 - ✅ Custom URL entry in Apps browser ("Add App" opens URL modal)
@@ -118,13 +128,23 @@ Kondor Mini Apps - tightly integrated dApps with pre-authenticated wallet access
 - Biometric auth via `requireBiometricAuth()` before signing
 - Full sign and broadcast flow with receipt handling
 
-### Phase 9.4: WalletConnect v2
+### Phase 9.4: WalletConnect v2 ✅ COMPLETE
 WalletConnect provides an alternative connection method when provider injection doesn't work.
 
-1. **Install** `@walletconnect/react-native-compat` and `@armana/walletconnect-koinos-sdk-js`
-2. **QR Scanner** - scan WalletConnect QR codes from desktop dApps
-3. **Session management** - approve/reject connection requests
-4. **Transaction signing** - reuse approval modal from Phase 9.3
+1. ~~**Install** `@reown/walletkit` and `@walletconnect/react-native-compat`~~ ✅
+2. ~~**QR Scanner** - scan WalletConnect QR codes from desktop dApps~~ ✅
+3. ~~**Session management** - approve/reject connection requests~~ ✅
+4. ~~**Transaction signing** - reuse approval modal from Phase 9.3~~ ✅
+
+**Implementation Details:**
+- `walletConnectStore.ts` - Session management with Zustand
+- `WalletConnectQRModal.tsx` - QR scanner for WC URIs
+- `WCSessionApprovalModal.tsx` - Session approval UI
+- `WalletConnectHandler.tsx` - Global request handler
+- Supports all Koinos methods defined in `@armana/walletconnect-koinos-sdk-js`
+
+**Note:** Requires WalletConnect Project ID from https://cloud.walletconnect.com
+Set via `EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID` environment variable.
 
 **Benefits:**
 - Fallback for dApps like KoinDX that have different detection

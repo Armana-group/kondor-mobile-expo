@@ -26,21 +26,42 @@ try {
   console.log('[QRScanner] expo-camera not available:', e);
 }
 
+// QR data types
+export type QRDataType = 'koinos_address' | 'walletconnect';
+
 // Parsed QR data structure
 export interface ParsedQRData {
-  address: string;
+  type: QRDataType;
+  // For koinos_address type
+  address?: string;
   amount?: string;
   token?: string;
   memo?: string;
+  // For walletconnect type
+  wcUri?: string;
 }
 
-// Parse koinos: URI scheme or plain address
-export function parseKoinosQR(data: string): ParsedQRData | null {
+// Check if string is a WalletConnect URI
+export function isWalletConnectUri(data: string): boolean {
+  // WalletConnect v2 URIs start with 'wc:'
+  return data.startsWith('wc:') && data.includes('@2');
+}
+
+// Parse QR code data - handles both Koinos addresses and WalletConnect URIs
+export function parseQRData(data: string): ParsedQRData | null {
   if (!data || typeof data !== 'string') {
     return null;
   }
 
   const trimmed = data.trim();
+
+  // Check for WalletConnect URI first
+  if (isWalletConnectUri(trimmed)) {
+    return {
+      type: 'walletconnect',
+      wcUri: trimmed,
+    };
+  }
 
   // Check for koinos: URI scheme
   // Format: koinos:ADDRESS?amount=X&token=SYMBOL&memo=TEXT
@@ -53,7 +74,7 @@ export function parseKoinosQR(data: string): ParsedQRData | null {
         return null;
       }
 
-      const result: ParsedQRData = { address };
+      const result: ParsedQRData = { type: 'koinos_address', address };
 
       if (queryString) {
         const params = new URLSearchParams(queryString);
@@ -74,9 +95,19 @@ export function parseKoinosQR(data: string): ParsedQRData | null {
 
   // Plain address - Koinos addresses start with 1 and are 34 characters
   if (/^1[a-km-zA-HJ-NP-Z0-9]{25,34}$/.test(trimmed)) {
-    return { address: trimmed };
+    return { type: 'koinos_address', address: trimmed };
   }
 
+  return null;
+}
+
+// Legacy function for backward compatibility
+export function parseKoinosQR(data: string): ParsedQRData | null {
+  const result = parseQRData(data);
+  // Only return koinos_address type for backward compatibility
+  if (result?.type === 'koinos_address') {
+    return result;
+  }
   return null;
 }
 

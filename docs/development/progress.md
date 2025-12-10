@@ -1,6 +1,49 @@
 # Development Progress Summary
 
-## Latest Session: 2025-12-08 (Custom URL Support)
+## Latest Session: 2025-12-09 (Phase 9.4 - WalletConnect)
+
+### Completed Tasks
+
+#### WalletConnect v2 Integration ✅
+Full WalletConnect implementation for connecting to desktop dApps.
+
+**New Files:**
+- `src/stores/walletConnectStore.ts` - Session management with Zustand
+- `src/components/WalletConnectQRModal.tsx` - QR scanner for WC URIs
+- `src/components/WCSessionApprovalModal.tsx` - Session approval UI
+- `src/components/WalletConnectHandler.tsx` - Global request handler
+
+**Modified Files:**
+- `src/screens/BrowserScreen.tsx` - Added WalletConnect section
+- `src/components/QRScannerModal.tsx` - Extended to detect WC URIs
+- `App.tsx` - Added WalletConnectHandler and compat import
+
+**Features:**
+- Scan WalletConnect QR codes from desktop dApps
+- Session approval with permission display
+- Active sessions list with disconnect
+- Transaction signing via existing TransactionApprovalModal
+- All Koinos methods supported (from @armana/walletconnect-koinos-sdk-js)
+
+**Koinos Methods Supported:**
+- `koinos_signMessage`, `koinos_signHash`
+- `koinos_signTransaction`, `koinos_signAndSendTransaction`
+- `koinos_prepareTransaction`, `koinos_sendTransaction`
+- `koinos_readContract`, `koinos_getNonce`, `koinos_getAccountRc`
+- `koinos_getHeadInfo`, `koinos_getChainId`, and more
+
+**New Dependencies:**
+- `@reown/walletkit` - WalletConnect wallet SDK
+- `@walletconnect/react-native-compat` - React Native compatibility
+- `@react-native-community/netinfo` - Network info for WC
+- `expo-application` - App info for WC metadata
+
+**Configuration:**
+Set `EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID` environment variable with your project ID from https://cloud.walletconnect.com
+
+---
+
+## Previous Session: 2025-12-08 (Custom URL Support)
 
 ### Completed Tasks
 

@@ -6,7 +6,7 @@ export interface DApp {
   description: string;
   url: string;
   icon: string;
-  category: 'defi' | 'tools' | 'nft' | 'social' | 'gaming';
+  category: 'defi' | 'tools' | 'nft' | 'social' | 'gaming' | 'other';
   featured?: boolean;
 }
 
