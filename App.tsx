@@ -5,9 +5,7 @@ import { setupCrypto } from './src/lib/crypto';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppNavigator } from './src/navigation/AppNavigator';
-
-// WalletConnect is currently disabled due to bundler compatibility issues
-// import { WalletConnectHandler } from './src/components/WalletConnectHandler';
+import { WalletConnectHandler } from './src/components/WalletConnectHandler';
 
 // Initialize crypto polyfills
 setupCrypto();
@@ -17,7 +15,7 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar style="dark" />
       <AppNavigator />
-      {/* WalletConnectHandler disabled until bundler issues resolved */}
+      <WalletConnectHandler />
     </SafeAreaProvider>
   );
 }

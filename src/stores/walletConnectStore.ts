@@ -14,8 +14,8 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TransactionJson } from 'koilib';
 
-// WalletConnect is currently disabled - set to true to enable when ready
-const WALLETCONNECT_ENABLED = false;
+// WalletConnect - may work in production builds (TestFlight/App Store) but not dev client
+const WALLETCONNECT_ENABLED = true;
 
 // Koinos chain IDs from @armana/walletconnect-koinos-sdk-js
 export const KOINOS_CHAIN_IDS = {
