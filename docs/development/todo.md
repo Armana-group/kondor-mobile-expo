@@ -1,16 +1,23 @@
 # Development TODO
 
-## Status: Phase 9.4 Complete - WalletConnect Integration Done
+## Status: Phase 9.4 Code Complete - WalletConnect Feature Disabled
 
-### ✅ Completed (2025-12-09 - Phase 9.4)
+### ⚠️ Blocked (2025-12-09 - Phase 9.4 WalletConnect)
+WalletConnect code is complete but feature is disabled due to Metro bundler incompatibility. The `@walletconnect/react-native-compat` and related packages cause "Requiring unknown module" errors at runtime in development builds.
+
+**What's Done:**
 - ✅ WalletConnect v2 integration with `@reown/walletkit`
 - ✅ WalletConnect store for session management
 - ✅ QR scanner extended for WalletConnect URIs (`wc:` protocol)
 - ✅ Session approval modal (WCSessionApprovalModal)
 - ✅ WalletConnect method handlers for all Koinos methods
 - ✅ Transaction signing via existing TransactionApprovalModal
-- ✅ WalletConnect UI section in Apps screen
-- ✅ Active sessions display with disconnect
+- ✅ WalletConnect UI section in Apps screen (shows "Coming Soon")
+
+**What Needs Resolution:**
+- ⏳ Test WalletConnect in EAS production build (may work there)
+- ⏳ Investigate custom Metro bundler config for dynamic imports
+- ⏳ Monitor WalletConnect SDK updates for Expo compatibility
 
 ### ✅ Completed (2025-12-08)
 - ✅ Custom URL entry in Apps browser ("Add App" opens URL modal)

@@ -2,23 +2,35 @@
 
 ## Latest Session: 2025-12-09 (Phase 9.4 - WalletConnect)
 
-### Completed Tasks
+### Status: ⚠️ DISABLED (Bundler Compatibility Issues)
 
-#### WalletConnect v2 Integration ✅
+#### WalletConnect v2 Integration (Code Complete, Feature Disabled)
 Full WalletConnect implementation for connecting to desktop dApps.
 
-**New Files:**
-- `src/stores/walletConnectStore.ts` - Session management with Zustand
+**Current Issue:**
+WalletConnect packages are incompatible with Expo's Metro bundler in development. The dynamic import system fails with "Requiring unknown module" errors. This may work in production EAS builds but not in dev client.
+
+**Error:**
+```
+[Error: Requiring unknown module "1871". If you are sure the module exists, try restarting Metro...]
+[TypeError: Cannot set property 'importedAll' of undefined]
+```
+
+**Workaround:**
+Feature is disabled via `WALLETCONNECT_ENABLED = false` flag in `walletConnectStore.ts`. The BrowserScreen shows "Coming Soon" badge instead of scan functionality.
+
+**Files Created (ready for when bundler issues resolved):**
+- `src/stores/walletConnectStore.ts` - Session management with Zustand (disabled)
 - `src/components/WalletConnectQRModal.tsx` - QR scanner for WC URIs
 - `src/components/WCSessionApprovalModal.tsx` - Session approval UI
 - `src/components/WalletConnectHandler.tsx` - Global request handler
 
 **Modified Files:**
-- `src/screens/BrowserScreen.tsx` - Added WalletConnect section
+- `src/screens/BrowserScreen.tsx` - WalletConnect section shows "Coming Soon"
 - `src/components/QRScannerModal.tsx` - Extended to detect WC URIs
-- `App.tsx` - Added WalletConnectHandler and compat import
+- `App.tsx` - WalletConnectHandler commented out
 
-**Features:**
+**Intended Features (when enabled):**
 - Scan WalletConnect QR codes from desktop dApps
 - Session approval with permission display
 - Active sessions list with disconnect
@@ -32,11 +44,18 @@ Full WalletConnect implementation for connecting to desktop dApps.
 - `koinos_readContract`, `koinos_getNonce`, `koinos_getAccountRc`
 - `koinos_getHeadInfo`, `koinos_getChainId`, and more
 
-**New Dependencies:**
+**Dependencies Installed:**
 - `@reown/walletkit` - WalletConnect wallet SDK
 - `@walletconnect/react-native-compat` - React Native compatibility
 - `@react-native-community/netinfo` - Network info for WC
 - `expo-application` - App info for WC metadata
+
+**To Re-enable WalletConnect:**
+1. Set `WALLETCONNECT_ENABLED = true` in `walletConnectStore.ts`
+2. Uncomment WalletConnectHandler import/usage in `App.tsx`
+3. Uncomment WalletConnect imports in `BrowserScreen.tsx`
+4. Restore the WalletConnect section UI in BrowserScreen
+5. May need custom Metro config or EAS production build
 
 **Configuration:**
 Set `EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID` environment variable with your project ID from https://cloud.walletconnect.com
