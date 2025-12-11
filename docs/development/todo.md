@@ -1,9 +1,9 @@
 # Development TODO
 
-## Status: Phase 9.4 Code Complete - WalletConnect Feature Disabled
+## Status: Phase 9.4 Complete - WalletConnect Ready for Testing
 
-### ⚠️ Blocked (2025-12-09 - Phase 9.4 WalletConnect)
-WalletConnect code is complete but feature is disabled due to Metro bundler incompatibility. The `@walletconnect/react-native-compat` and related packages cause "Requiring unknown module" errors at runtime in development builds.
+### ✅ Completed (2025-12-11 - Phase 9.4 WalletConnect)
+WalletConnect integration is complete and enabled. Fixed import order issue by adding `@walletconnect/react-native-compat` as the first import in `index.ts`.
 
 **What's Done:**
 - ✅ WalletConnect v2 integration with `@reown/walletkit`
@@ -12,12 +12,14 @@ WalletConnect code is complete but feature is disabled due to Metro bundler inco
 - ✅ Session approval modal (WCSessionApprovalModal)
 - ✅ WalletConnect method handlers for all Koinos methods
 - ✅ Transaction signing via existing TransactionApprovalModal
-- ✅ WalletConnect UI section in Apps screen (shows "Coming Soon")
+- ✅ WalletConnect UI section in Apps screen with Scan button
+- ✅ Reown Dashboard project created ("Kondor Wallet")
+- ✅ Project ID configured: `1f1d0d8789bef28db46761b0c0facc6d`
 
-**What Needs Resolution:**
-- ⏳ Test WalletConnect in EAS production build (may work there)
-- ⏳ Investigate custom Metro bundler config for dynamic imports
-- ⏳ Monitor WalletConnect SDK updates for Expo compatibility
+**Next Steps:**
+- ⏳ Test WalletConnect in TestFlight build
+- ⏳ Test connecting to a Koinos dApp (e.g., KoinDX with WC support)
+- ⏳ Verify session persistence across app restarts
 
 ### ✅ Completed (2025-12-08)
 - ✅ Custom URL entry in Apps browser ("Add App" opens URL modal)
