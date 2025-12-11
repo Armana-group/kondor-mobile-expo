@@ -49,6 +49,11 @@
           "cameraPermission": "Kondor needs camera access to scan QR codes for sending tokens."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "4d410d38-cb5c-4354-b403-0aa29a6b087b"
+      }
+    }
   }
 }
