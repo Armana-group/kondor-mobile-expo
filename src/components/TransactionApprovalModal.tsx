@@ -283,12 +283,79 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
         tx.header.chain_id = DEFAULT_NETWORK.chainId;
       }
 
-      // Create Transaction object
-      const txObj = new Transaction({ signer, provider });
-      txObj.transaction = tx;
+      // Create Transaction object for dry-run estimation
+      // We ALWAYS estimate rc_limit via dry-run because dApps may send incorrect values
+      const estimateTx = new Transaction({ signer, provider });
+      estimateTx.transaction = { ...tx };
 
-      // Prepare if needed (nonce, rc_limit)
-      if (!tx.header.nonce || !tx.header.rc_limit) {
+      // Set a high rc_limit for estimation (use account's available RC)
+      let estimationLimit = 100000000; // Default 100M for estimation
+      try {
+        const rcResult = await provider.call('chain.get_account_rc', {
+          account: request.signerAddress
+        });
+        const availableRc = Number(rcResult.rc || 0);
+        // Use 90% of available RC for estimation to be safe
+        estimationLimit = Math.max(Math.floor(availableRc * 0.9), 100000000);
+        console.log('[TxApproval] Using', estimationLimit, 'RC for dry-run (90% of', availableRc, ')');
+      } catch (e) {
+        console.log('[TxApproval] Could not fetch RC, using default:', estimationLimit);
+      }
+
+      // Prepare the estimation transaction
+      if (!estimateTx.transaction.header) {
+        estimateTx.transaction.header = {};
+      }
+      estimateTx.transaction.header.rc_limit = String(estimationLimit);
+
+      // Fill in nonce if missing
+      if (!estimateTx.transaction.header.nonce) {
+        await estimateTx.prepare();
+      }
+
+      // Dry-run to get actual RC usage
+      console.log('[TxApproval] Performing dry-run estimation...');
+      let dryRunReceipt;
+      try {
+        dryRunReceipt = await estimateTx.send({ broadcast: false });
+        console.log('[TxApproval] Dry-run receipt:', dryRunReceipt);
+      } catch (dryRunError: any) {
+        console.error('[TxApproval] Dry-run failed:', dryRunError);
+        // If dry-run fails, the transaction would fail anyway - show meaningful error
+        const errorMsg = dryRunError.message || 'Transaction would fail';
+        throw new Error(`Transaction simulation failed: ${errorMsg}`);
+      }
+
+      // Check if dry-run reverted
+      if (dryRunReceipt.reverted) {
+        const revertReason = dryRunReceipt.error_message || 'Unknown error';
+        console.error('[TxApproval] Dry-run reverted:', revertReason);
+        throw new Error(`Transaction would revert: ${revertReason}`);
+      }
+
+      // Calculate rc_limit with 10% buffer (Kondor pattern)
+      const rcUsed = Number(dryRunReceipt.rc_used || 0);
+      const rcLimit = Math.floor(1.1 * rcUsed);
+      console.log('[TxApproval] RC used:', rcUsed, '-> RC limit with 10% buffer:', rcLimit);
+
+      // Ensure we have a reasonable rc_limit
+      if (rcLimit <= 0) {
+        console.warn('[TxApproval] RC limit is 0, using fallback');
+        throw new Error('Could not estimate transaction cost');
+      }
+
+      // Now create the actual transaction with proper rc_limit
+      const txObj = new Transaction({ signer, provider });
+      txObj.transaction = { ...tx };
+
+      // Set the estimated rc_limit (override whatever the dApp sent)
+      if (!txObj.transaction.header) {
+        txObj.transaction.header = {};
+      }
+      txObj.transaction.header.rc_limit = String(rcLimit);
+
+      // Prepare if nonce is missing
+      if (!txObj.transaction.header.nonce) {
         await txObj.prepare();
       }
 

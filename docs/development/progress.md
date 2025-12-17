@@ -1,6 +1,34 @@
 # Development Progress Summary
 
-## Latest Session: 2025-12-11 (Phase 9.4 - WalletConnect)
+## Latest Session: 2025-12-17 (WalletConnect Mana Fix)
+
+### Status: ✅ FIXED (Mana Estimation Bug)
+
+#### WalletConnect Transaction Mana Fix
+Fixed "insufficient rc" errors when executing transactions via WalletConnect.
+
+**Problem:**
+When dApps like KoinDX sent transactions via WalletConnect with a pre-set `rc_limit`, the wallet trusted that value. If the dApp's `rc_limit` was too low, the transaction would fail with "insufficient rc".
+
+**Solution:**
+Modified `TransactionApprovalModal` to ALWAYS estimate mana via dry-run, regardless of what the dApp sends:
+1. Get user's available RC (90% for safety margin)
+2. Perform dry-run with `broadcast: false` to get actual RC usage
+3. Set `rc_limit` to 1.1x the actual usage (10% buffer)
+4. Override the dApp's `rc_limit` with the estimated value
+
+**Files Modified:**
+- `src/components/TransactionApprovalModal.tsx` - Added dry-run mana estimation
+
+**Technical Details:**
+- Uses same estimation pattern as `ManualTokenContract`
+- Catches dry-run failures and shows meaningful errors
+- Detects reverted transactions before broadcasting
+- Ensures rc_limit is always properly calculated
+
+---
+
+## Previous Session: 2025-12-11 (Phase 9.4 - WalletConnect)
 
 ### Status: ✅ ENABLED (Ready for TestFlight Testing)
 

@@ -1,6 +1,19 @@
 # Development TODO
 
-## Status: Phase 9.4 Complete - WalletConnect Ready for Testing
+## Status: WalletConnect Mana Bug Fixed - Ready for Testing
+
+### ✅ Completed (2025-12-17 - WalletConnect Mana Fix)
+Fixed "insufficient rc" error when executing transactions via WalletConnect.
+
+**What Was Fixed:**
+- ✅ Transactions via WalletConnect now use proper mana estimation via dry-run
+- ✅ Wallet no longer trusts dApp's rc_limit (which may be incorrect)
+- ✅ Added 10% buffer to estimated mana for safety
+- ✅ Better error handling for failed transactions (dry-run detects issues before broadcast)
+
+**Technical Change:**
+- Modified `TransactionApprovalModal.tsx` to ALWAYS estimate rc_limit via dry-run
+- Same estimation pattern as internal transfers (`ManualTokenContract`)
 
 ### ✅ Completed (2025-12-11 - Phase 9.4 WalletConnect)
 WalletConnect integration is complete and enabled. Fixed import order issue by adding `@walletconnect/react-native-compat` as the first import in `index.ts`.
@@ -17,8 +30,7 @@ WalletConnect integration is complete and enabled. Fixed import order issue by a
 - ✅ Project ID configured: `1f1d0d8789bef28db46761b0c0facc6d`
 
 **Next Steps:**
-- ⏳ Test WalletConnect in TestFlight build
-- ⏳ Test connecting to a Koinos dApp (e.g., KoinDX with WC support)
+- ⏳ Test WalletConnect with KoinDX swap after mana fix
 - ⏳ Verify session persistence across app restarts
 
 ### ✅ Completed (2025-12-08)
