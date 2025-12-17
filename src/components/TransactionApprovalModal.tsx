@@ -286,7 +286,12 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
       // Create Transaction object for dry-run estimation
       // We ALWAYS estimate rc_limit via dry-run because dApps may send incorrect values
       const estimateTx = new Transaction({ signer, provider });
-      estimateTx.transaction = { ...tx };
+
+      // Copy transaction but clear id and signatures (they'll be recalculated)
+      const txForEstimation = { ...tx };
+      delete txForEstimation.id;
+      delete txForEstimation.signatures;
+      estimateTx.transaction = txForEstimation;
 
       // Set a high rc_limit for estimation (use account's available RC)
       let estimationLimit = 100000000; // Default 100M for estimation
@@ -346,7 +351,12 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
 
       // Now create the actual transaction with proper rc_limit
       const txObj = new Transaction({ signer, provider });
-      txObj.transaction = { ...tx };
+
+      // Copy transaction but clear id and signatures (they'll be recalculated after signing)
+      const txForSigning = { ...tx };
+      delete txForSigning.id;
+      delete txForSigning.signatures;
+      txObj.transaction = txForSigning;
 
       // Set the estimated rc_limit (override whatever the dApp sent)
       if (!txObj.transaction.header) {
