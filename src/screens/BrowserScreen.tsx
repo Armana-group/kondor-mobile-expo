@@ -108,17 +108,17 @@ export const BrowserScreen = () => {
     if (app.requiresWalletConnect) {
       Alert.alert(
         'Connect with WalletConnect',
-        `To use ${app.name}, connect via WalletConnect:\n\n` +
-        '1. Open the app in the browser below\n' +
-        '2. Click "Connect Wallet" in the app\n' +
+        `To use ${app.name}:\n\n` +
+        '1. Open the app on your desktop browser\n' +
+        '2. Click "Connect Wallet"\n' +
         '3. Select "WalletConnect"\n' +
-        '4. Scan the QR code using the Scan button above\n\n' +
+        '4. Scan the QR code with Kondor Mobile\n\n' +
         'Direct integration coming soon!',
         [
           { text: 'Cancel', style: 'cancel' },
           {
-            text: 'Open App',
-            onPress: () => navigation.navigate('DAppWebView', { app }),
+            text: 'Scan QR',
+            onPress: () => setShowWCScanner(true),
           },
         ]
       );

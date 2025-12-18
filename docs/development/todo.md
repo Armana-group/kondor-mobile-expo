@@ -1,6 +1,27 @@
 # Development TODO
 
-## Status: WalletConnect Mana Bug Fixed - Ready for Testing
+## Status: WalletConnect Working with Free Mana Sharer
+
+### 🔮 Future: Deep Linking for WalletConnect
+Enable Kondor Mobile to appear in WalletConnect wallet selection (like Konio does).
+
+**What's Needed:**
+- [ ] Register Kondor Mobile in WalletConnect Explorer (via Reown Dashboard)
+- [ ] Set up URL scheme deep links (`kondor://wc?uri=...`)
+- [ ] Configure iOS universal links (`https://kondor.app/wc?uri=...`)
+- [ ] Handle incoming WalletConnect URIs from deep links
+- [ ] Test with KoinDX - user should see "Kondor" in wallet list
+
+**Benefit:** Users can tap "Kondor" in dApp's WalletConnect modal instead of scanning QR.
+
+---
+
+### ✅ Completed (2025-12-18 - Free Mana Sharer + UI Updates)
+- ✅ Free mana sharer integration (transactions use `162GhJwsciDiKsgwzj2t6VoFHt3RMzGKdG`)
+- ✅ Updated Apps list (KoinDX, Kollection, KoinScan only)
+- ✅ KoinDX shows WalletConnect info dialog with "Scan QR" button
+- ✅ Block explorer updated to koinscan.io
+- ✅ Fixed keyboard overlay on ImportWalletScreen and AccountSwitcher
 
 ### ✅ Completed (2025-12-17 - WalletConnect Mana Fix)
 Fixed "insufficient rc" error when executing transactions via WalletConnect.
