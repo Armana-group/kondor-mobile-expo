@@ -15,7 +15,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "io.armana.kondor",
-      "buildNumber": "1",
+      "buildNumber": "2",
       "infoPlist": {
         "NSFaceIDUsageDescription": "Kondor uses Face ID to secure your wallet and authorize transactions.",
         "NSCameraUsageDescription": "Kondor uses the camera to scan QR codes for sending tokens.",
@@ -29,7 +29,7 @@
         "backgroundColor": "#181818"
       },
       "package": "io.armana.kondor",
-      "versionCode": 2,
+      "versionCode": 3,
       "permissions": [
         "USE_BIOMETRIC",
         "USE_FINGERPRINT",
