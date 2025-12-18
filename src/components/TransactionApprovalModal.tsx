@@ -364,10 +364,10 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
       }
       txObj.transaction.header.rc_limit = String(rcLimit);
 
-      // Prepare if nonce is missing
-      if (!txObj.transaction.header.nonce) {
-        await txObj.prepare();
-      }
+      // Always prepare to calculate transaction ID and fill missing fields
+      console.log('[TxApproval] Preparing transaction...');
+      await txObj.prepare();
+      console.log('[TxApproval] Transaction prepared, ID:', txObj.transaction.id);
 
       // Sign the transaction
       await signer.signTransaction(txObj.transaction);
