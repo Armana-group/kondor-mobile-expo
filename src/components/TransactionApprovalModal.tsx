@@ -300,19 +300,11 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
       delete txForEstimation.signatures;
       estimateTx.transaction = txForEstimation;
 
-      // Set a high rc_limit for estimation (use free mana sharer's RC)
-      let estimationLimit = 10000000000; // 100 mana for estimation
-      try {
-        const rcResult = await provider.call('chain.get_account_rc', {
-          account: freeManaSharer
-        });
-        const availableRc = Number(rcResult.rc || 0);
-        // Use 50% of free mana sharer's RC for estimation (leave room for others)
-        estimationLimit = Math.max(Math.floor(availableRc * 0.5), 10000000000);
-        console.log('[TxApproval] Free mana sharer has', availableRc, 'RC, using', estimationLimit, 'for estimation');
-      } catch (e) {
-        console.log('[TxApproval] Could not fetch free mana sharer RC, using default:', estimationLimit);
-      }
+      // Set rc_limit for estimation - free mana sharer has a max of 100 mana per tx
+      // 100 mana = 10,000,000,000 (10^10) in smallest units
+      const MAX_FREE_MANA = 10000000000;
+      let estimationLimit = MAX_FREE_MANA;
+      console.log('[TxApproval] Using free mana sharer with max', MAX_FREE_MANA, 'RC (100 mana)');
 
       // Prepare the estimation transaction
       if (!estimateTx.transaction.header) {
@@ -347,13 +339,22 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
 
       // Calculate rc_limit with 10% buffer (Kondor pattern)
       const rcUsed = Number(dryRunReceipt.rc_used || 0);
-      const rcLimit = Math.floor(1.1 * rcUsed);
+      let rcLimit = Math.floor(1.1 * rcUsed);
       console.log('[TxApproval] RC used:', rcUsed, '-> RC limit with 10% buffer:', rcLimit);
 
       // Ensure we have a reasonable rc_limit
       if (rcLimit <= 0) {
         console.warn('[TxApproval] RC limit is 0, using fallback');
         throw new Error('Could not estimate transaction cost');
+      }
+
+      // Cap to free mana sharer's max (100 mana)
+      if (rcLimit > MAX_FREE_MANA) {
+        console.warn('[TxApproval] Transaction needs', rcLimit, 'RC but free mana max is', MAX_FREE_MANA);
+        // For now, cap it - transaction might fail if it actually needs more
+        // TODO: Fall back to user's own mana if transaction needs more than 100 mana
+        rcLimit = MAX_FREE_MANA;
+        console.log('[TxApproval] Capped rc_limit to', MAX_FREE_MANA);
       }
 
       // Now create the actual transaction with proper rc_limit
