@@ -23,7 +23,7 @@ import colors from '../theme/colors';
 import { useWalletStore } from '../stores/walletStore';
 import { requireBiometricAuth } from '../lib/biometrics';
 import { HapticFeedback } from '../lib/haptics';
-import { DEFAULT_NETWORK } from '../lib/constants';
+import { DEFAULT_NETWORK, FREE_MANA_SHARER } from '../lib/constants';
 
 // Decoded operation for display
 export interface DecodedOperation {
@@ -270,14 +270,21 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
       // Prepare transaction
       let tx = { ...request.transaction };
 
-      // Ensure header exists
+      // Use free mana sharer to pay for transaction mana
+      const freeManaSharer = FREE_MANA_SHARER.mainnet;
+      console.log('[TxApproval] Using free mana sharer:', freeManaSharer);
+
+      // Ensure header exists with free mana sharer as payer
       if (!tx.header) {
-        tx.header = { payer: request.signerAddress };
+        tx.header = {
+          payer: freeManaSharer,
+          payee: request.signerAddress
+        };
       }
 
-      if (!tx.header.payer) {
-        tx.header.payer = request.signerAddress;
-      }
+      // Override payer to use free mana sharer
+      tx.header.payer = freeManaSharer;
+      tx.header.payee = request.signerAddress;
 
       if (!tx.header.chain_id) {
         tx.header.chain_id = DEFAULT_NETWORK.chainId;
@@ -293,18 +300,18 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
       delete txForEstimation.signatures;
       estimateTx.transaction = txForEstimation;
 
-      // Set a high rc_limit for estimation (use account's available RC)
-      let estimationLimit = 100000000; // Default 100M for estimation
+      // Set a high rc_limit for estimation (use free mana sharer's RC)
+      let estimationLimit = 10000000000; // 100 mana for estimation
       try {
         const rcResult = await provider.call('chain.get_account_rc', {
-          account: request.signerAddress
+          account: freeManaSharer
         });
         const availableRc = Number(rcResult.rc || 0);
-        // Use 90% of available RC for estimation to be safe
-        estimationLimit = Math.max(Math.floor(availableRc * 0.9), 100000000);
-        console.log('[TxApproval] Using', estimationLimit, 'RC for dry-run (90% of', availableRc, ')');
+        // Use 50% of free mana sharer's RC for estimation (leave room for others)
+        estimationLimit = Math.max(Math.floor(availableRc * 0.5), 10000000000);
+        console.log('[TxApproval] Free mana sharer has', availableRc, 'RC, using', estimationLimit, 'for estimation');
       } catch (e) {
-        console.log('[TxApproval] Could not fetch RC, using default:', estimationLimit);
+        console.log('[TxApproval] Could not fetch free mana sharer RC, using default:', estimationLimit);
       }
 
       // Prepare the estimation transaction

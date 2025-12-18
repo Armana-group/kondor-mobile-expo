@@ -28,6 +28,12 @@ export const KOINOS_PATH = "m/44'/659'/";
 // Mana/RC defaults
 export const DEFAULT_RC_LIMIT = 1000000000;
 
+// Free Mana Sharer contracts (pay for user transactions)
+export const FREE_MANA_SHARER = {
+  mainnet: '162GhJwsciDiKsgwzj2t6VoFHt3RMzGKdG',
+  testnet: '17mzHQmfp3qNWQpvJLvNgFXqoW4HoS7Xbj',
+};
+
 // Storage keys
 export const STORAGE_KEYS = {
   WALLET_ADDRESS: 'wallet_address',
