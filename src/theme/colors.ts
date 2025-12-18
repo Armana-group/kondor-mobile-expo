@@ -17,8 +17,8 @@ export const colors = {
   textMuted: '#525252',       // neutral-600 - Muted text
 
   // Accent
-  purple: '#BB29F5',          // Brand purple - Active indicators, accents
-  purpleLight: 'rgba(187, 41, 245, 0.2)', // Brand purple/20 - Background accents
+  purple: '#7061EF',          // Brand purple - Active indicators, accents
+  purpleLight: 'rgba(112, 97, 239, 0.2)', // Brand purple/20 - Background accents
 
   // Status
   success: '#22C55E',         // green-500
@@ -26,7 +26,7 @@ export const colors = {
   warning: '#F59E0B',         // amber-500
 
   // Legacy (for gradual migration)
-  primary: '#BB29F5',         // Brand purple - Main accent color
+  primary: '#7061EF',         // Brand purple - Main accent color
   secondary: '#272727',       // Secondary backgrounds
 };
 
