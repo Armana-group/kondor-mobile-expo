@@ -8,6 +8,7 @@ export interface DApp {
   icon: string;
   category: 'defi' | 'tools' | 'nft' | 'social' | 'gaming' | 'other';
   featured?: boolean;
+  requiresWalletConnect?: boolean; // Shows WalletConnect info before opening
 }
 
 export const CURATED_DAPPS: DApp[] = [
@@ -15,19 +16,11 @@ export const CURATED_DAPPS: DApp[] = [
     id: 'koindx',
     name: 'KoinDX',
     description: 'Decentralized exchange for trading Koinos tokens',
-    url: 'https://koindx.com',
+    url: 'https://app.koindx.com',
     icon: 'https://koindx.com/favicon.ico',
     category: 'defi',
     featured: true,
-  },
-  {
-    id: 'fogata',
-    name: 'Fogata',
-    description: 'Mining pool for Koinos - stake KOIN to earn rewards',
-    url: 'https://fogata.io',
-    icon: 'https://fogata.io/favicon.ico',
-    category: 'defi',
-    featured: true,
+    requiresWalletConnect: true,
   },
   {
     id: 'kollection',
@@ -39,45 +32,13 @@ export const CURATED_DAPPS: DApp[] = [
     featured: true,
   },
   {
-    id: 'koiner',
-    name: 'Koiner',
+    id: 'koinscan',
+    name: 'KoinScan',
     description: 'Block explorer and analytics for Koinos',
-    url: 'https://koiner.app',
-    icon: 'https://koiner.app/favicon.ico',
+    url: 'https://koinscan.io',
+    icon: 'https://koinscan.io/favicon.ico',
     category: 'tools',
     featured: true,
-  },
-  {
-    id: 'koinosblocks',
-    name: 'Koinos Blocks',
-    description: 'Block explorer for the Koinos blockchain',
-    url: 'https://koinosblocks.com',
-    icon: 'https://koinosblocks.com/favicon.ico',
-    category: 'tools',
-  },
-  {
-    id: 'burnkoin',
-    name: 'BurnKoin',
-    description: 'Proof of burn mining for Koinos',
-    url: 'https://burnkoin.com',
-    icon: 'https://burnkoin.com/favicon.ico',
-    category: 'defi',
-  },
-  {
-    id: 'kanvas',
-    name: 'Kanvas',
-    description: 'Collaborative pixel art canvas on Koinos',
-    url: 'https://kanvas.app',
-    icon: 'https://kanvas.app/favicon.ico',
-    category: 'social',
-  },
-  {
-    id: 'nicknames',
-    name: 'Nicknames',
-    description: 'Register human-readable names for your address',
-    url: 'https://kap.domains',
-    icon: 'https://kap.domains/favicon.ico',
-    category: 'tools',
   },
 ];
 

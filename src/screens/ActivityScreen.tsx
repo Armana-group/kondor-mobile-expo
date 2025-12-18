@@ -17,6 +17,7 @@ import { Screen } from '../components/Screen';
 import { useTransactionHistory, ParsedTransaction } from '../hooks/useTransactionHistory';
 import { truncateAddress } from '../lib/utils';
 import colors from '../theme/colors';
+import { EXPLORER } from '../lib/constants';
 
 /**
  * Format transaction time relative to now
@@ -49,9 +50,9 @@ export const ActivityScreen = () => {
       `Time: ${new Date(tx.timestamp).toLocaleString()}`,
       [
         {
-          text: 'View on Explorer',
+          text: 'View on KoinScan',
           onPress: () => {
-            const url = `https://koiner.app/transactions/${tx.id}`;
+            const url = `${EXPLORER.mainnet.tx}/${tx.id}`;
             Linking.openURL(url);
           },
         },

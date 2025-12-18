@@ -34,6 +34,24 @@ export const FREE_MANA_SHARER = {
   testnet: '17mzHQmfp3qNWQpvJLvNgFXqoW4HoS7Xbj',
 };
 
+// Block explorer URLs
+export const EXPLORER = {
+  mainnet: {
+    base: 'https://koinscan.io',
+    tx: 'https://koinscan.io/tx',
+    address: 'https://koinscan.io/address',
+    token: 'https://koinscan.io/token',
+    block: 'https://koinscan.io/block',
+  },
+  testnet: {
+    base: 'https://harbinger.koinscan.io',
+    tx: 'https://harbinger.koinscan.io/tx',
+    address: 'https://harbinger.koinscan.io/address',
+    token: 'https://harbinger.koinscan.io/token',
+    block: 'https://harbinger.koinscan.io/block',
+  },
+};
+
 // Storage keys
 export const STORAGE_KEYS = {
   WALLET_ADDRESS: 'wallet_address',

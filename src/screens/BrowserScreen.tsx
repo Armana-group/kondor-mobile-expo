@@ -104,6 +104,26 @@ export const BrowserScreen = () => {
   });
 
   const handleAppPress = (app: DApp) => {
+    // Show WalletConnect info for apps that require it (like KoinDX)
+    if (app.requiresWalletConnect) {
+      Alert.alert(
+        'Connect with WalletConnect',
+        `To use ${app.name}, connect via WalletConnect:\n\n` +
+        '1. Open the app in the browser below\n' +
+        '2. Click "Connect Wallet" in the app\n' +
+        '3. Select "WalletConnect"\n' +
+        '4. Scan the QR code using the Scan button above\n\n' +
+        'Direct integration coming soon!',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Open App',
+            onPress: () => navigation.navigate('DAppWebView', { app }),
+          },
+        ]
+      );
+      return;
+    }
     navigation.navigate('DAppWebView', { app });
   };
 
