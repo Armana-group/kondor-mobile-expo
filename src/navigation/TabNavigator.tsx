@@ -15,12 +15,14 @@ import { SwapScreen } from '../screens/SwapScreen';
 import { ActivityScreen } from '../screens/ActivityScreen';
 import { BrowserScreen } from '../screens/BrowserScreen';
 import { TokenDetailScreen } from '../screens/TokenDetailScreen';
+import { DAppWebViewScreen } from '../screens/DAppWebViewScreen';
 
 // Theme
 import colors from '../theme/colors';
 
 // Stores
 import { Token } from '../stores/tokenStore';
+import { DApp } from '../constants/dapps';
 
 // Types
 export type HomeStackParamList = {
@@ -33,15 +35,21 @@ export type HomeStackParamList = {
   TokenDetail: { token: Token };
 };
 
+export type AppsStackParamList = {
+  AppsMain: undefined;
+  DAppWebView: { app: DApp };
+};
+
 export type TabParamList = {
   HomeTab: undefined;
   Collectibles: undefined;
   Swap: undefined;
-  Browser: undefined;
+  Apps: undefined;
 };
 
 const Tab = createBottomTabNavigator<TabParamList>();
 const HomeStack = createNativeStackNavigator<HomeStackParamList>();
+const AppsStack = createNativeStackNavigator<AppsStackParamList>();
 
 // Icon name type for Ionicons
 type IoniconsName = keyof typeof Ionicons.glyphMap;
@@ -86,6 +94,21 @@ const HomeStackNavigator = () => (
   </HomeStack.Navigator>
 );
 
+// Apps stack navigator (Apps gallery + WebView)
+const AppsStackNavigator = () => (
+  <AppsStack.Navigator screenOptions={{ headerShown: false }}>
+    <AppsStack.Screen name="AppsMain" component={BrowserScreen} />
+    <AppsStack.Screen
+      name="DAppWebView"
+      component={DAppWebViewScreen}
+      options={{
+        presentation: 'fullScreenModal',
+        animation: 'slide_from_bottom',
+      }}
+    />
+  </AppsStack.Navigator>
+);
+
 export const TabNavigator = () => {
   return (
     <Tab.Navigator
@@ -128,12 +151,12 @@ export const TabNavigator = () => {
         }}
       />
       <Tab.Screen
-        name="Browser"
-        component={BrowserScreen}
+        name="Apps"
+        component={AppsStackNavigator}
         options={{
-          tabBarLabel: 'Browser',
+          tabBarLabel: 'Apps',
           tabBarIcon: ({ focused, color }) => (
-            <Ionicons name={focused ? 'globe' : 'globe-outline'} size={24} color={color} />
+            <Ionicons name={focused ? 'apps' : 'apps-outline'} size={24} color={color} />
           ),
         }}
       />

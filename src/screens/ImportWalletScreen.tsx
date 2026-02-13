@@ -1,5 +1,13 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Alert } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Alert,
+  KeyboardAvoidingView,
+  ScrollView,
+  Platform,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Screen } from '../components/Screen';
 import { Button } from '../components/Button';
@@ -48,52 +56,63 @@ export const ImportWalletScreen = () => {
 
   return (
     <Screen>
-      <View style={styles.container}>
-        <Text style={styles.title}>Import Wallet</Text>
-        <Text style={styles.description}>
-          Enter your 12-word recovery phrase to restore your wallet
-        </Text>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={styles.title}>Import Wallet</Text>
+          <Text style={styles.description}>
+            Enter your 12-word recovery phrase to restore your wallet
+          </Text>
 
-        <View style={styles.content}>
-          <Input
-            label="Recovery Phrase"
-            placeholder="Enter your 12 words separated by spaces"
-            value={mnemonic}
-            onChangeText={(text) => {
-              setMnemonic(text);
-              setError('');
-            }}
-            multiline
-            numberOfLines={4}
-            style={styles.input}
-            error={error}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
+          <View style={styles.content}>
+            <Input
+              label="Recovery Phrase"
+              placeholder="Enter your 12 words separated by spaces"
+              value={mnemonic}
+              onChangeText={(text) => {
+                setMnemonic(text);
+                setError('');
+              }}
+              multiline
+              numberOfLines={4}
+              style={styles.input}
+              error={error}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
 
-          <View style={styles.infoBox}>
-            <Text style={styles.infoText}>
-              Enter the words in the exact order they were given to you
-            </Text>
+            <View style={styles.infoBox}>
+              <Text style={styles.infoText}>
+                Enter the words in the exact order they were given to you
+              </Text>
+            </View>
           </View>
-        </View>
 
-        <View style={styles.buttons}>
-          <Button
-            title="Import Wallet"
-            onPress={handleImport}
-            loading={isLoading}
-            disabled={!mnemonic.trim()}
-            style={styles.button}
-          />
-          <Button
-            title="Cancel"
-            onPress={() => navigation.goBack()}
-            variant="secondary"
-            style={styles.button}
-          />
-        </View>
-      </View>
+          <View style={styles.buttons}>
+            <Button
+              title="Import Wallet"
+              onPress={handleImport}
+              loading={isLoading}
+              disabled={!mnemonic.trim()}
+              style={styles.button}
+            />
+            <Button
+              title="Cancel"
+              onPress={() => navigation.goBack()}
+              variant="secondary"
+              style={styles.button}
+            />
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </Screen>
   );
 };
@@ -101,6 +120,13 @@ export const ImportWalletScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 20,
   },
   title: {
     fontSize: 28,

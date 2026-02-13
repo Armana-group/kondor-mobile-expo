@@ -5,6 +5,7 @@ import { setupCrypto } from './src/lib/crypto';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppNavigator } from './src/navigation/AppNavigator';
+import { WalletConnectHandler } from './src/components/WalletConnectHandler';
 
 // Initialize crypto polyfills
 setupCrypto();
@@ -14,6 +15,7 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar style="dark" />
       <AppNavigator />
+      <WalletConnectHandler />
     </SafeAreaProvider>
   );
 }
