@@ -1,3 +1,6 @@
+// WalletConnect polyfills - MUST be first imports
+import '@walletconnect/react-native-compat';
+
 import { registerRootComponent } from 'expo';
 
 import App from './App';

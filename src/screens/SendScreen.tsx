@@ -685,8 +685,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
   },
   tokenPickerTitle: {
     fontSize: 20,

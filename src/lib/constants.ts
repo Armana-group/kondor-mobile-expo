@@ -28,6 +28,30 @@ export const KOINOS_PATH = "m/44'/659'/";
 // Mana/RC defaults
 export const DEFAULT_RC_LIMIT = 1000000000;
 
+// Free Mana Sharer contracts (pay for user transactions)
+export const FREE_MANA_SHARER = {
+  mainnet: '162GhJwsciDiKsgwzj2t6VoFHt3RMzGKdG',
+  testnet: '17mzHQmfp3qNWQpvJLvNgFXqoW4HoS7Xbj',
+};
+
+// Block explorer URLs
+export const EXPLORER = {
+  mainnet: {
+    base: 'https://koinscan.io',
+    tx: 'https://koinscan.io/tx',
+    address: 'https://koinscan.io/address',
+    token: 'https://koinscan.io/token',
+    block: 'https://koinscan.io/block',
+  },
+  testnet: {
+    base: 'https://harbinger.koinscan.io',
+    tx: 'https://harbinger.koinscan.io/tx',
+    address: 'https://harbinger.koinscan.io/address',
+    token: 'https://harbinger.koinscan.io/token',
+    block: 'https://harbinger.koinscan.io/block',
+  },
+};
+
 // Storage keys
 export const STORAGE_KEYS = {
   WALLET_ADDRESS: 'wallet_address',

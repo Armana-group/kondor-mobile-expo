@@ -14,6 +14,7 @@ import {
   Alert,
   TextInput,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useWalletStore, Account } from '../stores/walletStore';
@@ -207,7 +208,11 @@ export const AccountSwitcher: React.FC<AccountSwitcherProps> = ({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <View style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.title}>Accounts</Text>
@@ -223,6 +228,7 @@ export const AccountSwitcher: React.FC<AccountSwitcherProps> = ({
           renderItem={renderAccount}
           contentContainerStyle={styles.listContent}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
+          keyboardShouldPersistTaps="handled"
         />
 
         {/* Add Account Section */}
@@ -313,7 +319,7 @@ export const AccountSwitcher: React.FC<AccountSwitcherProps> = ({
             </View>
           )}
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };

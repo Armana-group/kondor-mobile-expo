@@ -15,12 +15,13 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "io.armana.kondor",
-      "buildNumber": "1",
+      "buildNumber": "2",
       "infoPlist": {
         "NSFaceIDUsageDescription": "Kondor uses Face ID to secure your wallet and authorize transactions.",
         "NSCameraUsageDescription": "Kondor uses the camera to scan QR codes for sending tokens.",
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "appleTeamId": "2H28Q35Z7Y"
     },
     "android": {
       "adaptiveIcon": {
@@ -28,8 +29,16 @@
         "backgroundColor": "#181818"
       },
       "package": "io.armana.kondor",
-      "versionCode": 1,
-      "permissions": ["USE_BIOMETRIC", "USE_FINGERPRINT", "CAMERA"]
+      "versionCode": 3,
+      "permissions": [
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "CAMERA",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "plugins": [
       "expo-secure-store",
@@ -40,6 +49,11 @@
           "cameraPermission": "Kondor needs camera access to scan QR codes for sending tokens."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "4d410d38-cb5c-4354-b403-0aa29a6b087b"
+      }
+    }
   }
 }

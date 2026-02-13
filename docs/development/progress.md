@@ -1,6 +1,311 @@
 # Development Progress Summary
 
-## Latest Session: 2025-11-26 (Polish & Bug Fixes)
+## Latest Session: 2025-12-17 (WalletConnect Mana Fix)
+
+### Status: ✅ FIXED (Mana Estimation Bug)
+
+#### WalletConnect Transaction Mana Fix
+Fixed "insufficient rc" errors when executing transactions via WalletConnect.
+
+**Problem:**
+When dApps like KoinDX sent transactions via WalletConnect with a pre-set `rc_limit`, the wallet trusted that value. If the dApp's `rc_limit` was too low, the transaction would fail with "insufficient rc".
+
+**Solution:**
+Modified `TransactionApprovalModal` to ALWAYS estimate mana via dry-run, regardless of what the dApp sends:
+1. Get user's available RC (90% for safety margin)
+2. Perform dry-run with `broadcast: false` to get actual RC usage
+3. Set `rc_limit` to 1.1x the actual usage (10% buffer)
+4. Override the dApp's `rc_limit` with the estimated value
+
+**Files Modified:**
+- `src/components/TransactionApprovalModal.tsx` - Added dry-run mana estimation
+
+**Technical Details:**
+- Uses same estimation pattern as `ManualTokenContract`
+- Catches dry-run failures and shows meaningful errors
+- Detects reverted transactions before broadcasting
+- Ensures rc_limit is always properly calculated
+
+---
+
+## Previous Session: 2025-12-11 (Phase 9.4 - WalletConnect)
+
+### Status: ✅ ENABLED (Ready for TestFlight Testing)
+
+#### WalletConnect v2 Integration
+Full WalletConnect implementation for connecting to desktop dApps.
+
+**Previous Issue (Resolved):**
+WalletConnect packages were failing with "Requiring unknown module" errors due to incorrect import order. The `@walletconnect/react-native-compat` polyfill must be imported at the very top of the app entry point before any other imports.
+
+**Solution:**
+- Added `@walletconnect/react-native-compat` import as first line in `index.ts`
+- Changed from dynamic imports to static imports in `walletConnectStore.ts`
+- This should work in production/TestFlight builds (may still have issues in dev client)
+
+**Files Created:**
+- `src/stores/walletConnectStore.ts` - Session management with Zustand
+- `src/components/WalletConnectQRModal.tsx` - QR scanner for WC URIs
+- `src/components/WCSessionApprovalModal.tsx` - Session approval UI
+- `src/components/WalletConnectHandler.tsx` - Global request handler
+
+**Modified Files:**
+- `index.ts` - Added `@walletconnect/react-native-compat` as first import
+- `src/screens/BrowserScreen.tsx` - WalletConnect section with Scan button
+- `src/components/QRScannerModal.tsx` - Extended to detect WC URIs
+- `App.tsx` - Added WalletConnectHandler component
+
+**Features:**
+- Scan WalletConnect QR codes from desktop dApps
+- Session approval with permission display
+- Active sessions list with disconnect
+- Transaction signing via existing TransactionApprovalModal
+- All Koinos methods supported (from @armana/walletconnect-koinos-sdk-js)
+
+**Koinos Methods Supported:**
+- `koinos_signMessage`, `koinos_signHash`
+- `koinos_signTransaction`, `koinos_signAndSendTransaction`
+- `koinos_prepareTransaction`, `koinos_sendTransaction`
+- `koinos_readContract`, `koinos_getNonce`, `koinos_getAccountRc`
+- `koinos_getHeadInfo`, `koinos_getChainId`, and more
+
+**Dependencies Installed:**
+- `@reown/walletkit` - WalletConnect wallet SDK (formerly Web3Wallet)
+- `@walletconnect/react-native-compat` - React Native compatibility polyfills
+- `@walletconnect/core` - WalletConnect core
+- `@walletconnect/utils` - WalletConnect utilities
+- `@react-native-community/netinfo` - Network info for WC
+- `expo-application` - App info for WC metadata
+- `fast-text-encoding` - Text encoding polyfill
+
+**Configuration:**
+- Project ID: `1f1d0d8789bef28db46761b0c0facc6d` (hardcoded in walletConnectStore.ts)
+- Reown Dashboard: https://cloud.walletconnect.com - Project "Kondor Wallet"
+
+---
+
+## Previous Session: 2025-12-08 (Custom URL Support)
+
+### Completed Tasks
+
+#### Custom URL Entry for Apps Browser ✅
+Added ability to open any URL in the dApps browser.
+
+**File Modified:** `src/screens/BrowserScreen.tsx`
+
+**Features:**
+- Tapping "Add App" now opens a URL input modal
+- URL validation with auto-prefix (adds `https://` if missing)
+- Extracts domain name for display in WebView header
+- Keyboard "Go" button support for quick navigation
+- Clean modal UI with Cancel/Open buttons
+
+**Use Cases:**
+- Test wallet integration with any dApp
+- Access dApps not in the curated list
+- Debug provider injection issues
+
+---
+
+## Previous Session: 2025-12-07 (Phase 9.3 - Transaction Signing)
+
+### Completed Tasks
+
+#### 1. Transaction Approval Modal ✅
+Implemented native approval UI for dApp transaction signing requests.
+
+**New File:** `src/components/TransactionApprovalModal.tsx`
+
+**Features:**
+- Full-screen modal with pageSheet presentation
+- Shows dApp origin and simplified domain name
+- Decodes transaction operations with human-readable labels
+- Expandable operation details with contract info
+- Advanced mode showing transaction header (nonce, rc_limit, payer, payee)
+- Warning about interacting with unknown contracts
+- Biometric authentication required before signing
+- Sign or Send action based on request type
+
+**Operation Decoding:**
+- Known contracts: KOIN, VHP, KoinDX Router, Kollection
+- Known entry points: transfer, mint, burn, approve, swap, etc.
+- Falls back to hex display for unknown contracts/entry points
+- Displays contract call arguments (truncated if long)
+
+#### 2. Signer Commands Integration ✅
+Updated `DAppWebViewScreen.tsx` to handle transaction signing flow.
+
+**Handled Commands:**
+- `signer:prepareTransaction` - Prepares transaction (nonce, rc_limit, chain_id) without approval
+- `signer:signTransaction` - Signs transaction with approval modal, returns signed tx
+- `signer:sendTransaction` - Signs and broadcasts transaction, returns receipt + tx
+- `signer:signHash` / `signer:signMessage` - Placeholder (not yet implemented)
+
+**Flow:**
+1. dApp calls `signer.signTransaction(tx)` or `signer.sendTransaction(tx)`
+2. WebView sends command to React Native
+3. TransactionApprovalModal displayed with operation details
+4. User reviews operations and taps Sign/Send
+5. Biometric authentication required
+6. Private key retrieved from SecureStore
+7. Transaction signed with koilib Signer
+8. For sendTransaction: transaction broadcast to network
+9. Result sent back to dApp via injected JavaScript
+
+#### 3. KondorResponse Type Update ✅
+Added `type: 'kondor-response'` to response interface for consistency.
+
+---
+
+## Previous Session: 2025-12-07 (Phase 9.1 - dApps Browser)
+
+### Completed Tasks
+
+#### 1. WebView Browser Implementation ✅
+Implemented in-app browser for loading Koinos dApps with wallet integration.
+
+**New Files:**
+- `src/lib/kondorProvider.ts` - Injected JavaScript provider script
+- `src/screens/DAppWebViewScreen.tsx` - WebView browser screen
+
+**Features:**
+- Full WebView browser with navigation controls (back, forward, refresh)
+- URL bar showing current domain with SSL indicator
+- Loading states and error handling with retry
+- Bottom navigation bar
+- Connected indicator when wallet is linked
+
+#### 2. window.kondor Provider Injection ✅
+Injected the `window.kondor` interface into WebViews for dApp compatibility.
+
+**Provider Methods (matching kondor-js API):**
+- `kondor.getAccounts()` - Get wallet accounts (with permission prompt)
+- `kondor.provider.*` - All koilib Provider methods (getNonce, getAccountRc, readContract, etc.)
+- `kondor.getProvider(network)` - Get provider for specific network
+- `kondor.getSigner(address)` - Get signer instance
+- `kondor.KondorSigner` - Signer class for transaction signing
+
+**Communication:**
+- Uses `injectedJavaScriptBeforeContentLoaded` for early injection
+- `ReactNativeWebView.postMessage` for WebView → React Native
+- `injectJavaScript` for React Native → WebView responses
+- Also intercepts `window.postMessage` for kondor-js library compatibility
+- UUID-based request/response correlation
+
+**Tested Working:**
+- Kollection (NFT marketplace) - connects successfully
+- KoinDX - detects wallet but uses different connection flow (needs investigation)
+
+#### 3. Message Handler System ✅
+Implemented command routing for wallet requests.
+
+**Background Commands (no approval needed):**
+- All `provider:*` commands route to koilib Provider
+- Handles blockchain queries, contract reads, etc.
+
+**Approval Commands (user consent):**
+- `getAccounts` - Shows native Alert for permission
+- `signer:*` - Placeholder for transaction signing (coming next)
+
+**Features:**
+- Connection status tracking
+- "Connected" badge in header after approval
+- Error handling with messages back to dApp
+
+#### 4. Navigation Stack Setup ✅
+Added AppsStack navigator for dApp browsing.
+
+**Modified:** `src/navigation/TabNavigator.tsx`
+- Created `AppsStackParamList` with AppsMain and DAppWebView routes
+- Full screen modal presentation for WebView
+- Slide-up animation from apps gallery
+
+**New Dependencies:**
+- `react-native-webview` - Native WebView component
+
+---
+
+## Previous Session: 2025-12-07 (Build & QR Scanner Fix)
+
+### Completed Tasks
+
+#### 1. iOS Build Issues Resolved ✅
+Fixed build pipeline for physical device testing.
+
+**Issues Fixed:**
+- Missing native iOS project (needed `npx expo prebuild`)
+- CocoaPods sync error (ran `pod install`)
+- Provisioning profile error (enabled automatic signing in Xcode)
+- Local network permission for Metro bundler connection
+
+#### 2. QR Scanner CameraView Warning Fix ✅
+Fixed expo-camera warning: "CameraView does not support children"
+
+**File Modified:** `src/components/QRScannerModal.tsx`
+
+**Changes:**
+- Restructured camera and overlay as siblings instead of parent-child
+- Camera now uses `StyleSheet.absoluteFill`
+- Overlay uses `StyleSheet.absoluteFillObject` for absolute positioning
+- Added `cameraWrapper` container style
+
+#### 3. HomeScreen Auto-Refresh Bug Fix ✅
+Fixed issue where HomeScreen kept showing pull-to-refresh spinner automatically.
+
+**File Modified:** `src/screens/HomeScreen.tsx`
+
+**Problem:** `useFocusEffect` triggered balance refresh on every screen focus, always showing spinner.
+
+**Solution:**
+- Separated silent refresh (`fetchBalances`) from manual refresh (`handleManualRefresh`)
+- Replaced `useFocusEffect` with `useEffect` for one-time initialization
+- Only show spinner on user-initiated pull-to-refresh
+- Account switching now uses silent refresh
+
+#### 4. Phase 9: Apps Gallery ✅
+Implemented the Applications screen with curated Koinos dApps.
+
+**New Files:**
+- `src/constants/dapps.ts` - Curated dApps list (8 apps)
+
+**Modified Files:**
+- `src/navigation/TabNavigator.tsx` - Renamed Browser to Apps
+- `src/screens/BrowserScreen.tsx` - Complete redesign
+
+**Features:**
+- Grid layout matching Kondor extension design
+- Square app cards with icons and names
+- Search functionality
+- "Add App" placeholder card
+- 8 curated Koinos dApps (KoinDX, Fogata, Kollection, etc.)
+
+#### 5. UI Polish: Remove Header Borders ✅
+Removed bottom borders from all screen title bars for cleaner look.
+
+**Files Modified:**
+- `src/screens/BrowserScreen.tsx`
+- `src/screens/TokenDetailScreen.tsx`
+- `src/screens/SettingsScreen.tsx`
+- `src/screens/SendScreen.tsx`
+- `src/screens/ContactsScreen.tsx`
+- `src/screens/ActivityScreen.tsx`
+
+#### 6. Mini Apps Architecture Documentation ✅
+Designed the Kondor Mini Apps platform spec.
+
+**New Documentation:**
+- `docs/features/mini-apps.md` - Full specification
+
+**Key Concepts:**
+- Two modes: Legacy (`window.kondor`) and Mini App (`KondorMiniApp` SDK)
+- Pre-authenticated wallet access for Mini Apps
+- Native UI components (haptics, toasts, theme)
+- Permission system with approval flows
+- App tiers: Curated, Community, Custom URL
+
+---
+
+## Previous Session: 2025-11-26 (Polish & Bug Fixes)
 
 ### Completed Tasks
 
@@ -278,6 +583,8 @@ Full HD wallet support with multiple accounts.
 - Settings with seed/key export
 - Bottom tab navigation
 - Real device builds (iOS tested)
+- **dApp Browser** with `window.kondor` provider injection
+- **Transaction signing** for dApps with biometric auth
 
 ### ✅ Technical Setup
 - Bare React Native with Expo SDK 54
@@ -286,6 +593,8 @@ Full HD wallet support with multiple accounts.
 - koilib for blockchain operations
 - Manual protobuf encoding (bypasses ABI issues)
 - QR code generation (react-native-qrcode-svg)
+- WebView with injected JavaScript provider
+- Biometric authentication (expo-local-authentication)
 
 ---
 
@@ -301,32 +610,87 @@ Full HD wallet support with multiple accounts.
 ```
 src/
 ├── stores/
-│   ├── walletStore.ts      # Multi-account wallet (UPDATED)
-│   ├── koinosStore.ts      # Blockchain operations (UPDATED)
+│   ├── walletStore.ts      # Multi-account wallet, biometric auth
+│   ├── koinosStore.ts      # Blockchain operations
 │   ├── tokenStore.ts       # Multi-token support
 │   └── contactStore.ts     # Contacts
 ├── screens/
-│   ├── HomeScreen.tsx      # Account switcher, token list (UPDATED)
-│   ├── ReceiveScreen.tsx   # QR code receive (NEW)
+│   ├── HomeScreen.tsx      # Account switcher, token list
+│   ├── ReceiveScreen.tsx   # QR code receive
 │   ├── TokenDetailScreen.tsx # Token detail view
-│   ├── SendScreen.tsx      # Multi-token transfer (UPDATED)
+│   ├── SendScreen.tsx      # Multi-token transfer
 │   ├── ActivityScreen.tsx  # Transaction history
 │   ├── ContactsScreen.tsx  # Contact management
-│   └── SettingsScreen.tsx  # Settings & export
+│   ├── SettingsScreen.tsx  # Settings & export
+│   ├── BrowserScreen.tsx   # Apps gallery (dApps list)
+│   └── DAppWebViewScreen.tsx # WebView browser with wallet integration
 ├── components/
 │   ├── AccountSwitcher.tsx # Account management modal
-│   ├── QRScannerModal.tsx  # Camera QR scanner (NEW)
-│   ├── Input.tsx           # Input with rightIcon (UPDATED)
+│   ├── QRScannerModal.tsx  # Camera QR scanner
+│   ├── TransactionApprovalModal.tsx # dApp tx approval (NEW)
+│   ├── Input.tsx           # Input with rightIcon
 │   └── ...
 ├── hooks/
 │   └── useTransactionHistory.ts # Multi-token tx history
 ├── navigation/
-│   └── TabNavigator.tsx    # Bottom tabs + stack nav (UPDATED)
-└── lib/
-    ├── manualTokenContract.ts # Multi-token transfers (UPDATED)
-    ├── wallet.ts           # HD derivation
-    ├── crypto.ts           # Polyfills
-    └── constants.ts        # Network config
+│   └── TabNavigator.tsx    # Bottom tabs + stack nav
+├── lib/
+│   ├── kondorProvider.ts   # Injected JS for window.kondor (NEW)
+│   ├── manualTokenContract.ts # Multi-token transfers
+│   ├── biometrics.ts       # Biometric authentication
+│   ├── wallet.ts           # HD derivation
+│   ├── crypto.ts           # Polyfills
+│   └── constants.ts        # Network config
+└── constants/
+    └── dapps.ts            # Curated dApps list
+```
+
+---
+
+## dApp Browser Architecture
+
+### Provider Injection
+The `window.kondor` object is injected into WebViews before page load, providing the same API as the Kondor browser extension:
+
+```javascript
+window.kondor = {
+  provider: { /* koilib Provider methods */ },
+  getProvider: (network) => provider,
+  getSigner: (address) => new KondorSigner(address),
+  getAccounts: () => Promise<Account[]>,
+  KondorSigner: class { /* signer methods */ }
+}
+```
+
+### Message Flow
+1. **dApp → React Native**: `ReactNativeWebView.postMessage(JSON.stringify(message))`
+2. **React Native → dApp**: `webViewRef.injectJavaScript(script)`
+
+### Command Types
+- **Background Commands**: Blockchain queries (no approval needed)
+  - `provider:call`, `provider:getNonce`, `provider:readContract`, etc.
+- **Approval Commands**: User consent required
+  - `getAccounts` - Connection permission
+  - `signer:signTransaction` - Sign transaction
+  - `signer:sendTransaction` - Sign and broadcast
+
+### Transaction Signing Flow
+```
+dApp calls signer.sendTransaction(tx)
+    ↓
+WebView posts message to React Native
+    ↓
+TransactionApprovalModal displays
+    ↓
+User reviews operations
+    ↓
+Biometric authentication
+    ↓
+Sign with koilib Signer
+    ↓
+Broadcast to network
+    ↓
+Return receipt to dApp
 ```
 
 ---

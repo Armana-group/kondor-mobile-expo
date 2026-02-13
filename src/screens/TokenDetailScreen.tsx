@@ -25,6 +25,7 @@ import { useTokenStore, Token } from '../stores/tokenStore';
 import { useTransactionHistory, ParsedTransaction } from '../hooks/useTransactionHistory';
 import { truncateAddress, formatKoinBalance } from '../lib/utils';
 import colors from '../theme/colors';
+import { EXPLORER } from '../lib/constants';
 
 type TokenDetailRouteParams = {
   TokenDetail: {
@@ -94,7 +95,7 @@ export const TokenDetailScreen = () => {
   };
 
   const handleViewOnExplorer = () => {
-    const url = `https://koiner.app/tokens/${token.contractId}`;
+    const url = `${EXPLORER.mainnet.token}/${token.contractId}`;
     Linking.openURL(url);
   };
 
@@ -108,9 +109,9 @@ export const TokenDetailScreen = () => {
         `Time: ${new Date(tx.timestamp).toLocaleString()}`,
       [
         {
-          text: 'View on Explorer',
+          text: 'View on KoinScan',
           onPress: () => {
-            const url = `https://koiner.app/transactions/${tx.id}`;
+            const url = `${EXPLORER.mainnet.tx}/${tx.id}`;
             Linking.openURL(url);
           },
         },
@@ -302,8 +303,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
   },
   backButton: {
     width: 40,

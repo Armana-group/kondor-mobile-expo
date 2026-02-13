@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import { Screen } from '../components/Screen';
 import { AccountSwitcher } from '../components/AccountSwitcher';
 import { useWalletStore } from '../stores/walletStore';
@@ -36,33 +36,14 @@ export const HomeScreen = () => {
   // Get active account info
   const activeAccount = getActiveAccount();
 
-  const initializeAndLoadBalance = useCallback(async () => {
-    try {
-      if (!isInitialized && address) {
-        await initialize();
-        await initializeTokens(address);
-        setIsInitialized(true);
-      }
-      await refreshBalance();
-    } catch (error: any) {
-      console.error('Failed to initialize:', error);
-    }
-  }, [isInitialized, address]);
-
-  useFocusEffect(
-    useCallback(() => {
-      initializeAndLoadBalance();
-    }, [])
-  );
-
-  const refreshBalance = async () => {
+  // Core balance fetching logic (silent - no spinner)
+  const fetchBalances = useCallback(async () => {
     if (!address) {
       console.log('[HomeScreen] No address, skipping balance refresh');
       return;
     }
 
-    console.log('[HomeScreen] Refreshing balance for address:', address);
-    setIsRefreshing(true);
+    console.log('[HomeScreen] Fetching balances for address:', address);
     try {
       // Refresh token balances
       await refreshBalances(address);
@@ -82,6 +63,34 @@ export const HomeScreen = () => {
       }
     } catch (error: any) {
       console.error('[HomeScreen] Balance fetch error:', error);
+    }
+  }, [address, refreshBalances, getBalance, updateBalance, getMana]);
+
+  // Initialize on first load (silent)
+  const initializeAndLoadBalance = useCallback(async () => {
+    try {
+      if (!isInitialized && address) {
+        await initialize();
+        await initializeTokens(address);
+        setIsInitialized(true);
+        await fetchBalances();
+      }
+    } catch (error: any) {
+      console.error('Failed to initialize:', error);
+    }
+  }, [isInitialized, address, initialize, initializeTokens, fetchBalances]);
+
+  // Only run on initial mount, not on every focus
+  useEffect(() => {
+    initializeAndLoadBalance();
+  }, [initializeAndLoadBalance]);
+
+  // Manual pull-to-refresh (with spinner)
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await fetchBalances();
+    } catch (error: any) {
       Alert.alert('Error', `Failed to fetch balance: ${error.message}`);
     } finally {
       setIsRefreshing(false);
@@ -160,7 +169,7 @@ export const HomeScreen = () => {
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
-            onRefresh={refreshBalance}
+            onRefresh={handleManualRefresh}
             tintColor={colors.purple}
           />
         }>
@@ -314,9 +323,9 @@ export const HomeScreen = () => {
           resetKoinos();
           // Reset initialization to reload balances for new account
           setIsInitialized(false);
-          // Refresh balance and mana for new account
+          // Refresh balance and mana for new account (silent refresh)
           setTimeout(() => {
-            initializeAndLoadBalance();
+            fetchBalances();
           }, 100);
         }}
       />

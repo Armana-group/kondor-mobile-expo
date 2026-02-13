@@ -1,6 +1,84 @@
 # Development TODO
 
-## Status: UI Polish Complete - Ready for Phase 8
+## Status: WalletConnect Working with Free Mana Sharer
+
+### 🔮 Future: Deep Linking for WalletConnect
+Enable Kondor Mobile to appear in WalletConnect wallet selection (like Konio does).
+
+**What's Needed:**
+- [ ] Register Kondor Mobile in WalletConnect Explorer (via Reown Dashboard)
+- [ ] Set up URL scheme deep links (`kondor://wc?uri=...`)
+- [ ] Configure iOS universal links (`https://kondor.app/wc?uri=...`)
+- [ ] Handle incoming WalletConnect URIs from deep links
+- [ ] Test with KoinDX - user should see "Kondor" in wallet list
+
+**Benefit:** Users can tap "Kondor" in dApp's WalletConnect modal instead of scanning QR.
+
+---
+
+### ✅ Completed (2025-12-18 - Free Mana Sharer + UI Updates)
+- ✅ Free mana sharer integration (transactions use `162GhJwsciDiKsgwzj2t6VoFHt3RMzGKdG`)
+- ✅ Updated Apps list (KoinDX, Kollection, KoinScan only)
+- ✅ KoinDX shows WalletConnect info dialog with "Scan QR" button
+- ✅ Block explorer updated to koinscan.io
+- ✅ Fixed keyboard overlay on ImportWalletScreen and AccountSwitcher
+
+### ✅ Completed (2025-12-17 - WalletConnect Mana Fix)
+Fixed "insufficient rc" error when executing transactions via WalletConnect.
+
+**What Was Fixed:**
+- ✅ Transactions via WalletConnect now use proper mana estimation via dry-run
+- ✅ Wallet no longer trusts dApp's rc_limit (which may be incorrect)
+- ✅ Added 10% buffer to estimated mana for safety
+- ✅ Better error handling for failed transactions (dry-run detects issues before broadcast)
+
+**Technical Change:**
+- Modified `TransactionApprovalModal.tsx` to ALWAYS estimate rc_limit via dry-run
+- Same estimation pattern as internal transfers (`ManualTokenContract`)
+
+### ✅ Completed (2025-12-11 - Phase 9.4 WalletConnect)
+WalletConnect integration is complete and enabled. Fixed import order issue by adding `@walletconnect/react-native-compat` as the first import in `index.ts`.
+
+**What's Done:**
+- ✅ WalletConnect v2 integration with `@reown/walletkit`
+- ✅ WalletConnect store for session management
+- ✅ QR scanner extended for WalletConnect URIs (`wc:` protocol)
+- ✅ Session approval modal (WCSessionApprovalModal)
+- ✅ WalletConnect method handlers for all Koinos methods
+- ✅ Transaction signing via existing TransactionApprovalModal
+- ✅ WalletConnect UI section in Apps screen with Scan button
+- ✅ Reown Dashboard project created ("Kondor Wallet")
+- ✅ Project ID configured: `1f1d0d8789bef28db46761b0c0facc6d`
+
+**Next Steps:**
+- ⏳ Test WalletConnect with KoinDX swap after mana fix
+- ⏳ Verify session persistence across app restarts
+
+### ✅ Completed (2025-12-08)
+- ✅ Custom URL entry in Apps browser ("Add App" opens URL modal)
+
+### ✅ Completed (2025-12-07 - Phase 9.3)
+- ✅ TransactionApprovalModal component
+- ✅ Transaction operation decoding (contract calls, uploads, system calls)
+- ✅ Known contract/entry point mapping (KOIN, VHP, transfer, swap, etc.)
+- ✅ `signer:signTransaction` command handling
+- ✅ `signer:sendTransaction` command handling
+- ✅ `signer:prepareTransaction` command handling
+- ✅ Biometric authentication before signing
+- ✅ Transaction broadcast and receipt handling
+
+### ✅ Completed (2025-12-07 - Phase 9.1 & 9.2)
+- ✅ WebView browser with navigation controls
+- ✅ `window.kondor` provider injection
+- ✅ Provider methods (blockchain queries)
+- ✅ `getAccounts()` with permission prompt
+- ✅ Message handler system
+- ✅ Connection status indicator
+
+### ✅ Completed (2025-12-07 - Build & Bug Fixes)
+- ✅ iOS build pipeline fixed (prebuild, pods, signing, local network)
+- ✅ QR Scanner CameraView warning fix (sibling positioning)
+- ✅ HomeScreen auto-refresh bug fix (silent vs manual refresh)
 
 ### ✅ Completed (UI Polish)
 - ✅ Status bar fix (light content on dark background)
@@ -41,61 +119,110 @@
 
 ---
 
-## Phase 8: QR Scanner & Camera Integration
+## ✅ Phase 8: QR Scanner & Camera Integration (COMPLETE)
 
-### Tasks
-1. **QR code scanner for sending**
+### Completed Tasks
+1. **QR code scanner for sending** ✅
    - Camera permission handling
    - Scan Koinos addresses
    - Auto-fill recipient in SendScreen
-2. **Optional: Scan WalletConnect QR codes**
-   - For future WalletConnect integration
-
-### Reference
-- expo-camera or expo-barcode-scanner
+   - Support for `koinos:` URI scheme with amount/token params
+2. **CameraView fix** ✅ (2025-12-07)
+   - Restructured overlay as sibling with absolute positioning
 
 ---
 
-## Phase 9: Apps/dApps Browser
+## Phase 9: Mini Apps Platform
 
 ### Overview
-Phantom-style dApp integration where users can browse and use Koinos dApps via WebView.
+Kondor Mini Apps - tightly integrated dApps with pre-authenticated wallet access and native UI components. Inspired by Telegram Mini Apps.
 
-### Tasks
-1. **Rename Browser tab to "Apps"**
-2. **Create curated app list**
-   - KoinDX (DEX)
-   - Fogata (Mining pool)
-   - KoinScan (Explorer)
-   - Kollection (NFTs)
-3. **WebView integration**
-   - Load dApps in WebView
-   - Inject wallet provider
-   - Handle transaction signing requests
-4. **Trust system**
-   - Curated apps: No warning
-   - User-saved apps: First-time warning for custom URLs
-   - One-off URLs: Always show warning
-5. **URL bar + search**
-   - Enter arbitrary URLs
-   - Search curated apps
+**Full Spec:** See `/docs/features/mini-apps.md`
+
+### Completed
+- [x] Rename Browser tab to "Apps"
+- [x] Create curated app list (8 Koinos dApps)
+- [x] Grid layout matching Kondor extension design
+- [x] Search functionality
+- [x] "Add App" placeholder
+
+### Phase 9.1: Basic WebView Browser ✅
+1. ~~**WebView screen** for loading dApps~~ ✅
+2. ~~**Navigation** (back, forward, refresh, close)~~ ✅
+3. ~~**URL bar** with current URL display~~ ✅
+4. ~~**Loading states** and error handling~~ ✅
+
+### Phase 9.2: Legacy Provider Injection ✅
+1. ~~**`window.kondor`** injection (backwards compatible)~~ ✅
+2. ~~**getAccounts()** - return connected account~~ ✅
+3. ~~**getSigner()** - return signer interface~~ ✅
+4. ~~**Provider methods** - call, getNonce, etc.~~ ✅
+
+### Phase 9.3: Transaction Signing ✅ COMPLETE
+1. ~~**Native approval modal** for transactions~~ ✅
+2. ~~**Operation decoding** (transfer, contract calls)~~ ✅
+3. ~~**Biometric confirmation** before signing~~ ✅
+4. ~~**Sign and broadcast** flow~~ ✅
+
+**Implementation Details:**
+- `TransactionApprovalModal` component with operation decoding
+- Known contracts (KOIN, VHP, KoinDX) and entry points (transfer, swap, mint)
+- Biometric auth via `requireBiometricAuth()` before signing
+- Full sign and broadcast flow with receipt handling
+
+### Phase 9.4: WalletConnect v2 ✅ COMPLETE
+WalletConnect provides an alternative connection method when provider injection doesn't work.
+
+1. ~~**Install** `@reown/walletkit` and `@walletconnect/react-native-compat`~~ ✅
+2. ~~**QR Scanner** - scan WalletConnect QR codes from desktop dApps~~ ✅
+3. ~~**Session management** - approve/reject connection requests~~ ✅
+4. ~~**Transaction signing** - reuse approval modal from Phase 9.3~~ ✅
+
+**Implementation Details:**
+- `walletConnectStore.ts` - Session management with Zustand
+- `WalletConnectQRModal.tsx` - QR scanner for WC URIs
+- `WCSessionApprovalModal.tsx` - Session approval UI
+- `WalletConnectHandler.tsx` - Global request handler
+- Supports all Koinos methods defined in `@armana/walletconnect-koinos-sdk-js`
+
+**Note:** Requires WalletConnect Project ID from https://cloud.walletconnect.com
+Set via `EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID` environment variable.
+
+**Benefits:**
+- Fallback for dApps like KoinDX that have different detection
+- Connect to desktop browser dApps
+- Industry standard protocol
+
+### Phase 9.5: Mini App SDK (Future)
+1. **KondorMiniApp** SDK injection
+2. **Pre-authenticated** wallet context
+3. **UI API** (haptics, toasts, theme)
+4. **Storage API** (per-app persistence)
+
+### Phase 9.6: Ecosystem (Future)
+1. **Mini App manifest** spec
+2. **Developer documentation**
+3. **App submission** process
+4. **Community apps** gallery
 
 ### Reference
-- Kondor3 browser implementation
-- Phantom wallet dApp browser
+- `/docs/features/mini-apps.md` - Full Mini Apps specification
+- Kondor3 browser implementation (`/Users/ron/devstuff/projects/armana/apps/kondor3`)
+- `@armana/walletconnect-koinos-sdk-js` - WalletConnect for Koinos
 
 ---
 
 ## Phase 10: Advanced Features
 
-### WalletConnect v2
-- Connect to desktop dApps
-- Transaction approval flow
-
 ### NFT Support (Collectibles Tab)
 - Fetch NFTs from Kollection API
 - Display NFT gallery
 - NFT transfers
+
+### Additional Features
+- Transaction history in dApp browser
+- Favorites/bookmarks for dApps
+- Custom URL entry for unlisted dApps
 
 ---
 
@@ -158,3 +285,18 @@ eas build --platform ios --profile production
 - [ ] Test settings seed phrase export
 - [ ] Test on iOS device
 - [ ] Test on Android device
+
+### dApp Browser Testing
+- [x] Test WebView loads KoinDX
+- [x] Test WebView loads Kollection
+- [x] Test navigation controls (back, forward, refresh)
+- [x] Test wallet connection prompt (getAccounts)
+- [ ] Test provider methods work (balance queries)
+- [x] Test connected status indicator
+- [ ] Test transaction signing flow (Phase 9.3)
+  - [ ] Test signTransaction returns signed transaction
+  - [ ] Test sendTransaction broadcasts and returns receipt
+  - [ ] Test biometric authentication prompt appears
+  - [ ] Test rejection sends error to dApp
+  - [ ] Test with Kollection (NFT purchase)
+  - [ ] Test with KoinDX (swap)
