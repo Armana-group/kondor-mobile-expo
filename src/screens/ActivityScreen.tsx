@@ -23,6 +23,9 @@ import { EXPLORER } from '../lib/constants';
  * Format transaction time relative to now
  */
 const formatTransactionTime = (timestamp: number): string => {
+  // 0 / missing = timestamp unavailable from the API; show neutral status
+  // rather than a misleading relative time.
+  if (!timestamp) return 'Confirmed';
   const now = Date.now();
   const diff = now - timestamp;
   const seconds = Math.floor(diff / 1000);
@@ -47,7 +50,7 @@ export const ActivityScreen = () => {
       `Amount: ${tx.amount} ${tx.tokenSymbol}\n` +
       `${tx.type === 'send' ? 'To' : 'From'}: ${tx.type === 'send' ? tx.to : tx.from}\n` +
       `Block: ${tx.blockHeight || 'N/A'}\n` +
-      `Time: ${new Date(tx.timestamp).toLocaleString()}`,
+      `Time: ${tx.timestamp ? new Date(tx.timestamp).toLocaleString() : 'N/A'}`,
       [
         {
           text: 'View on KoinScan',

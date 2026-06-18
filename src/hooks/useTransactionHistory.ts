@@ -9,6 +9,12 @@ import { useWalletStore } from '../stores/walletStore';
 import { useTokenStore } from '../stores/tokenStore';
 import { utils } from 'koilib';
 import { txLogger } from '../lib/logger';
+import { KOINOS_REST } from '../lib/constants';
+import { fetchTransactionTimestamps } from '../lib/txHistory';
+
+// Cache of txId -> ms timestamp. Confirmed transactions never change, so this
+// persists across the hook's periodic refresh — only new txs trigger a lookup.
+const timestampCache = new Map<string, number>();
 
 export interface ParsedTransaction {
   id: string;
@@ -103,8 +109,10 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
       // Get payer
       const payer = rawTx.trx?.transaction?.header?.payer || '';
 
-      // Get timestamp - if not available, use current time
-      const timestamp = rawTx.timestamp ? parseInt(rawTx.timestamp) * 1000 : Date.now();
+      // The history list has no block time; 0 = unknown (enriched after fetch
+      // via the per-transaction endpoint). Do NOT fake Date.now() — that made
+      // every transaction read "Just now".
+      const timestamp = 0;
 
       return {
         id: rawTx.trx?.transaction?.id || `tx-${rawTx.seq_num}`,
@@ -149,7 +157,7 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
       setError(null);
 
       // Fetch transaction history from REST API
-      const url = `https://rest.koinos.io/v1/account/${address}/history?limit=50&ascending=false`;
+      const url = `${KOINOS_REST.history}/v1/account/${address}/history?limit=50&ascending=false`;
       txLogger.debug('Fetching from:', url);
 
       const response = await fetch(url);
@@ -172,6 +180,26 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
       }
 
       txLogger.debug('Parsed', parsedTransactions.length, 'transactions');
+
+      // The history list omits block time, so enrich each tx with its real
+      // timestamp from the per-transaction endpoint (cached by txId).
+      try {
+        const realIds = parsedTransactions
+          .map((t) => t.id)
+          .filter((id) => id && !id.startsWith('tx-')); // skip seq_num fallback ids
+        const tsMap = await fetchTransactionTimestamps(realIds, {
+          baseUrl: KOINOS_REST.transaction,
+          cache: timestampCache,
+        });
+        for (const tx of parsedTransactions) {
+          const ts = tsMap.get(tx.id);
+          if (ts !== undefined) tx.timestamp = ts;
+        }
+      } catch (tsErr) {
+        // Non-fatal: timestamps stay 0 (UI shows "Confirmed"), history still renders.
+        txLogger.warn('Timestamp enrichment failed:', tsErr);
+      }
+
       setTransactions(parsedTransactions);
     } catch (err: any) {
       txLogger.error('Fetch error:', err);

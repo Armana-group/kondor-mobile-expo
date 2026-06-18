@@ -22,6 +22,16 @@ export const TESTNET = {
 // Default to mainnet for production
 export const DEFAULT_NETWORK = MAINNET;
 
+// REST endpoints for transaction history.
+// The account-history list endpoint omits block time, so per-transaction
+// timestamps are fetched separately from a node that serves /v1/transaction/{id}
+// (which includes `transaction.timestamp`). rest.koinos.io currently errors on
+// that route, so we use the foundation seed node for it.
+export const KOINOS_REST = {
+  history: 'https://rest.koinos.io', // GET /v1/account/{address}/history
+  transaction: 'https://seed.koinosfoundation.org', // GET /v1/transaction/{id} (has timestamp)
+};
+
 // BIP44 path for Koinos (SLIP44: 659)
 export const KOINOS_PATH = "m/44'/659'/";
 
@@ -37,18 +47,18 @@ export const FREE_MANA_SHARER = {
 // Block explorer URLs
 export const EXPLORER = {
   mainnet: {
-    base: 'https://koinscan.io',
-    tx: 'https://koinscan.io/tx',
-    address: 'https://koinscan.io/address',
-    token: 'https://koinscan.io/token',
-    block: 'https://koinscan.io/block',
+    base: 'https://koinscan.com',
+    tx: 'https://koinscan.com/tx',
+    address: 'https://koinscan.com/address',
+    token: 'https://koinscan.com/token',
+    block: 'https://koinscan.com/block',
   },
   testnet: {
-    base: 'https://harbinger.koinscan.io',
-    tx: 'https://harbinger.koinscan.io/tx',
-    address: 'https://harbinger.koinscan.io/address',
-    token: 'https://harbinger.koinscan.io/token',
-    block: 'https://harbinger.koinscan.io/block',
+    base: 'https://harbinger.koinscan.com',
+    tx: 'https://harbinger.koinscan.com/tx',
+    address: 'https://harbinger.koinscan.com/address',
+    token: 'https://harbinger.koinscan.com/token',
+    block: 'https://harbinger.koinscan.com/block',
   },
 };
 

@@ -17,13 +17,13 @@ describe('CURATED_DAPPS', () => {
 describe('isCuratedUrl', () => {
   it('returns true for exact curated dApp URLs', () => {
     expect(isCuratedUrl('https://kollection.app')).toBe(true);
-    expect(isCuratedUrl('https://koinscan.io')).toBe(true);
+    expect(isCuratedUrl('https://koinscan.com')).toBe(true);
     expect(isCuratedUrl('https://app.koindx.com')).toBe(true);
   });
 
   it('returns true for curated URLs with paths', () => {
     expect(isCuratedUrl('https://kollection.app/nft/123')).toBe(true);
-    expect(isCuratedUrl('https://koinscan.io/block/42')).toBe(true);
+    expect(isCuratedUrl('https://koinscan.com/block/42')).toBe(true);
   });
 
   it('returns true for subdomains of curated dApps', () => {
