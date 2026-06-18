@@ -2,8 +2,9 @@
 // This file MUST be imported at the very top of App.tsx
 
 // Polyfills for ethers.js and koilib - ORDER MATTERS!
+// ethers v6 uses native BigInt + Web Crypto, so the v5-only @ethersproject/shims
+// package is no longer imported; getRandomValues is provided below.
 import 'react-native-get-random-values';
-import '@ethersproject/shims';
 import 'text-encoding-polyfill';  // Critical for protobuf handling in koilib
 
 import { cryptoLogger } from './logger';
