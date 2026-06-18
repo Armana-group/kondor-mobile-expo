@@ -67,6 +67,7 @@
     "typescript": "~5.9.2"
   },
   "overrides": {
+    "react-native": "0.81.5",
     "ethers": {
       "ws": "8.21.0"
     }
