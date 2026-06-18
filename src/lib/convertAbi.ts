@@ -14,7 +14,7 @@ export function convertKondorAbiToKoilib(kondorAbi: any) {
   // Convert methods
   if (kondorAbi.methods) {
     for (const [methodName, method] of Object.entries(kondorAbi.methods)) {
-      const convertedMethod: any = { ...method };
+      const convertedMethod: any = { ...(method as Record<string, any>) };
 
       // Convert hyphenated keys to underscored
       if ('read-only' in convertedMethod) {

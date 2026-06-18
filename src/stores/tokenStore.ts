@@ -129,7 +129,7 @@ async function getTokenBalance(
   try {
     const encodedArgs = encodeBalanceOfArgs(ownerAddress);
 
-    const result = await provider.call('chain.read_contract', {
+    const result = await provider.call<{ result?: string }>('chain.read_contract', {
       contract_id: contractId,
       entry_point: 0x5c721497, // balanceOf entry point
       args: utils.encodeBase64url(encodedArgs),
