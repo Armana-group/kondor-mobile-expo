@@ -6,6 +6,7 @@
 import { Provider, Signer, utils, Transaction } from 'koilib';
 import * as protobuf from 'protobufjs/minimal';
 import { createLogger } from './logger';
+import { dryRunRcLimit } from './manaEstimation';
 
 const log = createLogger('TokenContract');
 
@@ -151,7 +152,7 @@ export class ManualTokenContract {
     signer: Signer,
     to: string,
     amount: string,
-    options: { rcLimit?: number; decimals?: number } = {}
+    options: { rcLimit?: number; decimals?: number; maxRc?: number } = {}
   ): Promise<{ transactionId: string }> {
     try {
       const decimals = options.decimals ?? 8;
@@ -173,19 +174,22 @@ export class ManualTokenContract {
       if (!rcLimit) {
         log.debug(' No RC limit provided, estimating via dry-run...');
 
-        // Get account's available RC for dry-run estimation
-        let estimationLimit = 100000000; // Default 100M for estimation
+        // Choose an rc_limit for the dry-run. Prefer the account's MAX rc
+        // (balance, passed as options.maxRc) over currently-available rc, which
+        // can read low/stale right after funding and wrongly cap the dry-run —
+        // the node then rejects with "insufficient rc" until a retry. See
+        // dryRunRcLimit / the kondor estimateAndAdjustMana pattern.
+        let availableRc = 0;
         try {
           const rcResult = await this.provider.call<{ rc?: string }>('chain.get_account_rc', {
             account: from
           });
-          const availableRc = Number(rcResult.rc || 0);
-          // Use 90% of available RC for estimation to be safe
-          estimationLimit = Math.floor(availableRc * 0.9);
-          log.debug(' Using', estimationLimit, 'RC for dry-run (90% of', availableRc, ')');
+          availableRc = Number(rcResult.rc || 0);
         } catch (error) {
-          log.debug(' Could not fetch RC, using default:', estimationLimit);
+          log.debug(' Could not fetch available RC');
         }
+        const estimationLimit = dryRunRcLimit({ maxRc: options.maxRc, availableRc });
+        log.debug(' Dry-run rc_limit:', estimationLimit, '(maxRc:', options.maxRc, 'availableRc:', availableRc, ')');
 
         // Create a test transaction for estimation
         const estimateTx = new Transaction({
