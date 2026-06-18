@@ -16,6 +16,6 @@ Kondor Mobile (Expo) — non-custodial Koinos wallet.
 - Remaining moderate/low are transitive (Expo/Metro build chain); revisit after a fuller dep refresh.
 
 ## Next steps
-- Plan the ethers v5→v6 migration (unblocks the last high-sev `ws` advisory).
-- Decide whether to clean up the 9 pre-existing koilib type errors.
+- Plan the ethers v5→v6 migration (unblocks the last high-sev `ws` advisory). **In progress.**
+- ~~Clean up the 9 pre-existing koilib type errors~~ **DONE 2026-06-17 — `tsc --noEmit` now fully clean (0 errors).**
 - Squash the `WIP checkpoint` commits into reviewable commits and open a PR for the security work.
