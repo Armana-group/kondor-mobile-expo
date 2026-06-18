@@ -23,6 +23,8 @@ import { useWalletStore } from '../stores/walletStore';
 import { useContactStore, Contact } from '../stores/contactStore';
 import { useTokenStore, Token } from '../stores/tokenStore';
 import { isValidAddress, calculateManaRegenTime, truncateAddress, formatKoinBalance } from '../lib/utils';
+import { requireBiometricAuth } from '../lib/biometrics';
+import { koinosLogger } from '../lib/logger';
 import colors from '../theme/colors';
 
 type SendRouteParams = {
@@ -103,9 +105,9 @@ export const SendScreen = () => {
       const maxMana = BigInt(manaData.max);
       const requiredMana = BigInt(ESTIMATED_TRANSFER_MANA);
 
-      console.log('[SendScreen] Available mana:', availableMana.toString());
-      console.log('[SendScreen] Reserved mana:', manaData.reserved);
-      console.log('[SendScreen] Estimated required:', requiredMana.toString());
+      koinosLogger.debug('Available mana:', availableMana.toString());
+      koinosLogger.debug('Reserved mana:', manaData.reserved);
+      koinosLogger.debug('Estimated required:', requiredMana.toString());
 
       if (availableMana < requiredMana) {
         const timeToRegen = calculateManaRegenTime(
@@ -122,10 +124,10 @@ export const SendScreen = () => {
         return false;
       }
 
-      console.log('[SendScreen] Mana check passed, proceeding with transfer');
+      koinosLogger.debug('Mana check passed, proceeding with transfer');
       return true;
     } catch (error: any) {
-      console.error('[SendScreen] Mana check error:', error);
+      koinosLogger.error('Mana check error:', error);
       Alert.alert(
         'Warning',
         'Unable to check mana availability. The transaction may fail if you have insufficient mana. Continue anyway?',
@@ -160,6 +162,12 @@ export const SendScreen = () => {
         {
           text: 'Send',
           onPress: async () => {
+            const authenticated = await requireBiometricAuth('send this transaction');
+            if (!authenticated) {
+              Alert.alert('Authentication Required', 'Biometric authentication is required to send transactions.');
+              return;
+            }
+
             setIsSending(true);
             try {
               // Use transferToken for all tokens (works with any contract)

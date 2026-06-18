@@ -15,6 +15,7 @@ import { TransactionJson } from 'koilib';
 import { Core } from '@walletconnect/core';
 import { WalletKit } from '@reown/walletkit';
 import { buildApprovedNamespaces, getSdkError } from '@walletconnect/utils';
+import { wcLogger } from '../lib/logger';
 
 // WalletConnect feature flag
 const WALLETCONNECT_ENABLED = true;
@@ -55,7 +56,8 @@ const SUPPORTED_METHODS = Object.values(KOINOS_METHODS);
 const SUPPORTED_EVENTS: string[] = [];
 
 // WalletConnect Project ID from https://cloud.walletconnect.com
-const WALLETCONNECT_PROJECT_ID = '1f1d0d8789bef28db46761b0c0facc6d';
+// Set via EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID in .env
+const WALLETCONNECT_PROJECT_ID = process.env.EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID || '';
 
 // Session info for display
 export interface WCSession {
@@ -179,14 +181,14 @@ export const useWalletConnectStore = create<WalletConnectState>()(
           }));
           set({ sessions });
         } catch (error) {
-          console.error('[WalletConnect] Failed to update sessions:', error);
+          wcLogger.error('Failed to update sessions:', error);
         }
       },
 
       initialize: async (address: string) => {
         // WalletConnect is currently disabled
         if (!WALLETCONNECT_ENABLED) {
-          console.log('[WalletConnect] Feature is currently disabled');
+          wcLogger.debug('Feature is currently disabled');
           return;
         }
 
@@ -199,7 +201,11 @@ export const useWalletConnectStore = create<WalletConnectState>()(
         }
 
         try {
-          console.log('[WalletConnect] Initializing...');
+          wcLogger.debug('Initializing...');
+
+          if (!WALLETCONNECT_PROJECT_ID) {
+            throw new Error('EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID not configured. Set it in .env file.');
+          }
 
           // Create Core instance
           const core = new Core({
@@ -222,7 +228,7 @@ export const useWalletConnectStore = create<WalletConnectState>()(
 
           // Handle session proposals
           walletKit.on('session_proposal', async (proposal) => {
-            console.log('[WalletConnect] Session proposal received:', proposal.id);
+            wcLogger.debug('Session proposal received:', proposal.id);
 
             const { proposer } = proposal.params;
             get()._setPendingProposal({
@@ -239,14 +245,14 @@ export const useWalletConnectStore = create<WalletConnectState>()(
 
           // Handle session requests
           walletKit.on('session_request', async (event) => {
-            console.log('[WalletConnect] Session request:', event.params.request.method);
+            wcLogger.debug('Session request:', event.params.request.method);
 
             const { topic, params, id } = event;
             const { request } = params;
             const session = walletKit.getActiveSessions()[topic];
 
             if (!session) {
-              console.error('[WalletConnect] Session not found for topic:', topic);
+              wcLogger.error('Session not found for topic:', topic);
               return;
             }
 
@@ -292,16 +298,16 @@ export const useWalletConnectStore = create<WalletConnectState>()(
 
           // Handle session deletions
           walletKit.on('session_delete', () => {
-            console.log('[WalletConnect] Session deleted');
+            wcLogger.debug('Session deleted');
             get()._updateSessions();
           });
 
           set({ _walletKit: walletKit, initialized: true });
           get()._updateSessions();
 
-          console.log('[WalletConnect] Initialized successfully');
+          wcLogger.debug('Initialized successfully');
         } catch (error) {
-          console.error('[WalletConnect] Initialization error:', error);
+          wcLogger.error('Initialization error:', error);
           throw error;
         }
       },
@@ -317,11 +323,11 @@ export const useWalletConnectStore = create<WalletConnectState>()(
         }
 
         try {
-          console.log('[WalletConnect] Pairing with URI...');
+          wcLogger.debug('Pairing with URI...');
           await _walletKit.pair({ uri });
-          console.log('[WalletConnect] Pairing initiated');
+          wcLogger.debug('Pairing initiated');
         } catch (error) {
-          console.error('[WalletConnect] Pairing error:', error);
+          wcLogger.error('Pairing error:', error);
           throw error;
         }
       },
@@ -334,7 +340,7 @@ export const useWalletConnectStore = create<WalletConnectState>()(
         }
 
         try {
-          console.log('[WalletConnect] Approving session:', pendingProposal.id);
+          wcLogger.debug('Approving session:', pendingProposal.id);
 
           // Build approved namespaces for Koinos
           const approvedNamespaces = buildApprovedNamespaces({
@@ -357,9 +363,9 @@ export const useWalletConnectStore = create<WalletConnectState>()(
           set({ pendingProposal: null });
           get()._updateSessions();
 
-          console.log('[WalletConnect] Session approved');
+          wcLogger.debug('Session approved');
         } catch (error) {
-          console.error('[WalletConnect] Session approval error:', error);
+          wcLogger.error('Session approval error:', error);
           throw error;
         }
       },
@@ -372,7 +378,7 @@ export const useWalletConnectStore = create<WalletConnectState>()(
         }
 
         try {
-          console.log('[WalletConnect] Rejecting session:', pendingProposal.id);
+          wcLogger.debug('Rejecting session:', pendingProposal.id);
 
           await _walletKit.rejectSession({
             id: pendingProposal.id,
@@ -381,9 +387,9 @@ export const useWalletConnectStore = create<WalletConnectState>()(
 
           set({ pendingProposal: null });
 
-          console.log('[WalletConnect] Session rejected');
+          wcLogger.debug('Session rejected');
         } catch (error) {
-          console.error('[WalletConnect] Session rejection error:', error);
+          wcLogger.error('Session rejection error:', error);
           throw error;
         }
       },
@@ -396,7 +402,7 @@ export const useWalletConnectStore = create<WalletConnectState>()(
         }
 
         try {
-          console.log('[WalletConnect] Disconnecting session:', topic);
+          wcLogger.debug('Disconnecting session:', topic);
 
           await _walletKit.disconnectSession({
             topic,
@@ -405,9 +411,9 @@ export const useWalletConnectStore = create<WalletConnectState>()(
 
           get()._updateSessions();
 
-          console.log('[WalletConnect] Session disconnected');
+          wcLogger.debug('Session disconnected');
         } catch (error) {
-          console.error('[WalletConnect] Disconnect error:', error);
+          wcLogger.error('Disconnect error:', error);
           throw error;
         }
       },
@@ -427,7 +433,7 @@ export const useWalletConnectStore = create<WalletConnectState>()(
 
           get()._updateSessions();
         } catch (error) {
-          console.error('[WalletConnect] Disconnect all error:', error);
+          wcLogger.error('Disconnect all error:', error);
         }
       },
 
@@ -439,7 +445,7 @@ export const useWalletConnectStore = create<WalletConnectState>()(
         }
 
         try {
-          console.log('[WalletConnect] Responding to request:', id);
+          wcLogger.debug('Responding to request:', id);
 
           await _walletKit.respondSessionRequest({
             topic,
@@ -452,9 +458,9 @@ export const useWalletConnectStore = create<WalletConnectState>()(
 
           set({ pendingRequest: null, pendingTransaction: null });
 
-          console.log('[WalletConnect] Request response sent');
+          wcLogger.debug('Request response sent');
         } catch (error) {
-          console.error('[WalletConnect] Response error:', error);
+          wcLogger.error('Response error:', error);
           throw error;
         }
       },
@@ -467,7 +473,7 @@ export const useWalletConnectStore = create<WalletConnectState>()(
         }
 
         try {
-          console.log('[WalletConnect] Rejecting request:', id);
+          wcLogger.debug('Rejecting request:', id);
 
           await _walletKit.respondSessionRequest({
             topic,
@@ -483,9 +489,9 @@ export const useWalletConnectStore = create<WalletConnectState>()(
 
           set({ pendingRequest: null, pendingTransaction: null });
 
-          console.log('[WalletConnect] Request rejected');
+          wcLogger.debug('Request rejected');
         } catch (error) {
-          console.error('[WalletConnect] Rejection error:', error);
+          wcLogger.error('Rejection error:', error);
           throw error;
         }
       },

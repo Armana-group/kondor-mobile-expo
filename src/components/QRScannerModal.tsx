@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { HapticFeedback } from '../lib/haptics';
+import { logger } from '../lib/logger';
 import colors from '../theme/colors';
 
 // Dynamically import camera to handle missing native module gracefully
@@ -23,7 +24,7 @@ try {
   useCameraPermissions = expoCamera.useCameraPermissions;
   cameraAvailable = true;
 } catch (e) {
-  console.log('[QRScanner] expo-camera not available:', e);
+  logger.debug('expo-camera not available:', e);
 }
 
 // QR data types

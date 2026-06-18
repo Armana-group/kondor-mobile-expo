@@ -18,14 +18,22 @@ export const KONDOR_PROVIDER_SCRIPT = `
   }
   window.__kondorMobileInjected = true;
 
-  console.log('[Kondor Mobile] Starting provider injection...');
+  // Suppress logs in production
+  var __DEV__ = ${__DEV__};
+  function _log() { if (__DEV__) console.log.apply(console, ['[Kondor Mobile]'].concat(Array.from(arguments))); }
 
-  // Generate UUID for message IDs
+  _log('Starting provider injection...');
+
+  // Generate cryptographically secure UUID v4
   function generateId() {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-      var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-      return v.toString(16);
-    });
+    var bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    // Set version 4 bits
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    // Set variant bits
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    var hex = Array.from(bytes, function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+    return hex.slice(0,8) + '-' + hex.slice(8,12) + '-' + hex.slice(12,16) + '-' + hex.slice(16,20) + '-' + hex.slice(20);
   }
 
   // Track pending requests
@@ -34,7 +42,7 @@ export const KONDOR_PROVIDER_SCRIPT = `
   // Send message to React Native and return a promise
   function sendToNative(command, args = {}) {
     const id = generateId();
-    console.log('[Kondor Mobile] Sending:', command, id);
+    _log('Sending:', command, id);
 
     return new Promise((resolve, reject) => {
       pendingRequests.set(id, { resolve, reject });
@@ -58,7 +66,7 @@ export const KONDOR_PROVIDER_SCRIPT = `
 
   // Handle responses from React Native
   window.__kondorMobileResponse = function(response) {
-    console.log('[Kondor Mobile] Response received:', response.id);
+    _log('Response received:', response.id);
     const pending = pendingRequests.get(response.id);
     if (pending) {
       pendingRequests.delete(response.id);
@@ -90,7 +98,7 @@ export const KONDOR_PROVIDER_SCRIPT = `
 
     // Intercept kondor-js requests (has command)
     if (data && typeof data === 'object' && data.command && data.id) {
-      console.log('[Kondor Mobile] Intercepted postMessage request:', data.command);
+      _log('Intercepted postMessage request:', data.command);
 
       // Store the request for later response
       if (!pendingRequests.has(data.id)) {
@@ -128,7 +136,7 @@ export const KONDOR_PROVIDER_SCRIPT = `
 
   // getProvider function
   function getProvider(network) {
-    console.log('[Kondor Mobile] getProvider called:', network);
+    _log('getProvider called:', network);
     return provider;
   }
 
@@ -179,13 +187,13 @@ export const KONDOR_PROVIDER_SCRIPT = `
 
   // getSigner function
   function getSigner(signerAddress, options) {
-    console.log('[Kondor Mobile] getSigner called:', signerAddress);
+    _log('getSigner called:', signerAddress);
     return new KondorSigner({ address: signerAddress, ...options });
   }
 
   // getAccounts function
   async function getAccounts() {
-    console.log('[Kondor Mobile] getAccounts called');
+    _log('getAccounts called');
     return sendToNative('getAccounts', {});
   }
 
@@ -203,7 +211,7 @@ export const KONDOR_PROVIDER_SCRIPT = `
     globalThis.kondor = window.kondor;
   }
 
-  console.log('[Kondor Mobile] window.kondor injected:', Object.keys(window.kondor));
+  _log('window.kondor injected:', Object.keys(window.kondor));
 })();
 `;
 
@@ -240,8 +248,6 @@ export const BACKGROUND_COMMANDS = [
   'provider:getBlocks',
   'provider:getBlock',
   'provider:wait',
-  'provider:sendTransaction',
-  'provider:submitBlock',
   'provider:readContract',
   'provider:getForkHeads',
   'provider:getResourceLimits',
@@ -258,4 +264,6 @@ export const APPROVAL_COMMANDS = [
   'signer:signMessage',
   'signer:signTransaction',
   'signer:sendTransaction',
+  'provider:sendTransaction',
+  'provider:submitBlock',
 ];

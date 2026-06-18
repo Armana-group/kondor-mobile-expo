@@ -14,6 +14,7 @@ import { Button } from '../components/Button';
 import { Input } from '../components/Input';
 import { useWalletStore } from '../stores/walletStore';
 import { validateMnemonic } from '../lib/wallet';
+import { sanitizeErrorForUser } from '../lib/logger';
 import { colors } from '../theme/colors';
 
 export const ImportWalletScreen = () => {
@@ -48,7 +49,7 @@ export const ImportWalletScreen = () => {
         routes: [{ name: 'Home' }],
       });
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to import wallet');
+      Alert.alert('Error', sanitizeErrorForUser(error, 'Failed to import wallet'));
     } finally {
       setIsLoading(false);
     }

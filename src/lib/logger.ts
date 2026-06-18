@@ -1,6 +1,6 @@
 /**
  * Logger utility with dev/prod modes
- * Only logs in development, silent in production
+ * All output suppressed in production to prevent sensitive data leaks
  */
 
 const isDev = __DEV__;
@@ -46,8 +46,9 @@ class Logger {
   }
 
   error(...args: any[]) {
-    // Always log errors, even in production
-    console.error(...this.formatMessage('error', ...args));
+    if (this.enabled) {
+      console.error(...this.formatMessage('error', ...args));
+    }
   }
 }
 
@@ -61,5 +62,19 @@ export const koinosLogger = createLogger('Koinos');
 export const tokenLogger = createLogger('Token');
 export const txLogger = createLogger('Transaction');
 export const cryptoLogger = createLogger('Crypto');
+export const browserLogger = createLogger('Browser');
+export const wcLogger = createLogger('WalletConnect');
+
+/**
+ * Sanitize an error for display to the user.
+ * In production, returns a generic message to avoid leaking internal details.
+ * In development, returns the original error message for debugging.
+ */
+export function sanitizeErrorForUser(error: unknown, fallback: string): string {
+  if (isDev && error instanceof Error) {
+    return error.message;
+  }
+  return fallback;
+}
 
 export default logger;

@@ -21,6 +21,7 @@ import { Screen } from '../components/Screen';
 import { useWalletStore } from '../stores/walletStore';
 import { Token } from '../stores/tokenStore';
 import { HapticFeedback } from '../lib/haptics';
+import { logger } from '../lib/logger';
 import colors from '../theme/colors';
 
 type ReceiveRouteParams = {
@@ -51,7 +52,7 @@ export const ReceiveScreen = () => {
         title: 'My Koinos Address',
       });
     } catch (error) {
-      console.error('Share error:', error);
+      logger.error('Share error:', error);
     }
   };
 

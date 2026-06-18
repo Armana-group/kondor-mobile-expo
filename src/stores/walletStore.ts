@@ -84,13 +84,8 @@ export const useWalletStore = create<WalletState>()(
           };
 
           // Store mnemonic in SecureStore (encrypted)
+          // Private keys are derived on-demand from mnemonic — not cached
           await SecureStore.setItemAsync(MNEMONIC_KEY, mnemonic);
-
-          // Store private key for this account (for quick access)
-          await SecureStore.setItemAsync(`${PRIVATE_KEY_PREFIX}${accountId}`, privateKey);
-
-          // Also store in legacy key for backward compatibility
-          await SecureStore.setItemAsync(LEGACY_PRIVATE_KEY, privateKey);
 
           set({
             accounts: [firstAccount],
@@ -146,8 +141,7 @@ export const useWalletStore = create<WalletState>()(
               isImported: false,
             };
 
-            // Store private key for this account
-            await SecureStore.setItemAsync(`${PRIVATE_KEY_PREFIX}${accountId}`, privateKey);
+            // Private key derived on-demand from mnemonic — not cached
 
             set({
               accounts: [migratedAccount],
@@ -221,8 +215,7 @@ export const useWalletStore = create<WalletState>()(
             if (mnemonic) {
               const wallet = createWalletFromMnemonic(mnemonic, activeAccount.derivationIndex);
               privateKey = wallet.privateKey;
-              // Cache it for next time
-              await SecureStore.setItemAsync(`${PRIVATE_KEY_PREFIX}${activeAccountId}`, privateKey);
+              // Derived on-demand — not cached in SecureStore
             }
           }
 
@@ -276,8 +269,7 @@ export const useWalletStore = create<WalletState>()(
           isImported: false,
         };
 
-        // Store private key
-        await SecureStore.setItemAsync(`${PRIVATE_KEY_PREFIX}${accountId}`, privateKey);
+        // HD account keys are derived on-demand from mnemonic — not cached
 
         set({
           accounts: [...accounts, newAccount],
