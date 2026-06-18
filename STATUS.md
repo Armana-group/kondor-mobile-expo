@@ -10,6 +10,12 @@ Kondor Mobile (Expo) — non-custodial Koinos wallet.
 - Type check: `tsc --noEmit` is clean for all branch-touched code. 9 **pre-existing** baseline errors remain in `src/lib/manualTokenContract.ts`, `src/stores/tokenStore.ts`, and `src/lib/convertAbi.ts` (koilib typing gaps, untouched by this branch — never blocked the running app).
 - Dependency fix applied: `@expo/vector-icons` is now a direct dependency (was only available transitively/nested, which broke `tsc` resolution from `src/`).
 
+## Security audit (2026-06-17)
+- Ran `npm audit fix` (non-breaking patches): cleared both criticals (incl. direct `protobufjs` RCE) and 10 of 11 highs. **65 → 47** vulnerabilities (1 high, 34 moderate, 12 low remain).
+- **DEFERRED — known item:** `ws` (high, memory-exhaustion DoS) is only fixable by upgrading to `ethers@6`, a breaking major. The wallet's mnemonic/HD-key derivation is built on **ethers v5**, so this must be migrated deliberately, not auto-bumped. Schedule an ethers v5→v6 migration spike before shipping to production.
+- Remaining moderate/low are transitive (Expo/Metro build chain); revisit after a fuller dep refresh.
+
 ## Next steps
+- Plan the ethers v5→v6 migration (unblocks the last high-sev `ws` advisory).
 - Decide whether to clean up the 9 pre-existing koilib type errors.
 - Squash the `WIP checkpoint` commits into reviewable commits and open a PR for the security work.
