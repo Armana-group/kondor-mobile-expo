@@ -333,7 +333,10 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
 
       // Check if dry-run reverted
       if (dryRunReceipt.reverted) {
-        const revertReason = dryRunReceipt.error_message || 'Unknown error';
+        const revertReason =
+          dryRunReceipt.logs?.join('; ') ||
+          (dryRunReceipt as { error_message?: string }).error_message ||
+          'Unknown error';
         txLogger.error('Dry-run reverted:', revertReason);
         throw new Error(`Transaction would revert: ${revertReason}`);
       }

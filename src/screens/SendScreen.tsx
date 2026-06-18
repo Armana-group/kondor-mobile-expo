@@ -243,6 +243,11 @@ export const SendScreen = () => {
   };
 
   const handleQRScan = (data: ParsedQRData) => {
+    // A koinos_address QR must carry an address; bail if it's missing
+    if (!data.address) {
+      return;
+    }
+
     // Set recipient address
     setRecipient(data.address);
     setErrors({ ...errors, recipient: undefined });
