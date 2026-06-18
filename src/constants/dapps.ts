@@ -9,6 +9,7 @@ export interface DApp {
   category: 'defi' | 'tools' | 'nft' | 'social' | 'gaming' | 'other';
   featured?: boolean;
   requiresWalletConnect?: boolean; // Shows WalletConnect info before opening
+  isCurated?: boolean; // Trusted, curated dApp (vs custom URL)
 }
 
 export const CURATED_DAPPS: DApp[] = [
@@ -21,6 +22,7 @@ export const CURATED_DAPPS: DApp[] = [
     category: 'defi',
     featured: true,
     requiresWalletConnect: true,
+    isCurated: true,
   },
   {
     id: 'kollection',
@@ -30,6 +32,7 @@ export const CURATED_DAPPS: DApp[] = [
     icon: 'https://kollection.app/favicon.ico',
     category: 'nft',
     featured: true,
+    isCurated: true,
   },
   {
     id: 'koinscan',
@@ -39,8 +42,22 @@ export const CURATED_DAPPS: DApp[] = [
     icon: 'https://koinscan.io/favicon.ico',
     category: 'tools',
     featured: true,
+    isCurated: true,
   },
 ];
+
+/** Check if a URL belongs to a curated dApp */
+export const isCuratedUrl = (url: string): boolean => {
+  try {
+    const hostname = new URL(url).hostname;
+    return CURATED_DAPPS.some((app) => {
+      const curatedHostname = new URL(app.url).hostname;
+      return hostname === curatedHostname || hostname.endsWith('.' + curatedHostname);
+    });
+  } catch {
+    return false;
+  }
+};
 
 // Category labels and icons
 export const DAPP_CATEGORIES = {

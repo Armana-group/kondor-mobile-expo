@@ -1,4 +1,4 @@
-import { ethers } from 'ethers';
+import { Wallet, Mnemonic, HDNodeWallet } from 'ethers';
 import { Signer } from 'koilib';
 import { KOINOS_PATH } from './constants';
 
@@ -6,8 +6,9 @@ import { KOINOS_PATH } from './constants';
  * Generate a new random mnemonic phrase (12 words)
  */
 export const generateMnemonic = (): string => {
-  const wallet = ethers.Wallet.createRandom();
-  return wallet.mnemonic.phrase;
+  const wallet = Wallet.createRandom();
+  // createRandom() always produces a mnemonic; assert for the type checker
+  return wallet.mnemonic!.phrase;
 };
 
 /**
@@ -18,9 +19,11 @@ export const generateMnemonic = (): string => {
  */
 export const createWalletFromMnemonic = (mnemonic: string, index: number = 0) => {
   // BIP44 path for Koinos (SLIP44: 659)
-  const hdNode = ethers.utils.HDNode.fromMnemonic(mnemonic);
+  // Build the master node at "m" so derivePath() can take an absolute path,
+  // matching the ethers v5 HDNode.fromMnemonic(...).derivePath(...) behavior.
+  const root = HDNodeWallet.fromMnemonic(Mnemonic.fromPhrase(mnemonic), 'm');
   const path = `${KOINOS_PATH}${index}'/0/0`;
-  const child = hdNode.derivePath(path);
+  const child = root.derivePath(path);
 
   // Create Koinos signer
   const signer = new Signer({
@@ -45,7 +48,7 @@ export const createWalletFromMnemonic = (mnemonic: string, index: number = 0) =>
  */
 export const validateMnemonic = (mnemonic: string): boolean => {
   try {
-    ethers.utils.HDNode.fromMnemonic(mnemonic);
+    Mnemonic.fromPhrase(mnemonic);
     return true;
   } catch {
     return false;

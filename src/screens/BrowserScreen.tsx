@@ -23,6 +23,8 @@ import { WalletConnectQRModal } from '../components/WalletConnectQRModal';
 import { useWalletStore } from '../stores/walletStore';
 import { useWalletConnectStore, WCSession } from '../stores/walletConnectStore';
 import { HapticFeedback } from '../lib/haptics';
+import { validateDAppUrl } from '../lib/urlValidation';
+import { browserLogger, sanitizeErrorForUser } from '../lib/logger';
 import colors from '../theme/colors';
 
 type NavigationProp = NativeStackNavigationProp<AppsStackParamList, 'AppsMain'>;
@@ -55,7 +57,7 @@ export const BrowserScreen = () => {
   useEffect(() => {
     if (isWalletCreated && address && !initialized) {
       initialize(address).catch((error) => {
-        console.error('[BrowserScreen] WC init error:', error);
+        browserLogger.error('WC init error:', error);
       });
     }
   }, [isWalletCreated, address, initialized, initialize]);
@@ -63,13 +65,13 @@ export const BrowserScreen = () => {
   // Handle WalletConnect QR scan
   const handleWCScan = useCallback(async (wcUri: string) => {
     try {
-      console.log('[BrowserScreen] Pairing with URI:', wcUri.slice(0, 50) + '...');
+      browserLogger.debug('Pairing with URI:', wcUri.slice(0, 50) + '...');
       await pair(wcUri);
       HapticFeedback.success();
     } catch (error: any) {
-      console.error('[BrowserScreen] Pairing error:', error);
+      browserLogger.error('Pairing error:', error);
       HapticFeedback.error();
-      Alert.alert('Connection Failed', error.message || 'Failed to connect. Please try again.');
+      Alert.alert('Connection Failed', sanitizeErrorForUser(error, 'Failed to connect. Please try again.'));
     }
   }, [pair]);
 
@@ -88,7 +90,7 @@ export const BrowserScreen = () => {
               await disconnectSession(session.topic);
               HapticFeedback.success();
             } catch (error) {
-              console.error('[BrowserScreen] Disconnect error:', error);
+              browserLogger.error('Disconnect error:', error);
             }
           },
         },
@@ -134,26 +136,19 @@ export const BrowserScreen = () => {
   };
 
   const handleOpenCustomUrl = () => {
-    let url = customUrl.trim();
+    const result = validateDAppUrl(customUrl);
 
-    // Basic URL validation
-    if (!url) {
-      Alert.alert('Error', 'Please enter a URL');
-      return;
-    }
-
-    // Add https:// if no protocol specified
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      url = 'https://' + url;
-    }
-
-    // Validate URL format
-    try {
-      new URL(url);
-    } catch {
+    if (!result) {
       Alert.alert('Invalid URL', 'Please enter a valid URL');
       return;
     }
+
+    if (result.error) {
+      Alert.alert('Insecure Connection', result.error);
+      return;
+    }
+
+    const url = result.url;
 
     setShowUrlModal(false);
     setCustomUrl('');
@@ -167,7 +162,7 @@ export const BrowserScreen = () => {
 
     // Navigate with custom app
     const customApp: DApp = {
-      id: 'custom-' + Date.now(),
+      id: 'custom-' + Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join(''),
       name: name,
       description: 'Custom URL',
       url: url,

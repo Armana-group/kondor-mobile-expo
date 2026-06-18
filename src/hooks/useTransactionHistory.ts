@@ -8,6 +8,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useWalletStore } from '../stores/walletStore';
 import { useTokenStore } from '../stores/tokenStore';
 import { utils } from 'koilib';
+import { txLogger } from '../lib/logger';
 
 export interface ParsedTransaction {
   id: string;
@@ -75,7 +76,7 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
       // REST API provides already-decoded args
       const args = callContract.args;
       if (!args || !args.from || !args.to || !args.value) {
-        console.log('[TransactionHistory] Missing required fields in args');
+        txLogger.debug('Missing required fields in args');
         return null;
       }
 
@@ -123,7 +124,7 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
         seqNum: rawTx.seq_num
       };
     } catch (error) {
-      console.error('[TransactionHistory] Error parsing transaction:', error);
+      txLogger.error('Error parsing transaction:', error);
       return null;
     }
   };
@@ -133,11 +134,11 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
    */
   const fetchTransactions = useCallback(async (isRefresh = false) => {
     if (!address) {
-      console.log('[TransactionHistory] No address, skipping fetch');
+      txLogger.debug('No address, skipping fetch');
       return;
     }
 
-    console.log('[TransactionHistory] Fetching transactions for:', address);
+    txLogger.debug('Fetching transactions for:', address);
 
     try {
       if (isRefresh) {
@@ -149,7 +150,7 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
 
       // Fetch transaction history from REST API
       const url = `https://rest.koinos.io/v1/account/${address}/history?limit=50&ascending=false`;
-      console.log('[TransactionHistory] Fetching from:', url);
+      txLogger.debug('Fetching from:', url);
 
       const response = await fetch(url);
       if (!response.ok) {
@@ -157,7 +158,7 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
       }
 
       const data = await response.json();
-      console.log('[TransactionHistory] Got response with', Array.isArray(data) ? data.length : 0, 'transactions');
+      txLogger.debug('Got response with', Array.isArray(data) ? data.length : 0, 'transactions');
 
       // Parse transactions
       const parsedTransactions: ParsedTransaction[] = [];
@@ -170,10 +171,10 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
         }
       }
 
-      console.log('[TransactionHistory] Parsed', parsedTransactions.length, 'transactions');
+      txLogger.debug('Parsed', parsedTransactions.length, 'transactions');
       setTransactions(parsedTransactions);
     } catch (err: any) {
-      console.error('[TransactionHistory] Fetch error:', err);
+      txLogger.error('Fetch error:', err);
       setError(err.message || 'Failed to fetch transaction history');
     } finally {
       setLoading(false);
@@ -206,7 +207,7 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
     if (!address) return;
 
     const interval = setInterval(() => {
-      console.log('[TransactionHistory] Auto-refreshing...');
+      txLogger.debug('Auto-refreshing...');
       fetchTransactions(true);
     }, REFRESH_INTERVAL);
 

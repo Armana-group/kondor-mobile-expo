@@ -24,6 +24,7 @@ import { useWalletStore } from '../stores/walletStore';
 import { requireBiometricAuth } from '../lib/biometrics';
 import { HapticFeedback } from '../lib/haptics';
 import { DEFAULT_NETWORK, FREE_MANA_SHARER } from '../lib/constants';
+import { txLogger } from '../lib/logger';
 
 // Decoded operation for display
 export interface DecodedOperation {
@@ -272,7 +273,7 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
 
       // Use free mana sharer to pay for transaction mana
       const freeManaSharer = FREE_MANA_SHARER.mainnet;
-      console.log('[TxApproval] Using free mana sharer:', freeManaSharer);
+      txLogger.debug('Using free mana sharer:', freeManaSharer);
 
       // Ensure header exists with free mana sharer as payer
       if (!tx.header) {
@@ -304,7 +305,7 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
       // 100 mana = 10,000,000,000 (10^10) in smallest units
       const MAX_FREE_MANA = 10000000000;
       let estimationLimit = MAX_FREE_MANA;
-      console.log('[TxApproval] Using free mana sharer with max', MAX_FREE_MANA, 'RC (100 mana)');
+      txLogger.debug('Using free mana sharer with max', MAX_FREE_MANA, 'RC (100 mana)');
 
       // Prepare the estimation transaction
       if (!estimateTx.transaction.header) {
@@ -318,13 +319,13 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
       }
 
       // Dry-run to get actual RC usage
-      console.log('[TxApproval] Performing dry-run estimation...');
+      txLogger.debug('Performing dry-run estimation...');
       let dryRunReceipt;
       try {
         dryRunReceipt = await estimateTx.send({ broadcast: false });
-        console.log('[TxApproval] Dry-run receipt:', dryRunReceipt);
+        txLogger.debug('Dry-run receipt:', dryRunReceipt);
       } catch (dryRunError: any) {
-        console.error('[TxApproval] Dry-run failed:', dryRunError);
+        txLogger.error('Dry-run failed:', dryRunError);
         // If dry-run fails, the transaction would fail anyway - show meaningful error
         const errorMsg = dryRunError.message || 'Transaction would fail';
         throw new Error(`Transaction simulation failed: ${errorMsg}`);
@@ -332,29 +333,32 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
 
       // Check if dry-run reverted
       if (dryRunReceipt.reverted) {
-        const revertReason = dryRunReceipt.error_message || 'Unknown error';
-        console.error('[TxApproval] Dry-run reverted:', revertReason);
+        const revertReason =
+          dryRunReceipt.logs?.join('; ') ||
+          (dryRunReceipt as { error_message?: string }).error_message ||
+          'Unknown error';
+        txLogger.error('Dry-run reverted:', revertReason);
         throw new Error(`Transaction would revert: ${revertReason}`);
       }
 
       // Calculate rc_limit with 10% buffer (Kondor pattern)
       const rcUsed = Number(dryRunReceipt.rc_used || 0);
       let rcLimit = Math.floor(1.1 * rcUsed);
-      console.log('[TxApproval] RC used:', rcUsed, '-> RC limit with 10% buffer:', rcLimit);
+      txLogger.debug('RC used:', rcUsed, '-> RC limit with 10% buffer:', rcLimit);
 
       // Ensure we have a reasonable rc_limit
       if (rcLimit <= 0) {
-        console.warn('[TxApproval] RC limit is 0, using fallback');
+        txLogger.warn('RC limit is 0, using fallback');
         throw new Error('Could not estimate transaction cost');
       }
 
       // Cap to free mana sharer's max (100 mana)
       if (rcLimit > MAX_FREE_MANA) {
-        console.warn('[TxApproval] Transaction needs', rcLimit, 'RC but free mana max is', MAX_FREE_MANA);
+        txLogger.warn('Transaction needs', rcLimit, 'RC but free mana max is', MAX_FREE_MANA);
         // For now, cap it - transaction might fail if it actually needs more
         // TODO: Fall back to user's own mana if transaction needs more than 100 mana
         rcLimit = MAX_FREE_MANA;
-        console.log('[TxApproval] Capped rc_limit to', MAX_FREE_MANA);
+        txLogger.debug('Capped rc_limit to', MAX_FREE_MANA);
       }
 
       // Now create the actual transaction with proper rc_limit
@@ -373,9 +377,9 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
       txObj.transaction.header.rc_limit = String(rcLimit);
 
       // Always prepare to calculate transaction ID and fill missing fields
-      console.log('[TxApproval] Preparing transaction...');
+      txLogger.debug('Preparing transaction...');
       await txObj.prepare();
-      console.log('[TxApproval] Transaction prepared, ID:', txObj.transaction.id);
+      txLogger.debug('Transaction prepared, ID:', txObj.transaction.id);
 
       // Sign the transaction
       await signer.signTransaction(txObj.transaction);
@@ -396,7 +400,7 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
 
       HapticFeedback.success();
     } catch (err: any) {
-      console.error('Transaction signing error:', err);
+      txLogger.error('Transaction signing error:', err);
       setError(err.message || 'Failed to sign transaction');
       setSigning(false);
       HapticFeedback.error();

@@ -7,12 +7,13 @@ import {
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
 import { useNavigation } from '@react-navigation/native';
 import { Screen } from '../components/Screen';
 import { Button } from '../components/Button';
 import { useWalletStore } from '../stores/walletStore';
 import { generateMnemonic } from '../lib/wallet';
+import { copyWithAutoClear } from '../lib/clipboard';
+import { sanitizeErrorForUser } from '../lib/logger';
 import { colors } from '../theme/colors';
 
 export const CreateWalletScreen = () => {
@@ -29,8 +30,8 @@ export const CreateWalletScreen = () => {
   };
 
   const handleCopyMnemonic = async () => {
-    await Clipboard.setStringAsync(mnemonic);
-    Alert.alert('Copied!', 'Recovery phrase copied to clipboard');
+    await copyWithAutoClear(mnemonic);
+    Alert.alert('Copied!', 'Recovery phrase copied to clipboard. It will be cleared in 30 seconds.');
   };
 
   const handleConfirmWallet = async () => {
@@ -50,7 +51,7 @@ export const CreateWalletScreen = () => {
                 routes: [{ name: 'Home' }],
               });
             } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to create wallet');
+              Alert.alert('Error', sanitizeErrorForUser(error, 'Failed to create wallet'));
             } finally {
               setIsLoading(false);
             }

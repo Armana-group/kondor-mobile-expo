@@ -10,10 +10,11 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Clipboard from 'expo-clipboard';
 import { Screen } from '../components/Screen';
 import { useWalletStore } from '../stores/walletStore';
 import { HapticFeedback } from '../lib/haptics';
+import { copyWithAutoClear } from '../lib/clipboard';
+import { sanitizeErrorForUser } from '../lib/logger';
 import colors from '../theme/colors';
 
 export const SettingsScreen = () => {
@@ -42,9 +43,9 @@ export const SettingsScreen = () => {
                     {
                       text: 'Copy',
                       onPress: async () => {
-                        await Clipboard.setStringAsync(mnemonic);
+                        await copyWithAutoClear(mnemonic);
                         await HapticFeedback.success();
-                        Alert.alert('Copied', 'Recovery phrase copied to clipboard');
+                        Alert.alert('Copied', 'Recovery phrase copied to clipboard. It will be cleared in 30 seconds.');
                       },
                     },
                   ]
@@ -53,7 +54,7 @@ export const SettingsScreen = () => {
                 Alert.alert('Error', 'Unable to retrieve recovery phrase');
               }
             } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to get recovery phrase');
+              Alert.alert('Error', sanitizeErrorForUser(error, 'Failed to get recovery phrase'));
             } finally {
               setIsLoading(false);
             }
@@ -84,9 +85,9 @@ export const SettingsScreen = () => {
                     {
                       text: 'Copy',
                       onPress: async () => {
-                        await Clipboard.setStringAsync(privateKey);
+                        await copyWithAutoClear(privateKey);
                         await HapticFeedback.success();
-                        Alert.alert('Copied', 'Private key copied to clipboard');
+                        Alert.alert('Copied', 'Private key copied to clipboard. It will be cleared in 30 seconds.');
                       },
                     },
                   ]
@@ -95,7 +96,7 @@ export const SettingsScreen = () => {
                 Alert.alert('Error', 'Unable to retrieve private key');
               }
             } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to get private key');
+              Alert.alert('Error', sanitizeErrorForUser(error, 'Failed to get private key'));
             } finally {
               setIsLoading(false);
             }

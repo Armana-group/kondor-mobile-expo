@@ -24,6 +24,7 @@ import {
 import { DEFAULT_NETWORK } from '../lib/constants';
 import { requireBiometricAuth } from '../lib/biometrics';
 import { HapticFeedback } from '../lib/haptics';
+import { wcLogger, sanitizeErrorForUser } from '../lib/logger';
 
 export const WalletConnectHandler: React.FC = () => {
   const { address, activeAccountId, isWalletCreated } = useWalletStore();
@@ -48,7 +49,7 @@ export const WalletConnectHandler: React.FC = () => {
   useEffect(() => {
     if (isWalletCreated && address && !initialized) {
       initialize(address).catch((error) => {
-        console.error('[WCHandler] Failed to initialize:', error);
+        wcLogger.error('Failed to initialize:', error);
       });
     }
   }, [isWalletCreated, address, initialized, initialize]);
@@ -59,8 +60,8 @@ export const WalletConnectHandler: React.FC = () => {
       await approveSession(address);
       HapticFeedback.success();
     } catch (error: any) {
-      console.error('[WCHandler] Session approval error:', error);
-      Alert.alert('Connection Failed', error.message || 'Failed to connect to app');
+      wcLogger.error('Session approval error:', error);
+      Alert.alert('Connection Failed', sanitizeErrorForUser(error, 'Failed to connect to app'));
     }
   }, [approveSession, address]);
 
@@ -69,7 +70,7 @@ export const WalletConnectHandler: React.FC = () => {
     try {
       await rejectSession();
     } catch (error) {
-      console.error('[WCHandler] Session rejection error:', error);
+      wcLogger.error('Session rejection error:', error);
     }
   }, [rejectSession]);
 
@@ -200,7 +201,7 @@ export const WalletConnectHandler: React.FC = () => {
 
       await respondToRequest(id, topic, result);
     } catch (error: any) {
-      console.error('[WCHandler] Request error:', error);
+      wcLogger.error('Request error:', error);
       await rejectRequest(id, topic, error.message || 'Request failed');
     }
   }, [pendingRequest, respondToRequest, rejectRequest]);
@@ -229,8 +230,8 @@ export const WalletConnectHandler: React.FC = () => {
         clearPendingTransaction();
         HapticFeedback.success();
       } catch (error: any) {
-        console.error('[WCHandler] Transaction response error:', error);
-        Alert.alert('Error', error.message || 'Failed to send response');
+        wcLogger.error('Transaction response error:', error);
+        Alert.alert('Error', sanitizeErrorForUser(error, 'Failed to send response'));
       }
     },
     [currentWCRequest, respondToRequest, clearPendingTransaction]
@@ -245,7 +246,7 @@ export const WalletConnectHandler: React.FC = () => {
         await rejectRequest(currentWCRequest.id, currentWCRequest.topic, error);
         clearPendingTransaction();
       } catch (err) {
-        console.error('[WCHandler] Rejection error:', err);
+        wcLogger.error('Rejection error:', err);
       }
     },
     [currentWCRequest, rejectRequest, clearPendingTransaction]

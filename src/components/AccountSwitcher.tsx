@@ -19,6 +19,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useWalletStore, Account } from '../stores/walletStore';
 import { truncateAddress } from '../lib/utils';
+import { sanitizeErrorForUser } from '../lib/logger';
 import colors from '../theme/colors';
 
 interface AccountSwitcherProps {
@@ -64,7 +65,7 @@ export const AccountSwitcher: React.FC<AccountSwitcherProps> = ({
       setNewAccountName('');
       setIsAddingAccount(false);
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to create account');
+      Alert.alert('Error', sanitizeErrorForUser(error, 'Failed to create account'));
     }
   };
 
@@ -82,7 +83,7 @@ export const AccountSwitcher: React.FC<AccountSwitcherProps> = ({
       setNewAccountName('');
       setIsImporting(false);
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to import account');
+      Alert.alert('Error', sanitizeErrorForUser(error, 'Failed to import account'));
     }
   };
 
@@ -104,7 +105,7 @@ export const AccountSwitcher: React.FC<AccountSwitcherProps> = ({
             try {
               await removeAccount(account.id);
             } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to remove account');
+              Alert.alert('Error', sanitizeErrorForUser(error, 'Failed to remove account'));
             }
           },
         },

@@ -1,4 +1,5 @@
 import * as LocalAuthentication from 'expo-local-authentication';
+import { logger } from './logger';
 
 export interface BiometricAuthResult {
   success: boolean;
@@ -58,7 +59,7 @@ export const authenticateWithBiometrics = async (
       };
     }
   } catch (error) {
-    console.error('Biometric authentication error:', error);
+    logger.error('Biometric authentication error:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error occurred'

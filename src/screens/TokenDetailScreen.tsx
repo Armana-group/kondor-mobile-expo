@@ -24,6 +24,7 @@ import { useWalletStore } from '../stores/walletStore';
 import { useTokenStore, Token } from '../stores/tokenStore';
 import { useTransactionHistory, ParsedTransaction } from '../hooks/useTransactionHistory';
 import { truncateAddress, formatKoinBalance } from '../lib/utils';
+import { tokenLogger } from '../lib/logger';
 import colors from '../theme/colors';
 import { EXPLORER } from '../lib/constants';
 
@@ -75,7 +76,7 @@ export const TokenDetailScreen = () => {
         refetch(),
       ]);
     } catch (error) {
-      console.error('Refresh error:', error);
+      tokenLogger.error('Refresh error:', error);
     } finally {
       setIsRefreshing(false);
     }

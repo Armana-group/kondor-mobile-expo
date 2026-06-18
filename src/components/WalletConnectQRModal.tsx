@@ -19,6 +19,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { HapticFeedback } from '../lib/haptics';
 import { isWalletConnectUri } from './QRScannerModal';
+import { wcLogger } from '../lib/logger';
 import colors from '../theme/colors';
 
 // Dynamically import camera to handle missing native module gracefully
@@ -32,7 +33,7 @@ try {
   useCameraPermissions = expoCamera.useCameraPermissions;
   cameraAvailable = true;
 } catch (e) {
-  console.log('[WCQRScanner] expo-camera not available:', e);
+  wcLogger.debug('expo-camera not available:', e);
 }
 
 interface WalletConnectQRModalProps {

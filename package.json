@@ -6,11 +6,25 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "test": "jest",
+    "test:watch": "jest --watch"
+  },
+  "jest": {
+    "preset": "jest-expo",
+    "setupFilesAfterEnv": [
+      "<rootDir>/jest.setup.ts"
+    ],
+    "transformIgnorePatterns": [
+      "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@sentry/react-native|native-base|react-native-svg|koilib|ethers|@ethersproject/.*)"
+    ],
+    "moduleNameMapper": {
+      "\\.(jpg|jpeg|png|gif|svg)$": "<rootDir>/__mocks__/fileMock.js"
+    }
   },
   "dependencies": {
     "@armana/walletconnect-koinos-sdk-js": "^0.1.4",
-    "@ethersproject/shims": "^5.8.0",
+    "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/netinfo": "^11.4.1",
     "@react-navigation/bottom-tabs": "^7.8.6",
@@ -18,7 +32,7 @@
     "@react-navigation/native-stack": "^7.6.3",
     "@reown/walletkit": "^1.4.1",
     "@walletconnect/react-native-compat": "^2.23.0",
-    "ethers": "^5.8.0",
+    "ethers": "^6.16.0",
     "expo": "~54.0.25",
     "expo-application": "^7.0.8",
     "expo-camera": "~17.0.9",
@@ -47,8 +61,17 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/react": "~19.1.0",
+    "jest-expo": "^54.0.17",
     "typescript": "~5.9.2"
+  },
+  "overrides": {
+    "react-native": "0.81.5",
+    "expo-font": "~14.0.12",
+    "ethers": {
+      "ws": "8.21.0"
+    }
   },
   "private": true
 }

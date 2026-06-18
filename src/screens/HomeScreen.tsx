@@ -21,6 +21,7 @@ import { useKoinosStore } from '../stores/koinosStore';
 import { useTokenStore, Token } from '../stores/tokenStore';
 import { truncateAddress, formatKoinBalance } from '../lib/utils';
 import { HapticFeedback } from '../lib/haptics';
+import { koinosLogger, sanitizeErrorForUser } from '../lib/logger';
 import colors from '../theme/colors';
 
 export const HomeScreen = () => {
@@ -39,30 +40,30 @@ export const HomeScreen = () => {
   // Core balance fetching logic (silent - no spinner)
   const fetchBalances = useCallback(async () => {
     if (!address) {
-      console.log('[HomeScreen] No address, skipping balance refresh');
+      koinosLogger.debug('No address, skipping balance refresh');
       return;
     }
 
-    console.log('[HomeScreen] Fetching balances for address:', address);
+    koinosLogger.debug('Fetching balances for address:', address);
     try {
       // Refresh token balances
       await refreshBalances(address);
 
       // Get KOIN balance for portfolio display
       const newBalance = await getBalance(address);
-      console.log('[HomeScreen] Balance fetched successfully:', newBalance);
+      koinosLogger.debug('Balance fetched successfully:', newBalance);
       updateBalance(newBalance);
 
       // Fetch mana
       try {
         const manaData = await getMana(address);
-        console.log('[HomeScreen] Mana fetched successfully:', manaData);
+        koinosLogger.debug('Mana fetched successfully:', manaData);
         setManaPercentage(manaData.availablePercentage);
       } catch (manaError: any) {
-        console.error('[HomeScreen] Mana fetch error:', manaError);
+        koinosLogger.error('Mana fetch error:', manaError);
       }
     } catch (error: any) {
-      console.error('[HomeScreen] Balance fetch error:', error);
+      koinosLogger.error('Balance fetch error:', error);
     }
   }, [address, refreshBalances, getBalance, updateBalance, getMana]);
 
@@ -76,7 +77,7 @@ export const HomeScreen = () => {
         await fetchBalances();
       }
     } catch (error: any) {
-      console.error('Failed to initialize:', error);
+      koinosLogger.error('Failed to initialize:', error);
     }
   }, [isInitialized, address, initialize, initializeTokens, fetchBalances]);
 
@@ -91,7 +92,7 @@ export const HomeScreen = () => {
     try {
       await fetchBalances();
     } catch (error: any) {
-      Alert.alert('Error', `Failed to fetch balance: ${error.message}`);
+      Alert.alert('Error', sanitizeErrorForUser(error, 'Failed to fetch balance'));
     } finally {
       setIsRefreshing(false);
     }

@@ -11,7 +11,8 @@ const log = createLogger('TokenContract');
 
 // Configure protobufjs for the environment
 if (typeof window !== 'undefined' && window.Buffer) {
-  protobuf.util.Long = null;
+  // protobufjs: assigning Long = null disables 64-bit Long support
+  protobuf.util.Long = null as unknown as typeof protobuf.util.Long;
   protobuf.configure();
 }
 
@@ -114,7 +115,7 @@ export class ManualTokenContract {
       log.debug(' Encoded args length:', encodedArgs.length);
 
       // Make the RPC call
-      const result = await this.provider.call('chain.read_contract', {
+      const result = await this.provider.call<{ result?: string }>('chain.read_contract', {
         contract_id: this.contractId,
         entry_point: 0x5c721497, // balanceOf entry point
         args: utils.encodeBase64url(encodedArgs)
@@ -175,7 +176,7 @@ export class ManualTokenContract {
         // Get account's available RC for dry-run estimation
         let estimationLimit = 100000000; // Default 100M for estimation
         try {
-          const rcResult = await this.provider.call('chain.get_account_rc', {
+          const rcResult = await this.provider.call<{ rc?: string }>('chain.get_account_rc', {
             account: from
           });
           const availableRc = Number(rcResult.rc || 0);
@@ -225,7 +226,7 @@ export class ManualTokenContract {
         }
       });
 
-      log.debug(' Preparing transaction with RC limit:', tx.header?.rc_limit);
+      log.debug(' Preparing transaction with RC limit:', tx.transaction.header?.rc_limit);
 
       // Add the transfer operation
       await tx.pushOperation({
@@ -236,7 +237,7 @@ export class ManualTokenContract {
         }
       });
 
-      log.debug(' Transaction prepared, ID:', tx.id);
+      log.debug(' Transaction prepared, ID:', tx.transaction.id);
 
       // Send transaction (broadcast: true)
       log.debug(' Sending transaction...');

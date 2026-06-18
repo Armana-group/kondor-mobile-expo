@@ -10,14 +10,16 @@ import {
   Alert,
 } from 'react-native';
 import { WebView, WebViewNavigation, WebViewMessageEvent } from 'react-native-webview';
+import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { Provider, Signer, Transaction, TransactionJson } from 'koilib';
 import * as SecureStore from 'expo-secure-store';
-import { DApp } from '../constants/dapps';
+import { DApp, isCuratedUrl } from '../constants/dapps';
 import colors from '../theme/colors';
 import { useWalletStore } from '../stores/walletStore';
 import { DEFAULT_NETWORK } from '../lib/constants';
+import { browserLogger } from '../lib/logger';
 import {
   KONDOR_PROVIDER_SCRIPT,
   KondorMessage,
@@ -56,6 +58,7 @@ export const DAppWebViewScreen = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [showOriginWarning, setShowOriginWarning] = useState(!app.isCurated);
 
   // Transaction approval modal state
   const [showApprovalModal, setShowApprovalModal] = useState(false);
@@ -70,16 +73,18 @@ export const DAppWebViewScreen = () => {
   // Send response back to WebView
   const sendResponse = useCallback((response: KondorResponse) => {
     if (webViewRef.current) {
-      console.log('[Kondor] Sending response:', response.id, response.error ? 'error' : 'success');
-      // Use both the direct callback AND postMessage for maximum compatibility
+      browserLogger.debug('Sending response:', response.id, response.error ? 'error' : 'success');
+      // Use direct callback for responses - avoids wildcard postMessage security risk
+      // The injected provider script also listens for postMessage with origin check
+      const responseJson = JSON.stringify(response);
       const script = `
         (function() {
-          console.log('[Kondor Mobile] Injecting response for:', '${response.id}');
+          var resp = ${responseJson};
           if (window.__kondorMobileResponse) {
-            window.__kondorMobileResponse(${JSON.stringify(response)});
+            window.__kondorMobileResponse(resp);
           }
-          // Also post message for kondor-js compatibility
-          window.postMessage(${JSON.stringify(response)}, '*');
+          // Post to self with origin check (for kondor-js compatibility)
+          window.postMessage(resp, window.location.origin);
         })();
         true;
       `;
@@ -250,7 +255,7 @@ export const DAppWebViewScreen = () => {
   // Handle transaction approval
   const handleApproveTransaction = useCallback((result: SigningResult) => {
     if (pendingRequest) {
-      console.log('[Kondor] Transaction approved:', pendingRequest.id);
+      browserLogger.debug('Transaction approved:', pendingRequest.id);
 
       // Send the result back to the dApp
       if (pendingRequest.isSend) {
@@ -277,7 +282,7 @@ export const DAppWebViewScreen = () => {
   // Handle transaction rejection
   const handleRejectTransaction = useCallback((error: string) => {
     if (pendingRequest) {
-      console.log('[Kondor] Transaction rejected:', pendingRequest.id);
+      browserLogger.debug('Transaction rejected:', pendingRequest.id);
       sendResponse({
         type: 'kondor-response',
         id: pendingRequest.id,
@@ -343,7 +348,7 @@ export const DAppWebViewScreen = () => {
       const message = data as KondorMessage;
       const { id, command, args } = message;
 
-      console.log('[Kondor] Received command:', command, args);
+      browserLogger.debug('Received command:', command, args);
 
       try {
         let result: unknown;
@@ -369,7 +374,7 @@ export const DAppWebViewScreen = () => {
           throw new Error(`Unknown command: ${command}`);
         }
       } catch (err: any) {
-        console.error('[Kondor] Command error:', err);
+        browserLogger.error('Command error:', err);
         sendResponse({ type: 'kondor-response', id, error: err.message });
       }
     } catch (e) {
@@ -381,6 +386,25 @@ export const DAppWebViewScreen = () => {
     setCanGoBack(navState.canGoBack);
     setCanGoForward(navState.canGoForward);
     setCurrentUrl(navState.url);
+    // Update origin warning based on current URL
+    setShowOriginWarning(!isCuratedUrl(navState.url));
+  }, []);
+
+  // Block HTTP navigations - only allow HTTPS
+  const handleShouldStartLoad = useCallback((request: ShouldStartLoadRequest): boolean => {
+    const { url } = request;
+    // Allow about:blank, data URIs, etc.
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      return true;
+    }
+    if (url.startsWith('http://')) {
+      Alert.alert(
+        'Insecure Connection Blocked',
+        'This page tried to navigate to an insecure HTTP URL. Only HTTPS connections are allowed.',
+      );
+      return false;
+    }
+    return true;
   }, []);
 
   const handleGoBack = () => {
@@ -442,6 +466,8 @@ export const DAppWebViewScreen = () => {
             <View style={styles.connectedBadge}>
               <Ionicons name="checkmark-circle" size={12} color={colors.success} />
             </View>
+          ) : showOriginWarning ? (
+            <Ionicons name="warning" size={12} color={colors.warning} style={styles.lockIcon} />
           ) : (
             <Ionicons name="lock-closed" size={12} color={colors.success} style={styles.lockIcon} />
           )}
@@ -467,6 +493,19 @@ export const DAppWebViewScreen = () => {
           <ActivityIndicator size="small" color={colors.purple} style={styles.loadingIndicator} />
         )}
       </View>
+
+      {/* Origin Warning Banner */}
+      {showOriginWarning && (
+        <View style={styles.warningBanner}>
+          <Ionicons name="warning" size={14} color={colors.warning} />
+          <Text style={styles.warningText}>
+            Unverified site — review transactions carefully
+          </Text>
+          <TouchableOpacity onPress={() => setShowOriginWarning(false)}>
+            <Ionicons name="close" size={16} color={colors.warning} />
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* WebView or Error */}
       {error ? (
@@ -500,6 +539,8 @@ export const DAppWebViewScreen = () => {
             </View>
           )}
           // Security settings
+          onShouldStartLoadWithRequest={handleShouldStartLoad}
+          mixedContentMode="never"
           allowsInlineMediaPlayback={true}
           mediaPlaybackRequiresUserAction={false}
           allowsBackForwardNavigationGestures={true}
@@ -629,6 +670,20 @@ const styles = StyleSheet.create({
   },
   loadingIndicator: {
     marginLeft: 8,
+  },
+  warningBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.warning + '18',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  warningText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.warning,
   },
   webView: {
     flex: 1,
