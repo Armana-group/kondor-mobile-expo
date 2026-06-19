@@ -1,0 +1,150 @@
+export type SwapErrorCode =
+  | 'INVALID_AMOUNT'
+  | 'INVALID_AMOUNT_PRECISION'
+  | 'INVALID_SLIPPAGE'
+  | 'SAME_TOKEN'
+  | 'NO_PAIR'
+  | 'NO_LIQUIDITY'
+  | 'QUOTE_EXPIRED'
+  | 'CONTRACT_ERROR'
+  | 'INSUFFICIENT_BALANCE'
+  | 'INVALID_SLIPPAGE_FLOOR';
+
+export class SwapError extends Error {
+  constructor(message: string, public code: SwapErrorCode) {
+    super(message);
+    this.name = 'SwapError';
+  }
+}
+
+export interface SwapToken {
+  contractId: string;
+  symbol: string;
+  name: string;
+  decimals: number;
+  icon: string;
+  balance: string;
+}
+
+const DECIMAL_AMOUNT_RE = /^\d+(?:\.\d+)?$/;
+const BASE_UNIT_RE = /^\d+$/;
+
+const trimToken = (value: string) => value.trim();
+
+function toBaseUnitsExact(
+  amount: string,
+  decimals: number,
+  allowOverPrecision = false
+): string {
+  const trimmed = trimToken(amount);
+  if (!trimmed) {
+    throw new SwapError('Amount must be a valid decimal', 'INVALID_AMOUNT');
+  }
+
+  if (!DECIMAL_AMOUNT_RE.test(trimmed)) {
+    throw new SwapError('Amount must be a valid decimal', 'INVALID_AMOUNT');
+  }
+
+  const [integerPart, rawFraction = ''] = trimmed.split('.');
+
+  if (rawFraction.length > decimals) {
+    if (allowOverPrecision) {
+      // Truncate extra precision for routing calculations.
+      // This mirrors quote output behavior where tiny fractional dust should safely
+      // floor to zero minimum output.
+    } else {
+      throw new SwapError('Amount has too many decimal places', 'INVALID_AMOUNT_PRECISION');
+    }
+  }
+
+  const fraction = rawFraction.slice(0, decimals).padEnd(decimals, '0');
+  const combined = `${integerPart}${fraction}`;
+  return BigInt(combined).toString();
+}
+
+export function parseDecimalAmount(amount: string, decimals: number): string {
+  return toBaseUnitsExact(amount, decimals, false);
+}
+
+export function formatBaseUnits(value: string, decimals: number): string {
+  const trimmed = trimToken(value);
+  if (!trimmed || !BASE_UNIT_RE.test(trimmed)) {
+    throw new SwapError('Amount must be a valid integer', 'INVALID_AMOUNT');
+  }
+
+  const units = BigInt(trimmed).toString();
+
+  if (decimals === 0) {
+    return units;
+  }
+
+  const padded = units.padStart(decimals + 1, '0');
+  const integerPart = padded.slice(0, -decimals).replace(/^0+(?=\d)/, '');
+  const fractionRaw = padded.slice(-decimals).replace(/0+$/, '');
+  if (!fractionRaw) {
+    return integerPart;
+  }
+
+  return `${integerPart}.${fractionRaw}`;
+}
+
+export function calculateMinOutput(
+  amountOut: string,
+  slippagePercent: number,
+  outputDecimals: number
+): string {
+  if (slippagePercent < 0.01 || slippagePercent > 50) {
+    throw new SwapError('Slippage must be between 0.01 and 50', 'INVALID_SLIPPAGE');
+  }
+
+  const slippageBps = BigInt(Math.round(slippagePercent * 100));
+  const units = BigInt(toBaseUnitsExact(amountOut, outputDecimals, true));
+  const scaled = (units * (10_000n - slippageBps)) / 10_000n;
+  return formatBaseUnits(scaled.toString(), outputDecimals);
+}
+
+export function assertProtectedMinOutput(amountInBaseUnits: string, amountOutMinBaseUnits: string): void {
+  const amountIn = BigInt(trimToken(amountInBaseUnits));
+  const amountOutMin = BigInt(trimToken(amountOutMinBaseUnits));
+
+  if (amountIn > 0n && amountOutMin === 0n) {
+    throw new SwapError(
+      'Slippage protection would result in zero minimum output',
+      'INVALID_SLIPPAGE_FLOOR'
+    );
+  }
+}
+
+export function toKoinDxIdentifier(token: Pick<SwapToken, 'contractId' | 'symbol'>): string {
+  if (token.symbol === 'KOIN') {
+    return 'koin';
+  }
+  if (token.symbol === 'VHP') {
+    return 'vhp';
+  }
+  return token.contractId;
+}
+
+export function resolveApproveContractId(identifier: string, tokens: SwapToken[]): string {
+  if (identifier === 'koin') {
+    const koin = tokens.find((token) => token.symbol === 'KOIN');
+    if (!koin) {
+      throw new SwapError('Could not resolve KOIN identifier', 'CONTRACT_ERROR');
+    }
+    return koin.contractId;
+  }
+
+  if (identifier === 'vhp') {
+    const vhp = tokens.find((token) => token.symbol === 'VHP');
+    if (!vhp) {
+      throw new SwapError('Could not resolve VHP identifier', 'CONTRACT_ERROR');
+    }
+    return vhp.contractId;
+  }
+
+  return identifier;
+}
+
+export function buildDirectRoute(tokenIn: SwapToken, tokenOut: SwapToken): string[] {
+  return [toKoinDxIdentifier(tokenIn), toKoinDxIdentifier(tokenOut)];
+}
