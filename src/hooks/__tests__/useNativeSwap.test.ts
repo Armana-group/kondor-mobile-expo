@@ -1,5 +1,6 @@
 import {
   createNativeSwapController,
+  getNativeSwapQuoteInvalidReason,
   type NativeSwapControllerDeps,
 } from '../useNativeSwap';
 
@@ -13,6 +14,60 @@ function createDeps(
     ...overrides,
   };
 }
+
+const validQuote = {
+  amountOut: '0.45',
+  expiresAt: 1_000,
+  tokenInContractId: 'koin-contract',
+  tokenOutContractId: 'vhp-contract',
+  amountIn: '1',
+  amountInBaseUnits: '100000000',
+  amountOutMinBaseUnits: '44775000',
+};
+
+describe('getNativeSwapQuoteInvalidReason', () => {
+  it('accepts quotes that match current tokens and amount', () => {
+    expect(getNativeSwapQuoteInvalidReason({
+      quote: validQuote,
+      amount: '1',
+      inputTokenContractId: 'koin-contract',
+      outputTokenContractId: 'vhp-contract',
+      now: 1,
+      requireMetadata: true,
+    })).toBeNull();
+  });
+
+  it('rejects quotes that do not match current tokens or amount', () => {
+    expect(getNativeSwapQuoteInvalidReason({
+      quote: validQuote,
+      amount: '1',
+      inputTokenContractId: 'vhp-contract',
+      outputTokenContractId: 'koin-contract',
+      now: 1,
+      requireMetadata: true,
+    })).toMatch(/stale/i);
+
+    expect(getNativeSwapQuoteInvalidReason({
+      quote: validQuote,
+      amount: '2',
+      inputTokenContractId: 'koin-contract',
+      outputTokenContractId: 'vhp-contract',
+      now: 1,
+      requireMetadata: true,
+    })).toMatch(/stale/i);
+  });
+
+  it('rejects zero minimum output quotes for positive inputs', () => {
+    expect(getNativeSwapQuoteInvalidReason({
+      quote: { ...validQuote, amountOutMinBaseUnits: '0' },
+      amount: '1',
+      inputTokenContractId: 'koin-contract',
+      outputTokenContractId: 'vhp-contract',
+      now: 1,
+      requireMetadata: true,
+    })).toMatch(/minimum output/i);
+  });
+});
 
 describe('createNativeSwapController', () => {
   it('does not request quotes for empty or zero amounts', async () => {
@@ -49,5 +104,35 @@ describe('createNativeSwapController', () => {
     await controller.flushQuote();
 
     await expect(controller.execute()).rejects.toThrow(/expired/i);
+  });
+
+  it('rejects execution when quote amount does not match current amount', async () => {
+    const executeSwapTransaction = jest.fn();
+    const controller = createNativeSwapController(createDeps({
+      getSwapQuote: jest.fn(async () => ({ ...validQuote, amountIn: '0.5' })),
+      executeSwapTransaction,
+      now: () => 10,
+    }));
+
+    await controller.setAmount('1');
+    await controller.flushQuote();
+
+    await expect(controller.execute()).rejects.toThrow(/stale/i);
+    expect(executeSwapTransaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects zero minimum output quotes before execution', async () => {
+    const executeSwapTransaction = jest.fn();
+    const controller = createNativeSwapController(createDeps({
+      getSwapQuote: jest.fn(async () => ({ ...validQuote, amountOutMinBaseUnits: '0' })),
+      executeSwapTransaction,
+      now: () => 10,
+    }));
+
+    await controller.setAmount('1');
+    await controller.flushQuote();
+
+    await expect(controller.execute()).rejects.toThrow(/minimum output/i);
+    expect(executeSwapTransaction).not.toHaveBeenCalled();
   });
 });

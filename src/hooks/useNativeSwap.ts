@@ -31,6 +31,10 @@ export type NativeSwapStatus =
 export interface NativeSwapQuote {
   amountOut: string;
   expiresAt: number;
+  tokenInContractId?: string;
+  tokenOutContractId?: string;
+  amountIn?: string;
+  amountOutMinBaseUnits?: string;
 }
 
 export interface NativeSwapQuoteRequest {
@@ -95,9 +99,22 @@ export interface UseNativeSwapResult {
   reset: () => void;
 }
 
+export interface NativeSwapQuoteValidityParams {
+  quote: NativeSwapQuote | null;
+  amount: string;
+  inputTokenContractId?: string | null;
+  outputTokenContractId?: string | null;
+  now: number;
+  requireMetadata?: boolean;
+}
+
 const DEFAULT_SLIPPAGE_PERCENT = 0.5;
 const QUOTE_DEBOUNCE_MS = 300;
 const DECIMAL_AMOUNT_RE = /^\d+(?:\.\d+)?$/;
+const REQUIRED_QUOTE_ERROR = 'Swap quote is required before execution';
+const EXPIRED_QUOTE_ERROR = 'Swap quote has expired';
+const STALE_QUOTE_ERROR = 'Swap quote is stale; refresh the quote before swapping';
+const ZERO_MIN_OUTPUT_ERROR = 'Swap quote has invalid zero minimum output';
 
 function isPositiveAmount(amount: string): boolean {
   const trimmed = amount.trim();
@@ -116,6 +133,58 @@ function errorMessage(error: unknown): string {
 
 function quoteIsExpired(quote: NativeSwapQuote, now: number): boolean {
   return quote.expiresAt <= now;
+}
+
+function shouldValidateQuoteField(requireMetadata: boolean, value: unknown): boolean {
+  return requireMetadata || value !== undefined;
+}
+
+function shouldValidateTokenField(
+  requireMetadata: boolean,
+  expectedContractId: string | null | undefined
+): boolean {
+  return requireMetadata || expectedContractId != null;
+}
+
+export function getNativeSwapQuoteInvalidReason({
+  quote,
+  amount,
+  inputTokenContractId,
+  outputTokenContractId,
+  now,
+  requireMetadata = false,
+}: NativeSwapQuoteValidityParams): string | null {
+  if (!quote) {
+    return REQUIRED_QUOTE_ERROR;
+  }
+  if (quoteIsExpired(quote, now)) {
+    return EXPIRED_QUOTE_ERROR;
+  }
+
+  const trimmedAmount = amount.trim();
+  if (
+    shouldValidateQuoteField(requireMetadata, quote.amountIn) &&
+    quote.amountIn?.trim() !== trimmedAmount
+  ) {
+    return STALE_QUOTE_ERROR;
+  }
+  if (
+    shouldValidateTokenField(requireMetadata, inputTokenContractId) &&
+    quote.tokenInContractId !== inputTokenContractId
+  ) {
+    return STALE_QUOTE_ERROR;
+  }
+  if (
+    shouldValidateTokenField(requireMetadata, outputTokenContractId) &&
+    quote.tokenOutContractId !== outputTokenContractId
+  ) {
+    return STALE_QUOTE_ERROR;
+  }
+  if (isPositiveAmount(amount) && quote.amountOutMinBaseUnits === '0') {
+    return ZERO_MIN_OUTPUT_ERROR;
+  }
+
+  return null;
 }
 
 export function createNativeSwapController<TQuote extends NativeSwapQuote = NativeSwapQuote>(
@@ -242,11 +311,21 @@ export function createNativeSwapController<TQuote extends NativeSwapQuote = Nati
     flushQuote,
     execute: async () => {
       const quote = state.quote;
-      if (!quote) {
-        throw new Error('Swap quote is required before execution');
+      const invalidReason = getNativeSwapQuoteInvalidReason({
+        quote,
+        amount: state.amount,
+        now: now(),
+      });
+      if (invalidReason) {
+        setState({
+          status: 'error',
+          error: invalidReason,
+          isQuoteLoading: false,
+        });
+        throw new Error(invalidReason);
       }
-      if (quoteIsExpired(quote, now())) {
-        throw new Error('Swap quote has expired');
+      if (!quote) {
+        throw new Error(REQUIRED_QUOTE_ERROR);
       }
 
       setState({ status: 'signing', error: null });
@@ -405,12 +484,24 @@ export function useNativeSwap(): UseNativeSwapResult {
         });
       },
       executeSwapTransaction: async (quote, context) => {
-        const provider = await ensureProvider();
         const { inputToken, outputToken, tokens } = latestRef.current;
         if (!inputToken || !outputToken) {
           throw new Error('Select two tokens before swapping');
         }
 
+        const invalidReason = getNativeSwapQuoteInvalidReason({
+          quote,
+          amount: context.amount,
+          inputTokenContractId: inputToken.contractId,
+          outputTokenContractId: outputToken.contractId,
+          now: Date.now(),
+          requireMetadata: true,
+        });
+        if (invalidReason) {
+          throw new Error(invalidReason);
+        }
+
+        const provider = await ensureProvider();
         const privateKey = await getWalletStoreModule().useWalletStore.getState().getPrivateKey();
         if (!privateKey) {
           throw new Error('Authentication required to swap');
@@ -508,6 +599,14 @@ export function useNativeSwap(): UseNativeSwapResult {
 
   useEffect(() => () => controller.dispose(), [controller]);
 
+  const invalidQuoteReason = getNativeSwapQuoteInvalidReason({
+    quote: controllerState.quote,
+    amount: controllerState.amount,
+    inputTokenContractId: inputToken?.contractId,
+    outputTokenContractId: outputToken?.contractId,
+    now: Date.now(),
+    requireMetadata: true,
+  });
   const canSwap = Boolean(
     walletState.isWalletCreated &&
     walletState.address &&
@@ -515,8 +614,7 @@ export function useNativeSwap(): UseNativeSwapResult {
     outputToken &&
     inputToken.contractId !== outputToken.contractId &&
     isPositiveAmount(controllerState.amount) &&
-    controllerState.quote &&
-    !quoteIsExpired(controllerState.quote, Date.now()) &&
+    !invalidQuoteReason &&
     !controllerState.isQuoteLoading &&
     controllerState.status === 'ready'
   );
