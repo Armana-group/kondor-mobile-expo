@@ -28,6 +28,7 @@ export interface SwapToken {
 
 const DECIMAL_AMOUNT_RE = /^\d+(?:\.\d+)?$/;
 const BASE_UNIT_RE = /^\d+$/;
+const DECIMAL_RE = /^\d+(?:\.\d+)?$/;
 
 const trimToken = (value: string) => value.trim();
 
@@ -62,6 +63,36 @@ function toBaseUnitsExact(
   return BigInt(combined).toString();
 }
 
+function parseBaseUnits(value: string): bigint {
+  const trimmed = trimToken(value);
+  if (!trimmed || !BASE_UNIT_RE.test(trimmed)) {
+    throw new SwapError('Amount must be a valid integer', 'INVALID_AMOUNT');
+  }
+  return BigInt(trimmed);
+}
+
+function parseSlippageBps(slippagePercent: number): bigint {
+  if (!Number.isFinite(slippagePercent)) {
+    throw new SwapError('Slippage must be between 0.01 and 50', 'INVALID_SLIPPAGE');
+  }
+
+  const asString = trimToken(String(slippagePercent));
+  if (!DECIMAL_RE.test(asString)) {
+    throw new SwapError('Slippage must be a decimal', 'INVALID_SLIPPAGE');
+  }
+
+  const [integerPart, fractionPart = ''] = asString.split('.');
+  const scale = 10n ** BigInt(fractionPart.length);
+  const numerator = (BigInt(integerPart) * scale + BigInt(fractionPart)) * 100n;
+  const slippageBps = (numerator + scale / 2n) / scale;
+
+  if (slippageBps < 1n || slippageBps > 5000n) {
+    throw new SwapError('Slippage must be between 0.01 and 50', 'INVALID_SLIPPAGE');
+  }
+
+  return slippageBps;
+}
+
 export function parseDecimalAmount(amount: string, decimals: number): string {
   return toBaseUnitsExact(amount, decimals, false);
 }
@@ -93,19 +124,15 @@ export function calculateMinOutput(
   slippagePercent: number,
   outputDecimals: number
 ): string {
-  if (slippagePercent < 0.01 || slippagePercent > 50) {
-    throw new SwapError('Slippage must be between 0.01 and 50', 'INVALID_SLIPPAGE');
-  }
-
-  const slippageBps = BigInt(Math.round(slippagePercent * 100));
+  const slippageBps = parseSlippageBps(slippagePercent);
   const units = BigInt(toBaseUnitsExact(amountOut, outputDecimals, true));
   const scaled = (units * (10_000n - slippageBps)) / 10_000n;
   return formatBaseUnits(scaled.toString(), outputDecimals);
 }
 
 export function assertProtectedMinOutput(amountInBaseUnits: string, amountOutMinBaseUnits: string): void {
-  const amountIn = BigInt(trimToken(amountInBaseUnits));
-  const amountOutMin = BigInt(trimToken(amountOutMinBaseUnits));
+  const amountIn = parseBaseUnits(amountInBaseUnits);
+  const amountOutMin = parseBaseUnits(amountOutMinBaseUnits);
 
   if (amountIn > 0n && amountOutMin === 0n) {
     throw new SwapError(

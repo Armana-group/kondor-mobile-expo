@@ -64,6 +64,15 @@ describe('swapMath', () => {
     expect(() => assertProtectedMinOutput('0', '0')).not.toThrow();
   });
 
+  it('parses slippage percentages with decimal precision without float drift', () => {
+    expect(calculateMinOutput('1', 0.145, 8)).toBe('0.9985');
+  });
+
+  it('throws SwapError for malformed minimum-output base-unit values', () => {
+    expect(() => assertProtectedMinOutput('1', 'abc')).toThrow(SwapError);
+    expect(() => assertProtectedMinOutput('1', '1.5')).toThrow(SwapError);
+  });
+
   it('uses KoinDX nickname identifiers only for route path KOIN and VHP', () => {
     expect(toKoinDxIdentifier(koin)).toBe('koin');
     expect(toKoinDxIdentifier(vhp)).toBe('vhp');
