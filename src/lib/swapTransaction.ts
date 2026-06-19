@@ -131,6 +131,7 @@ export async function executeSwapTransaction(
     ...params,
     rcLimit: finalRcLimit,
   });
+  await tx.prepare();
   await params.signer.signTransaction(tx.transaction);
 
   onStatus?.('broadcasting');

@@ -70,7 +70,11 @@ const quote: SwapQuote = {
 
 const signer = {
   getAddress: () => '12vRwxu2nVG2697dM36KMNkmfecNdU8PpR',
-  signTransaction: jest.fn(async () => undefined),
+  signTransaction: jest.fn(async (transaction: { id?: string }) => {
+    if (!transaction.id) {
+      throw new Error('Missing transaction id');
+    }
+  }),
 } as unknown as Signer;
 
 describe('swapTransaction', () => {
@@ -120,7 +124,26 @@ describe('swapTransaction', () => {
     expect(result.transactionId).toBe('0xsent');
     expect(result.blockHeight).toBe(123);
     expect(Transaction).toHaveBeenCalledTimes(2);
-    expect(signer.signTransaction).toHaveBeenCalledTimes(1);
+    const transactionMock = Transaction as unknown as jest.Mock;
+    const dryRunTx = transactionMock.mock.instances[0];
+    const finalTx = transactionMock.mock.instances[1];
+    const signTransactionMock = signer.signTransaction as jest.Mock;
+
+    expect(transactionMock.mock.calls[0][0].options.rcLimit).toBe(1_000_000_000);
+    expect(transactionMock.mock.calls[1][0].options.rcLimit).toBe(Math.floor(50_000_000 * 1.1));
+    expect(dryRunTx.send).toHaveBeenCalledWith({ broadcast: false });
+    expect(finalTx.send).toHaveBeenCalledWith({ broadcast: true });
+    expect(dryRunTx.send.mock.invocationCallOrder[0]).toBeLessThan(
+      finalTx.send.mock.invocationCallOrder[0]
+    );
+    expect(finalTx.prepare).toHaveBeenCalledTimes(1);
+    expect(signTransactionMock).toHaveBeenCalledTimes(1);
+    expect(finalTx.prepare.mock.invocationCallOrder[0]).toBeLessThan(
+      signTransactionMock.mock.invocationCallOrder[0]
+    );
+    expect(signTransactionMock.mock.invocationCallOrder[0]).toBeLessThan(
+      finalTx.send.mock.invocationCallOrder[0]
+    );
     expect(statuses).toEqual([
       'building',
       'estimating_mana',
