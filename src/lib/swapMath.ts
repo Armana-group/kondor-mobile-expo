@@ -84,7 +84,7 @@ function parseSlippageBps(slippagePercent: number): bigint {
   const [integerPart, fractionPart = ''] = asString.split('.');
   const scale = 10n ** BigInt(fractionPart.length);
   const integerPartBigInt = BigInt(integerPart);
-  const fractionPartBigInt = BigInt(fractionPart);
+  const fractionPartBigInt = fractionPart ? BigInt(fractionPart) : 0n;
   const numerator = (integerPartBigInt * scale + fractionPartBigInt) * 100n;
   const hasFraction = fractionPart !== '0'.repeat(fractionPart.length);
 

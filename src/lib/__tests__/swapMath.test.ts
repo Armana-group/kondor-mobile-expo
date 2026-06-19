@@ -66,6 +66,9 @@ describe('swapMath', () => {
 
   it('parses slippage percentages with decimal precision without float drift', () => {
     expect(calculateMinOutput('1', 0.145, 8)).toBe('0.9985');
+    expect(calculateMinOutput('1', 1, 8)).toBe('0.99');
+    expect(calculateMinOutput('1', 50, 8)).toBe('0.5');
+    expect(calculateMinOutput('1', 0.01, 8)).toBe('0.9999');
     expect(() => calculateMinOutput('1', 0.0099, 8)).toThrow(SwapError);
     expect(() => calculateMinOutput('1', 50.0001, 8)).toThrow(SwapError);
   });
