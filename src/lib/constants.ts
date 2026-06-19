@@ -44,6 +44,22 @@ export const FREE_MANA_SHARER = {
   testnet: '17mzHQmfp3qNWQpvJLvNgFXqoW4HoS7Xbj',
 };
 
+export const KOINDX = {
+  PERIPHERY_CONTRACT: '17e1q6Fh5RgnuA8K7v4KvXXH4k9qHgsT5s',
+  FREE_MANA_SHARER: FREE_MANA_SHARER.mainnet,
+  SWAP_FEE: 0.0025,
+  QUOTE_CACHE_MS: 30 * 1000,
+  PAIR_CACHE_MS: 5 * 60 * 1000,
+  QUOTE_EXPIRY_MS: 60 * 1000,
+  ENTRY_POINTS: {
+    GET_PAIR: 0xefdc45c1,
+    GET_AMOUNT_OUT: 0x2184ef25,
+    GET_RESERVES: 0x6d0c5abf,
+    SWAP_TOKENS_IN: 0x8b35a506,
+    TOKEN_APPROVE: 0x74e21680,
+  },
+} as const;
+
 // Block explorer URLs
 export const EXPLORER = {
   mainnet: {
