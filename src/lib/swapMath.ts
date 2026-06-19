@@ -83,14 +83,30 @@ function parseSlippageBps(slippagePercent: number): bigint {
 
   const [integerPart, fractionPart = ''] = asString.split('.');
   const scale = 10n ** BigInt(fractionPart.length);
-  const numerator = (BigInt(integerPart) * scale + BigInt(fractionPart)) * 100n;
-  const slippageBps = (numerator + scale / 2n) / scale;
+  const integerPartBigInt = BigInt(integerPart);
+  const fractionPartBigInt = BigInt(fractionPart);
+  const numerator = (integerPartBigInt * scale + fractionPartBigInt) * 100n;
+  const hasFraction = fractionPart !== '0'.repeat(fractionPart.length);
 
-  if (slippageBps < 1n || slippageBps > 5000n) {
+  if (integerPartBigInt < 0n || integerPartBigInt > 50n) {
     throw new SwapError('Slippage must be between 0.01 and 50', 'INVALID_SLIPPAGE');
   }
 
-  return slippageBps;
+  if (integerPartBigInt === 50n && hasFraction) {
+    throw new SwapError('Slippage must be between 0.01 and 50', 'INVALID_SLIPPAGE');
+  }
+
+  if (numerator < scale) {
+    throw new SwapError('Slippage must be between 0.01 and 50', 'INVALID_SLIPPAGE');
+  }
+
+  const rounded = (numerator + scale / 2n) / scale;
+
+  if (rounded < 1n || rounded > 5000n) {
+    throw new SwapError('Slippage must be between 0.01 and 50', 'INVALID_SLIPPAGE');
+  }
+
+  return rounded;
 }
 
 export function parseDecimalAmount(amount: string, decimals: number): string {
