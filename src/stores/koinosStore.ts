@@ -256,6 +256,17 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
       log.debug(' Starting transfer to:', to, 'amount:', amount);
 
       const signer = await getTemporarySigner(currentProvider);
+      const from = signer.getAddress();
+
+      // See transferToken: use max rc (balance) as the dry-run limit so a stale
+      // available-rc reading can't trigger a spurious "insufficient rc".
+      let maxRc: number | undefined;
+      try {
+        const mana = await get().getMana(from);
+        maxRc = Number(mana.max) || undefined;
+      } catch (manaErr) {
+        log.debug(' Could not fetch max rc; estimation will fall back to available rc');
+      }
 
       const tokenContract = new ManualTokenContract(
         DEFAULT_NETWORK.koinContract,
@@ -265,7 +276,8 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
       const { transactionId } = await tokenContract.transfer(
         signer,
         to,
-        amount
+        amount,
+        { maxRc }
       );
 
       log.debug(' Transfer complete, transaction ID:', transactionId);
@@ -300,6 +312,18 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
       log.debug(' Starting token transfer');
 
       const signer = await getTemporarySigner(currentProvider);
+      const from = signer.getAddress();
+
+      // Max rc = the account's KOIN balance; used as the dry-run rc_limit so a
+      // stale/low *available* rc reading (e.g. just after funding) can't cap the
+      // estimation and cause a spurious "insufficient rc" on the first attempt.
+      let maxRc: number | undefined;
+      try {
+        const mana = await get().getMana(from);
+        maxRc = Number(mana.max) || undefined;
+      } catch (manaErr) {
+        log.debug(' Could not fetch max rc; estimation will fall back to available rc');
+      }
 
       const tokenContract = new ManualTokenContract(
         contractId,
@@ -310,7 +334,7 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
         signer,
         to,
         amount,
-        { decimals }
+        { decimals, maxRc }
       );
 
       log.debug(' Token transfer complete, transaction ID:', transactionId);
