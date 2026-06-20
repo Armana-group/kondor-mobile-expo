@@ -13,6 +13,7 @@ import { SettingsScreen } from '../screens/SettingsScreen';
 import { TokenManagementScreen } from '../screens/TokenManagementScreen';
 import { ConnectedSitesScreen } from '../screens/ConnectedSitesScreen';
 import { CollectiblesScreen } from '../screens/CollectiblesScreen';
+import { NFTDetailScreen } from '../screens/NFTDetailScreen';
 import { SwapScreen } from '../screens/SwapScreen';
 import { ActivityScreen } from '../screens/ActivityScreen';
 import { BrowserScreen } from '../screens/BrowserScreen';
@@ -25,6 +26,7 @@ import colors from '../theme/colors';
 // Stores
 import { Token } from '../stores/tokenStore';
 import { DApp } from '../constants/dapps';
+import type { NFT } from '../lib/nftService';
 
 // Types
 export type HomeStackParamList = {
@@ -44,6 +46,11 @@ export type AppsStackParamList = {
   DAppWebView: { app: DApp };
 };
 
+export type CollectiblesStackParamList = {
+  CollectiblesMain: undefined;
+  NFTDetail: { nft: NFT };
+};
+
 export type TabParamList = {
   HomeTab: undefined;
   Collectibles: undefined;
@@ -54,6 +61,7 @@ export type TabParamList = {
 const Tab = createBottomTabNavigator<TabParamList>();
 const HomeStack = createNativeStackNavigator<HomeStackParamList>();
 const AppsStack = createNativeStackNavigator<AppsStackParamList>();
+const CollectiblesStack = createNativeStackNavigator<CollectiblesStackParamList>();
 
 // Icon name type for Ionicons
 type IoniconsName = keyof typeof Ionicons.glyphMap;
@@ -121,6 +129,13 @@ const AppsStackNavigator = () => (
   </AppsStack.Navigator>
 );
 
+const CollectiblesStackNavigator = () => (
+  <CollectiblesStack.Navigator screenOptions={{ headerShown: false }}>
+    <CollectiblesStack.Screen name="CollectiblesMain" component={CollectiblesScreen} />
+    <CollectiblesStack.Screen name="NFTDetail" component={NFTDetailScreen} />
+  </CollectiblesStack.Navigator>
+);
+
 export const TabNavigator = () => {
   return (
     <Tab.Navigator
@@ -144,7 +159,7 @@ export const TabNavigator = () => {
       />
       <Tab.Screen
         name="Collectibles"
-        component={CollectiblesScreen}
+        component={CollectiblesStackNavigator}
         options={{
           tabBarLabel: 'Collectibles',
           tabBarIcon: ({ focused, color }) => (
