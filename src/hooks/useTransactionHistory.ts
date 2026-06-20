@@ -108,10 +108,16 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
   const { getTokenByContractId } = useTokenStore();
   const networkMode = useNetworkStore((state) => state.mode);
   const hasHydrated = useNetworkStore((state) => state.hasHydrated);
-  const pendingTransactions = useTransactionStore((state) => state.getPendingTransactions({
-    address,
-    networkMode: hasHydrated ? networkMode : 'mainnet',
-  }));
+  const pendingTransactionScope = useMemo(
+    () => ({
+      address,
+      networkMode: hasHydrated ? networkMode : 'mainnet',
+    }),
+    [address, hasHydrated, networkMode]
+  );
+  const pendingTransactions = useTransactionStore(
+    (state) => state.getPendingTransactions(pendingTransactionScope)
+  );
   const [transactions, setTransactions] = useState<ParsedTransaction[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
@@ -187,6 +193,7 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
 
       useTransactionStore.getState().pruneStalePendingTransactions();
       useTransactionStore.getState().confirmPendingTransactionsByChainIds(
+        pendingTransactionScope,
         parsedTransactions.map((transaction) => transaction.id)
       );
 
@@ -209,7 +216,14 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [activeNetwork.rest.history, activeNetwork.rest.transaction, address, getTokenByContractId, historyScopeKey]);
+  }, [
+    activeNetwork.rest.history,
+    activeNetwork.rest.transaction,
+    address,
+    getTokenByContractId,
+    historyScopeKey,
+    pendingTransactionScope,
+  ]);
 
   // Initial fetch
   useEffect(() => {

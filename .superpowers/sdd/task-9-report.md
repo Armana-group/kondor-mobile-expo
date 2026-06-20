@@ -189,3 +189,33 @@ Results:
 - Focused hydration-race test: PASS, 1 suite / 6 tests.
 - Type-check: PASS, exit code 0.
 - Full Jest suite: PASS, 41 suites / 304 tests.
+
+## Review Fixes: 8975414..HEAD
+
+### Finding 1: hydration overwrite race
+
+- Replaced the store's direct `AsyncStorage` writes with a hydration-aware persist storage wrapper, so pending-store writes are skipped while rehydrate is in flight instead of overwriting older persisted rows.
+- Let the persist middleware own the write path again; when hydration finishes, `setHasHydrated(true)` now flushes the merged in-memory state through the normal persisted-state partialization.
+- Added a regression that models the real destructive interleaving: persisted storage starts with an older pending row, a new row is added before hydration resolves, and both rows remain in memory and in persisted storage after hydration settles.
+
+### Finding 2: scope-aware chain confirmation
+
+- Updated `confirmPendingTransactionByChainId` and `confirmPendingTransactionsByChainIds` to require an explicit `networkMode + address` scope and only remove matching pending rows inside that scope.
+- Updated history reconciliation in `useTransactionHistory` to pass the active pending scope when confirmed history removes optimistic rows.
+- Added regression coverage for both single-id and bulk confirmation so another scope's pending row is preserved even when it shares the same chain transaction id.
+
+### Regression coverage
+
+Commands:
+
+```bash
+npm test -- src/stores/__tests__/transactionStore.test.ts src/hooks/__tests__/useTransactionHistory.test.ts --runInBand
+npx tsc --noEmit
+npm test -- --runInBand
+```
+
+Results:
+
+- Focused store + history tests: PASS, 2 suites / 12 tests.
+- Type-check: PASS, exit code 0.
+- Full Jest suite: PASS, 41 suites / 306 tests.

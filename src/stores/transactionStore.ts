@@ -70,13 +70,23 @@ export interface BroadcastPendingTransactionParams {
   } | undefined;
 }
 
+interface PersistedTransactionStoreState {
+  pendingTransactions: PendingTransactionRecord[];
+}
+
 interface TransactionStoreState {
   pendingTransactions: PendingTransactionRecord[];
   hasHydrated: boolean;
   addPendingTransaction: (input: AddPendingTransactionInput) => string;
   confirmPendingTransactionByLocalId: (localId: string) => void;
-  confirmPendingTransactionByChainId: (chainTransactionId: string) => void;
-  confirmPendingTransactionsByChainIds: (chainTransactionIds: string[]) => void;
+  confirmPendingTransactionByChainId: (
+    scope: PendingTransactionScope,
+    chainTransactionId: string
+  ) => void;
+  confirmPendingTransactionsByChainIds: (
+    scope: PendingTransactionScope,
+    chainTransactionIds: string[]
+  ) => void;
   pruneStalePendingTransactions: (now?: number) => void;
   getPendingTransactions: (scope: PendingTransactionScope) => ParsedTransaction[];
   setHasHydrated: (hydrated: boolean) => void;
@@ -383,16 +393,42 @@ export function buildPendingTransactionFromBroadcast({
   };
 }
 
-function syncPendingTransactions(pendingTransactions: PendingTransactionRecord[]) {
-  const payload = {
+function createPersistedTransactionStoreState(
+  pendingTransactions: unknown
+): {
+  state: PersistedTransactionStoreState;
+  version: number;
+} {
+  return {
     state: {
       pendingTransactions: sanitizePendingTransactions(pendingTransactions),
     },
     version: ZUSTAND_PERSIST_VERSION,
   };
-
-  void AsyncStorage.setItem(STORAGE_NAME, JSON.stringify(payload));
 }
+
+const baseTransactionStorage = createJSONStorage<PersistedTransactionStoreState>(() => AsyncStorage);
+let isTransactionStoreHydrating = false;
+
+const transactionStoreStorage = baseTransactionStorage
+  ? {
+      getItem: (name: string) => baseTransactionStorage.getItem(name),
+      setItem: (
+        name: string,
+        value: { state: PersistedTransactionStoreState; version?: number }
+      ) => {
+        if (isTransactionStoreHydrating) {
+          return Promise.resolve();
+        }
+
+        return baseTransactionStorage.setItem(
+          name,
+          createPersistedTransactionStoreState(value.state?.pendingTransactions)
+        );
+      },
+      removeItem: (name: string) => baseTransactionStorage.removeItem(name),
+    }
+  : undefined;
 
 export const useTransactionStore = create<TransactionStoreState>()(
   persist(
@@ -409,26 +445,24 @@ export const useTransactionStore = create<TransactionStoreState>()(
 
         set((state) => ({
           pendingTransactions: (() => {
-            const pendingTransactions = sortPendingTransactions([
-            record,
-            ...state.pendingTransactions.filter((existing) => {
-              if (existing.localId === localId) {
-                return false;
-              }
+            return sortPendingTransactions([
+              record,
+              ...state.pendingTransactions.filter((existing) => {
+                if (existing.localId === localId) {
+                  return false;
+                }
 
-              if (!record.chainTransactionId) {
-                return true;
-              }
+                if (!record.chainTransactionId) {
+                  return true;
+                }
 
-              return !(
-                existing.networkMode === record.networkMode &&
-                existing.address === record.address &&
-                existing.chainTransactionId === record.chainTransactionId
-              );
-            }),
-          ]);
-            syncPendingTransactions(pendingTransactions);
-            return pendingTransactions;
+                return !(
+                  existing.networkMode === record.networkMode &&
+                  existing.address === record.address &&
+                  existing.chainTransactionId === record.chainTransactionId
+                );
+              }),
+            ]);
           })(),
         }));
 
@@ -437,29 +471,24 @@ export const useTransactionStore = create<TransactionStoreState>()(
 
       confirmPendingTransactionByLocalId: (localId) => {
         set((state) => ({
-          pendingTransactions: (() => {
-            const pendingTransactions = state.pendingTransactions.filter(
-              (record) => record.localId !== localId
-            );
-            syncPendingTransactions(pendingTransactions);
-            return pendingTransactions;
-          })(),
+          pendingTransactions: state.pendingTransactions.filter(
+            (record) => record.localId !== localId
+          ),
         }));
       },
 
-      confirmPendingTransactionByChainId: (chainTransactionId) => {
+      confirmPendingTransactionByChainId: (scope, chainTransactionId) => {
         set((state) => ({
-          pendingTransactions: (() => {
-            const pendingTransactions = state.pendingTransactions.filter(
-              (record) => record.chainTransactionId !== chainTransactionId
-            );
-            syncPendingTransactions(pendingTransactions);
-            return pendingTransactions;
-          })(),
+          pendingTransactions: state.pendingTransactions.filter(
+            (record) => !(
+              matchesScope(record, scope) &&
+              record.chainTransactionId === chainTransactionId
+            )
+          ),
         }));
       },
 
-      confirmPendingTransactionsByChainIds: (chainTransactionIds) => {
+      confirmPendingTransactionsByChainIds: (scope, chainTransactionIds) => {
         const confirmedIds = new Set(
           chainTransactionIds.filter((transactionId): transactionId is string => (
             typeof transactionId === 'string' && transactionId.length > 0
@@ -470,25 +499,21 @@ export const useTransactionStore = create<TransactionStoreState>()(
         }
 
         set((state) => ({
-          pendingTransactions: (() => {
-            const pendingTransactions = state.pendingTransactions.filter(
-              (record) => !record.chainTransactionId || !confirmedIds.has(record.chainTransactionId)
-            );
-            syncPendingTransactions(pendingTransactions);
-            return pendingTransactions;
-          })(),
+          pendingTransactions: state.pendingTransactions.filter(
+            (record) => !(
+              matchesScope(record, scope) &&
+              record.chainTransactionId &&
+              confirmedIds.has(record.chainTransactionId)
+            )
+          ),
         }));
       },
 
       pruneStalePendingTransactions: (now = Date.now()) => {
         set((state) => ({
-          pendingTransactions: (() => {
-            const pendingTransactions = state.pendingTransactions.filter(
-              (record) => now - record.timestamp <= PENDING_TRANSACTION_STALE_MS
-            );
-            syncPendingTransactions(pendingTransactions);
-            return pendingTransactions;
-          })(),
+          pendingTransactions: state.pendingTransactions.filter(
+            (record) => now - record.timestamp <= PENDING_TRANSACTION_STALE_MS
+          ),
         }));
       },
 
@@ -503,7 +528,7 @@ export const useTransactionStore = create<TransactionStoreState>()(
     {
       name: STORAGE_NAME,
       version: ZUSTAND_PERSIST_VERSION,
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: transactionStoreStorage,
       partialize: (state) => ({
         pendingTransactions: sanitizePendingTransactions(state.pendingTransactions),
       }),
@@ -517,8 +542,12 @@ export const useTransactionStore = create<TransactionStoreState>()(
           ),
         };
       },
-      onRehydrateStorage: () => (state) => {
-        state?.setHasHydrated(true);
+      onRehydrateStorage: () => {
+        isTransactionStoreHydrating = true;
+        return (state) => {
+          isTransactionStoreHydrating = false;
+          state?.setHasHydrated(true);
+        };
       },
     }
   )

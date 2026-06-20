@@ -45,7 +45,10 @@ function createPersistedPendingRecord(overrides: Record<string, unknown> = {}) {
   };
 }
 
-async function loadStoreWithPendingHydration(persistedValue?: string) {
+async function loadStoreWithPendingHydration(
+  persistedValue?: string,
+  options: { captureValueBeforeHydrationRelease?: boolean } = {}
+) {
   jest.resetModules();
   const asyncStorage = getAsyncStorage();
   if (persistedValue != null) {
@@ -57,8 +60,11 @@ async function loadStoreWithPendingHydration(persistedValue?: string) {
   });
 
   asyncStorage.getItem.mockImplementation(async (key: string, callback?: (error?: Error | null, value?: string | null) => void) => {
-    const value = asyncStorage.__INTERNAL_MOCK_STORAGE__[key] ?? null;
+    const valueBeforeDelay = asyncStorage.__INTERNAL_MOCK_STORAGE__[key] ?? null;
     await hydrationGate;
+    const value = options.captureValueBeforeHydrationRelease === false
+      ? asyncStorage.__INTERNAL_MOCK_STORAGE__[key] ?? null
+      : valueBeforeDelay;
     callback?.(null, value);
     return value;
   });
@@ -161,16 +167,70 @@ describe('transactionStore', () => {
     })).toEqual([]);
   });
 
-  it('confirms a pending transaction by chain transaction id', async () => {
+  it('confirms a pending transaction by chain transaction id within its scope', async () => {
     const { useTransactionStore } = await loadStore();
 
     useTransactionStore.getState().addPendingTransaction(createPendingInput());
-    useTransactionStore.getState().confirmPendingTransactionByChainId('0xchain-tx-1');
+    useTransactionStore.getState().addPendingTransaction(createPendingInput({
+      networkMode: 'harbinger',
+      address: '1OtherAddress',
+      transaction: {
+        ...createPendingInput().transaction,
+        to: '1OtherRecipient',
+      },
+    }));
+    useTransactionStore.getState().confirmPendingTransactionByChainId(
+      {
+        address: '1WalletAddress',
+        networkMode: 'mainnet',
+      },
+      '0xchain-tx-1'
+    );
 
     expect(useTransactionStore.getState().getPendingTransactions({
       address: '1WalletAddress',
       networkMode: 'mainnet',
     })).toEqual([]);
+    expect(useTransactionStore.getState().getPendingTransactions({
+      address: '1OtherAddress',
+      networkMode: 'harbinger',
+    })).toEqual([
+      expect.objectContaining({ id: '0xchain-tx-1' }),
+    ]);
+  });
+
+  it('confirms pending transactions by chain transaction ids within their scope only', async () => {
+    const { useTransactionStore } = await loadStore();
+
+    useTransactionStore.getState().addPendingTransaction(createPendingInput({
+      chainTransactionId: '0xbulk-shared',
+    }));
+    useTransactionStore.getState().addPendingTransaction(createPendingInput({
+      address: '1OtherAddress',
+      chainTransactionId: '0xbulk-shared',
+      transaction: {
+        ...createPendingInput().transaction,
+        to: '1OtherRecipient',
+      },
+    }));
+    useTransactionStore.getState().confirmPendingTransactionsByChainIds(
+      {
+        address: '1WalletAddress',
+        networkMode: 'mainnet',
+      },
+      ['0xbulk-shared']
+    );
+
+    expect(useTransactionStore.getState().getPendingTransactions({
+      address: '1WalletAddress',
+      networkMode: 'mainnet',
+    })).toEqual([]);
+    expect(useTransactionStore.getState().getPendingTransactions({
+      address: '1OtherAddress',
+      networkMode: 'mainnet',
+    })).toEqual([
+      expect.objectContaining({ id: '0xbulk-shared' }),
+    ]);
   });
 
   it('removes stale pending transactions without touching fresh ones', async () => {
@@ -280,5 +340,42 @@ describe('transactionStore', () => {
     )).toEqual(
       expect.objectContaining({ localId })
     );
+  });
+
+  it('preserves persisted rows in storage when a new pending transaction is added before hydration resolves', async () => {
+    const persistedValue = JSON.stringify({
+      state: {
+        pendingTransactions: [
+          createPersistedPendingRecord(),
+        ],
+      },
+      version: 0,
+    });
+
+    const { mod, finishHydration } = await loadStoreWithPendingHydration(
+      persistedValue,
+      { captureValueBeforeHydrationRelease: false }
+    );
+    const { useTransactionStore } = mod;
+
+    useTransactionStore.getState().addPendingTransaction(createPendingInput({
+      chainTransactionId: '0xcurrent-chain-id',
+      transaction: {
+        ...createPendingInput().transaction,
+        to: '1CurrentRecipient',
+        timestamp: NOW,
+      },
+    }));
+
+    await flushPersistedWrites();
+    await finishHydration();
+
+    const stored = JSON.parse((await getAsyncStorage().getItem(STORAGE_KEY)) ?? '{}');
+    const persisted = stored.state?.pendingTransactions ?? [];
+
+    expect(persisted).toEqual([
+      expect.objectContaining({ chainTransactionId: '0xcurrent-chain-id' }),
+      expect.objectContaining({ chainTransactionId: '0xpersisted-chain-id' }),
+    ]);
   });
 });
