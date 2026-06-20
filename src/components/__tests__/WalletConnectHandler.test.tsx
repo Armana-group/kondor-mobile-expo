@@ -13,6 +13,14 @@ const mockRejectRequest = jest.fn(async () => undefined);
 const mockClearPendingTransaction = jest.fn();
 const mockReconcileSessionsForActiveNetwork = jest.fn(async () => undefined);
 const mockIsSessionTopicApprovedForActiveNetwork = jest.fn(() => true);
+const mockGetSessionTopicValidationForActiveNetwork = jest.fn<
+  { status: string; message?: string },
+  [string]
+>(() => ({
+  status: 'ready',
+}));
+
+let lastTransactionApprovalModalProps: any = null;
 
 let mockNetworkState = {
   mode: 'mainnet',
@@ -44,6 +52,8 @@ jest.mock('../../stores/walletConnectStore', () => ({
   },
   WALLETCONNECT_NETWORK_MISMATCH_ERROR:
     'WalletConnect session no longer matches the active network',
+  WALLETCONNECT_NETWORK_NOT_READY_ERROR:
+    'WalletConnect is waiting for the active network to finish loading',
   useWalletConnectStore: () => mockWalletConnectState,
 }));
 
@@ -52,7 +62,10 @@ jest.mock('../../components/WCSessionApprovalModal', () => ({
 }));
 
 jest.mock('../../components/TransactionApprovalModal', () => ({
-  TransactionApprovalModal: () => null,
+  TransactionApprovalModal: (props: any) => {
+    lastTransactionApprovalModalProps = props;
+    return null;
+  },
 }));
 
 jest.mock('../../lib/biometrics', () => ({
@@ -107,6 +120,7 @@ function flushEffects() {
 describe('WalletConnectHandler network reconciliation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    lastTransactionApprovalModalProps = null;
     mockNetworkState = {
       mode: 'mainnet',
       hasHydrated: true,
@@ -124,6 +138,7 @@ describe('WalletConnectHandler network reconciliation', () => {
       clearPendingTransaction: mockClearPendingTransaction,
       reconcileSessionsForActiveNetwork: mockReconcileSessionsForActiveNetwork,
       isSessionTopicApprovedForActiveNetwork: mockIsSessionTopicApprovedForActiveNetwork,
+      getSessionTopicValidationForActiveNetwork: mockGetSessionTopicValidationForActiveNetwork,
     };
   });
 
@@ -153,6 +168,10 @@ describe('WalletConnectHandler network reconciliation', () => {
 
   it('rejects generic requests for sessions that no longer match the active network', async () => {
     mockIsSessionTopicApprovedForActiveNetwork.mockReturnValue(false);
+    mockGetSessionTopicValidationForActiveNetwork.mockReturnValue({
+      status: 'reject',
+      message: 'WalletConnect session no longer matches the active network',
+    });
     mockWalletConnectState = {
       ...mockWalletConnectState,
       pendingRequest: {
@@ -181,5 +200,62 @@ describe('WalletConnectHandler network reconciliation', () => {
     );
     expect(mockRespondToRequest).not.toHaveBeenCalled();
     expect(mockProvider).not.toHaveBeenCalled();
+  });
+
+  it('keeps transaction approval hidden until hydration completes and rejects stale topics before showing it', async () => {
+    mockNetworkState = {
+      mode: 'harbinger',
+      hasHydrated: false,
+    };
+    mockGetSessionTopicValidationForActiveNetwork.mockReturnValueOnce({
+      status: 'defer',
+      message: 'WalletConnect is waiting for the active network to finish loading',
+    });
+    mockGetSessionTopicValidationForActiveNetwork.mockReturnValue({
+      status: 'reject',
+      message: 'WalletConnect session no longer matches the active network',
+    });
+    mockWalletConnectState = {
+      ...mockWalletConnectState,
+      pendingTransaction: {
+        id: 12,
+        topic: 'stale-topic',
+        method: 'koinos_signAndSendTransaction',
+        transaction: { operations: [] },
+        signerAddress: '1WalletAddress',
+        peerMeta: {
+          name: 'Old Session dApp',
+          url: 'https://old-session.example.com',
+        },
+      },
+    };
+
+    const { WalletConnectHandler } = require('../WalletConnectHandler');
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<WalletConnectHandler />);
+    });
+    await flushEffects();
+
+    expect(lastTransactionApprovalModalProps?.visible).toBe(false);
+    expect(mockRejectRequest).not.toHaveBeenCalled();
+
+    mockNetworkState = {
+      mode: 'harbinger',
+      hasHydrated: true,
+    };
+
+    await act(async () => {
+      renderer!.update(<WalletConnectHandler />);
+    });
+    await flushEffects();
+
+    expect(mockRejectRequest).toHaveBeenCalledWith(
+      12,
+      'stale-topic',
+      expect.stringMatching(/active network/i)
+    );
+    expect(lastTransactionApprovalModalProps?.visible).toBe(false);
   });
 });

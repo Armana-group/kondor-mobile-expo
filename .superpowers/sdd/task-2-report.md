@@ -278,3 +278,75 @@ tsc exit code 0
 ### Remaining concerns
 
 - Session reconciliation disconnects mismatched peers instead of attempting in-place namespace mutation. That is intentional here because it uses confirmed WalletKit APIs and keeps the behavior explicit.
+
+---
+
+## Third fix pass after critical re-review
+
+### Finding addressed
+
+- WalletConnect transaction approvals now stay fail-closed until `useNetworkStore.hasHydrated` is true.
+- WalletConnect topic validation no longer treats the pre-hydration mainnet fallback as an approved active-network match.
+- Once hydration completes, stale WalletConnect topics are rejected before any transaction approval modal is shown, while the existing hydrated-session reconciliation flow remains intact.
+- Generic WalletConnect request handling now uses the same hydration/topic validation path, so stale requests continue to defer pre-hydration and reject cleanly after hydration.
+
+### Additional regression coverage
+
+- Extended `src/components/__tests__/WalletConnectHandler.test.tsx`
+- Extended `src/stores/__tests__/walletConnectStore.test.ts`
+
+### RED
+
+Command:
+
+```bash
+npm test -- src/stores/__tests__/walletConnectStore.test.ts src/components/__tests__/WalletConnectHandler.test.tsx --runInBand
+```
+
+Key failures before the fix:
+
+```text
+TypeError: useWalletConnectStore.getState(...).getSessionTopicValidationForActiveNetwork is not a function
+Expected: false
+Received: true
+```
+
+The second failure was the pre-hydration regression: `WalletConnectHandler` was still surfacing the transaction approval modal before network hydration completed.
+
+### GREEN
+
+Focused WalletConnect hydration-race regression suite:
+
+```bash
+npm test -- src/stores/__tests__/walletConnectStore.test.ts src/components/__tests__/WalletConnectHandler.test.tsx --runInBand
+```
+
+Result:
+
+```text
+PASS src/components/__tests__/WalletConnectHandler.test.tsx
+PASS src/stores/__tests__/walletConnectStore.test.ts
+
+Test Suites: 2 passed, 2 total
+Tests:       5 passed, 5 total
+```
+
+### Required final verification
+
+```bash
+npm test -- src/stores/__tests__/networkStore.test.ts src/stores/__tests__/walletConnectStore.test.ts src/components/__tests__/WalletConnectHandler.test.tsx --runInBand
+npm test -- --runInBand
+npx tsc --noEmit
+```
+
+Result:
+
+```text
+Focused suite: 3 passed, 9 tests
+Full suite: 24 passed, 172 tests, 2 snapshots
+tsc exit code 0
+```
+
+### Remaining concerns
+
+- `reconcileSessionsForActiveNetwork()` still owns the bulk session disconnect path after hydration. This fix keeps that behavior, but request gating now blocks stale-topic approval UI even if reconciliation resolves a moment later.

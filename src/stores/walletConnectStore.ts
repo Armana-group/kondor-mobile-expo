@@ -37,6 +37,13 @@ function getActiveWalletConnectChainId() {
 
 export const WALLETCONNECT_NETWORK_MISMATCH_ERROR =
   'WalletConnect session no longer matches the active network';
+export const WALLETCONNECT_NETWORK_NOT_READY_ERROR =
+  'WalletConnect is waiting for the active network to finish loading';
+
+type WalletConnectTopicValidation =
+  | { status: 'ready' }
+  | { status: 'defer'; message: string }
+  | { status: 'reject'; message: string };
 
 function getSessionChains(session: any): string[] {
   return Object.values(session?.namespaces || {}).flatMap(
@@ -170,6 +177,7 @@ interface WalletConnectState {
   _setPendingTransaction: (request: WCTransactionRequest | null) => void;
   _updateSessions: () => void;
   isSessionTopicApprovedForActiveNetwork: (topic: string) => boolean;
+  getSessionTopicValidationForActiveNetwork: (topic: string) => WalletConnectTopicValidation;
   reconcileSessionsForActiveNetwork: () => Promise<void>;
 }
 
@@ -222,17 +230,42 @@ export const useWalletConnectStore = create<WalletConnectState>()(
       },
 
       isSessionTopicApprovedForActiveNetwork: (topic: string) => {
+        return get().getSessionTopicValidationForActiveNetwork(topic).status === 'ready';
+      },
+
+      getSessionTopicValidationForActiveNetwork: (topic: string) => {
+        const { hasHydrated } = useNetworkStore.getState();
+        if (!hasHydrated) {
+          return {
+            status: 'defer',
+            message: WALLETCONNECT_NETWORK_NOT_READY_ERROR,
+          };
+        }
+
         const { _walletKit } = get();
         if (!_walletKit) {
-          return false;
+          return {
+            status: 'reject',
+            message: 'WalletConnect session is no longer available',
+          };
         }
 
         const session = _walletKit.getActiveSessions()?.[topic];
         if (!session) {
-          return false;
+          return {
+            status: 'reject',
+            message: 'WalletConnect session is no longer available',
+          };
         }
 
-        return sessionMatchesChain(session, getActiveWalletConnectChainId());
+        if (!sessionMatchesChain(session, getActiveWalletConnectChainId())) {
+          return {
+            status: 'reject',
+            message: WALLETCONNECT_NETWORK_MISMATCH_ERROR,
+          };
+        }
+
+        return { status: 'ready' };
       },
 
       reconcileSessionsForActiveNetwork: async () => {
@@ -352,9 +385,10 @@ export const useWalletConnectStore = create<WalletConnectState>()(
               return;
             }
 
-            if (!sessionMatchesChain(session, getActiveWalletConnectChainId())) {
+            const validation = get().getSessionTopicValidationForActiveNetwork(topic);
+            if (validation.status === 'reject') {
               wcLogger.error('Rejecting request for stale WalletConnect session topic:', topic);
-              await get().rejectRequest(id, topic, WALLETCONNECT_NETWORK_MISMATCH_ERROR);
+              await get().rejectRequest(id, topic, validation.message);
               return;
             }
 

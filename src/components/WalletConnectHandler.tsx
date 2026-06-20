@@ -7,14 +7,12 @@
 
 import React, { useEffect, useCallback, useState } from 'react';
 import { Alert } from 'react-native';
-import { Provider, Transaction, Signer, TransactionJson } from 'koilib';
-import * as SecureStore from 'expo-secure-store';
+import { Provider, Transaction, TransactionJson } from 'koilib';
 import { useWalletStore } from '../stores/walletStore';
 import {
   useWalletConnectStore,
   KOINOS_METHODS,
   WCTransactionRequest,
-  WALLETCONNECT_NETWORK_MISMATCH_ERROR,
 } from '../stores/walletConnectStore';
 import { WCSessionApprovalModal } from './WCSessionApprovalModal';
 import {
@@ -28,7 +26,7 @@ import { wcLogger, sanitizeErrorForUser } from '../lib/logger';
 import { getActiveNetworkConfig, useNetworkStore } from '../stores/networkStore';
 
 export const WalletConnectHandler: React.FC = () => {
-  const { address, activeAccountId, isWalletCreated } = useWalletStore();
+  const { address, isWalletCreated } = useWalletStore();
   const networkMode = useNetworkStore((state) => state.mode);
   const hasHydrated = useNetworkStore((state) => state.hasHydrated);
   const {
@@ -43,7 +41,7 @@ export const WalletConnectHandler: React.FC = () => {
     rejectRequest,
     clearPendingTransaction,
     reconcileSessionsForActiveNetwork,
-    isSessionTopicApprovedForActiveNetwork,
+    getSessionTopicValidationForActiveNetwork,
   } = useWalletConnectStore();
 
   // State for transaction approval
@@ -91,19 +89,45 @@ export const WalletConnectHandler: React.FC = () => {
 
   // Handle incoming transaction request
   useEffect(() => {
-    if (pendingTransaction) {
-      // Convert WC transaction request to TransactionRequest format
-      const txReq: TransactionRequest = {
-        signerAddress: pendingTransaction.signerAddress,
-        transaction: pendingTransaction.transaction,
-      };
-      setTxRequest(txReq);
-      setCurrentWCRequest(pendingTransaction);
-    } else {
+    if (!pendingTransaction) {
       setTxRequest(null);
       setCurrentWCRequest(null);
+      return;
     }
-  }, [pendingTransaction]);
+
+    const validation = getSessionTopicValidationForActiveNetwork(pendingTransaction.topic);
+
+    if (validation.status === 'defer') {
+      setTxRequest(null);
+      setCurrentWCRequest(null);
+      return;
+    }
+
+    if (validation.status === 'reject') {
+      setTxRequest(null);
+      setCurrentWCRequest(null);
+      rejectRequest(pendingTransaction.id, pendingTransaction.topic, validation.message).catch(
+        (error) => {
+          wcLogger.error('Failed to reject invalid WalletConnect transaction request:', error);
+        }
+      );
+      return;
+    }
+
+    // Convert WC transaction request to TransactionRequest format
+    const txReq: TransactionRequest = {
+      signerAddress: pendingTransaction.signerAddress,
+      transaction: pendingTransaction.transaction,
+    };
+    setTxRequest(txReq);
+    setCurrentWCRequest(pendingTransaction);
+  }, [
+    getSessionTopicValidationForActiveNetwork,
+    hasHydrated,
+    networkMode,
+    pendingTransaction,
+    rejectRequest,
+  ]);
 
   // Handle generic (non-signing) requests
   const handleGenericRequest = useCallback(async () => {
@@ -111,8 +135,13 @@ export const WalletConnectHandler: React.FC = () => {
 
     const { id, topic, method, params } = pendingRequest;
 
-    if (!isSessionTopicApprovedForActiveNetwork(topic)) {
-      await rejectRequest(id, topic, WALLETCONNECT_NETWORK_MISMATCH_ERROR);
+    const validation = getSessionTopicValidationForActiveNetwork(topic);
+    if (validation.status === 'defer') {
+      return;
+    }
+
+    if (validation.status === 'reject') {
+      await rejectRequest(id, topic, validation.message);
       return;
     }
 
@@ -219,8 +248,8 @@ export const WalletConnectHandler: React.FC = () => {
       await rejectRequest(id, topic, error.message || 'Request failed');
     }
   }, [
+    getSessionTopicValidationForActiveNetwork,
     hasHydrated,
-    isSessionTopicApprovedForActiveNetwork,
     networkMode,
     pendingRequest,
     rejectRequest,
@@ -229,7 +258,7 @@ export const WalletConnectHandler: React.FC = () => {
 
   // Handle generic requests (non-transaction)
   useEffect(() => {
-    if (hasHydrated && pendingRequest) {
+    if (pendingRequest) {
       handleGenericRequest();
     }
   }, [hasHydrated, pendingRequest, handleGenericRequest]);

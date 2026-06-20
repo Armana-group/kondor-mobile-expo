@@ -64,6 +64,33 @@ describe('walletConnectStore network reconciliation', () => {
     jest.clearAllMocks();
   });
 
+  it('defers session-topic validation until the network store hydrates', async () => {
+    const {
+      KOINOS_CHAIN_IDS,
+      WALLETCONNECT_NETWORK_NOT_READY_ERROR,
+      useNetworkStore,
+      useWalletConnectStore,
+    } = await loadStores();
+
+    useNetworkStore.setState({ mode: 'harbinger', hasHydrated: false });
+
+    useWalletConnectStore.setState({
+      _walletKit: {
+        getActiveSessions: () => ({
+          'mainnet-topic': createSession('mainnet-topic', KOINOS_CHAIN_IDS.Mainnet),
+        }),
+      },
+      initialized: true,
+    });
+
+    expect(
+      useWalletConnectStore.getState().getSessionTopicValidationForActiveNetwork('mainnet-topic')
+    ).toEqual({
+      status: 'defer',
+      message: WALLETCONNECT_NETWORK_NOT_READY_ERROR,
+    });
+  });
+
   it('disconnects sessions that no longer match the active network and clears stale pending state', async () => {
     const {
       KOINOS_CHAIN_IDS,
