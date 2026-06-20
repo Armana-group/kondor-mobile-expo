@@ -39,7 +39,6 @@ export interface WalletBackupSnapshot {
 }
 
 export interface CreateWalletBackupOptions {
-  version?: 1 | 2;
   now?: string;
   appVersion?: string;
 }
@@ -245,7 +244,7 @@ export async function decryptSecretWithBackupSecret(
     );
     return new TextDecoder().decode(decrypted);
   } catch {
-    throw new Error('Invalid PIN or corrupted encrypted secret');
+    throw new Error('Invalid backup secret or corrupted encrypted secret');
   }
 }
 
@@ -280,31 +279,7 @@ export async function createWalletBackup(
     throw new Error('Cannot back up an empty wallet');
   }
 
-  const version = options.version ?? BACKUP_VERSION;
   const createdAt = options.now ?? new Date().toISOString();
-
-  if (version === LEGACY_BACKUP_VERSION) {
-    const backupWithoutChecksum: Omit<BackupDataV1, 'checksum'> = {
-      kind: BACKUP_KIND,
-      version: LEGACY_BACKUP_VERSION,
-      createdAt,
-      wallet: walletSnapshot,
-    };
-
-    await restoreWalletBackup(
-      {
-        ...backupWithoutChecksum,
-        checksum: '',
-      } as BackupData,
-      backupSecret,
-      { skipChecksum: true }
-    );
-
-    return {
-      ...backupWithoutChecksum,
-      checksum: await computeChecksum(getChecksumPayload(backupWithoutChecksum)),
-    };
-  }
 
   const accountSetHash = await getBackupAccountSetHash(walletSnapshot.accounts);
   const walletFingerprint = await getBackupWalletFingerprint(walletSnapshot);
