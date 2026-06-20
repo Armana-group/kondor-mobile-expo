@@ -24,6 +24,7 @@ type SwapSide = 'input' | 'output';
 const SLIPPAGE_PRESETS = [0.1, 0.5, 1, 2];
 const DECIMAL_INPUT_RE = /^\d*\.?\d*$/;
 const DECIMAL_AMOUNT_RE = /^\d+(?:\.\d+)?$/;
+const TOKEN_SELECTOR_WIDTH = 132;
 const DISPLAY_AMOUNT_FORMATTER = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 8,
 });
@@ -130,10 +131,22 @@ const TokenSelector = ({ side, token, onOpen }: TokenSelectorProps) => (
     {token ? (
       <>
         <TokenIcon token={token} size={34} />
-        <Text style={styles.tokenSelectorSymbol}>{token.symbol}</Text>
+        <Text
+          style={styles.tokenSelectorSymbol}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
+          {token.symbol}
+        </Text>
       </>
     ) : (
-      <Text style={styles.tokenSelectorPlaceholder}>Select</Text>
+      <Text
+        style={styles.tokenSelectorPlaceholder}
+        numberOfLines={1}
+        ellipsizeMode="tail"
+      >
+        Select
+      </Text>
     )}
     <Ionicons name="chevron-down" size={16} color={colors.textSecondary} />
   </TouchableOpacity>
@@ -191,7 +204,11 @@ const SwapPanel = ({
       <TokenSelector side={side} token={token} onOpen={onOpenTokenPicker} />
     </View>
 
-    <Text style={styles.balanceText}>
+    <Text
+      style={styles.balanceText}
+      numberOfLines={1}
+      ellipsizeMode="tail"
+    >
       Balance: {formatDisplayAmount(token?.balance)} {token?.symbol ?? ''}
     </Text>
   </View>
@@ -220,31 +237,51 @@ const QuoteDetails = ({
     <View style={styles.quotePanel}>
       <View style={styles.detailRow}>
         <Text style={styles.detailLabel}>Rate</Text>
-        <Text style={styles.detailValue}>
+        <Text
+          style={styles.detailValue}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
           1 {inputToken.symbol} = {formatDisplayAmount(String(quote.executionPrice))} {outputToken.symbol}
         </Text>
       </View>
       <View style={styles.detailRow}>
         <Text style={styles.detailLabel}>Minimum received</Text>
-        <Text style={styles.detailValue}>
+        <Text
+          style={styles.detailValue}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
           {formatDisplayAmount(quote.amountOutMin)} {outputToken.symbol}
         </Text>
       </View>
       <View style={styles.detailRow}>
         <Text style={styles.detailLabel}>Price impact</Text>
-        <Text style={styles.detailValue}>{formatPercent(quote.priceImpact)}</Text>
+        <Text style={styles.detailValue} numberOfLines={1}>
+          {formatPercent(quote.priceImpact)}
+        </Text>
       </View>
       <View style={styles.detailRow}>
         <Text style={styles.detailLabel}>Fee</Text>
-        <Text style={styles.detailValue}>{formatPercent(quote.fee)}</Text>
+        <Text style={styles.detailValue} numberOfLines={1}>
+          {formatPercent(quote.fee)}
+        </Text>
       </View>
       <View style={styles.detailRow}>
         <Text style={styles.detailLabel}>Route</Text>
-        <Text style={styles.detailValue}>{routeDisplay}</Text>
+        <Text
+          style={styles.detailValue}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
+          {routeDisplay}
+        </Text>
       </View>
       <View style={styles.detailRow}>
         <Text style={styles.detailLabel}>Quote expires</Text>
-        <Text style={styles.detailValue}>{quoteExpiresIn}s</Text>
+        <Text style={styles.detailValue} numberOfLines={1}>
+          {quoteExpiresIn}s
+        </Text>
       </View>
     </View>
   );
@@ -309,11 +346,27 @@ const TokenPickerRow = React.memo(({
       <TokenIcon token={item} size={44} />
     </View>
     <View style={styles.tokenPickerInfo}>
-      <Text style={styles.tokenPickerName}>{item.name}</Text>
-      <Text style={styles.tokenPickerSymbol}>{item.symbol}</Text>
+      <Text
+        style={styles.tokenPickerName}
+        numberOfLines={1}
+        ellipsizeMode="tail"
+      >
+        {item.name}
+      </Text>
+      <Text
+        style={styles.tokenPickerSymbol}
+        numberOfLines={1}
+        ellipsizeMode="tail"
+      >
+        {item.symbol}
+      </Text>
     </View>
     <View style={styles.tokenPickerBalance}>
-      <Text style={styles.tokenPickerBalanceText}>
+      <Text
+        style={styles.tokenPickerBalanceText}
+        numberOfLines={1}
+        ellipsizeMode="tail"
+      >
         {formatDisplayAmount(item.balance)}
       </Text>
     </View>
@@ -404,6 +457,7 @@ export const SwapScreen = () => {
     error,
     isQuoteLoading,
     canSwap,
+    refreshQuote,
     execute,
   } = useNativeSwap();
   const { tokens } = useTokenStore();
@@ -423,6 +477,13 @@ export const SwapScreen = () => {
   const quoteExpiresIn = quote
     ? Math.max(0, Math.ceil((quote.expiresAt - now) / 1000))
     : 0;
+  const hasSwapInputs = Boolean(
+    isPositiveAmount(amount) &&
+    inputToken &&
+    outputToken &&
+    inputToken.contractId !== outputToken.contractId
+  );
+  const isQuoteExpired = Boolean(quote && quoteExpiresIn <= 0);
   const selectedPickerToken = pickerSide === 'input' ? inputToken : outputToken;
   const routeDisplay = useMemo(() => {
     if (!quote) {
@@ -463,13 +524,20 @@ export const SwapScreen = () => {
     if (isQuoteLoading || status === 'quoting') {
       return 'Fetching quote...';
     }
+    if (isQuoteExpired) {
+      return 'Refresh quote';
+    }
     if (isNoLiquidityError(error)) {
       return 'No liquidity for this pair';
     }
     return 'Review swap';
-  }, [amount, error, inputToken, isQuoteLoading, outputToken, status]);
+  }, [amount, error, inputToken, isQuoteExpired, isQuoteLoading, outputToken, status]);
 
-  const isPrimaryDisabled = !canSwap || !quote || isTransactionPending;
+  const canRefreshExpiredQuote = isQuoteExpired && hasSwapInputs && !isQuoteLoading;
+  const isPrimaryDisabled = isTransactionPending
+    || isQuoteLoading
+    || (!canSwap && !canRefreshExpiredQuote)
+    || (!quote && !canRefreshExpiredQuote);
 
   const handleAmountChange = useCallback((value: string) => {
     if (!DECIMAL_INPUT_RE.test(value)) {
@@ -526,6 +594,10 @@ export const SwapScreen = () => {
     }
   }, [execute]);
 
+  const handleRefreshQuote = useCallback(() => {
+    void refreshQuote();
+  }, [refreshQuote]);
+
   const handleReviewSwap = useCallback(() => {
     if (!quote || !inputToken || !outputToken || !canSwap) {
       return;
@@ -546,6 +618,15 @@ export const SwapScreen = () => {
       ]
     );
   }, [amount, canSwap, handleConfirmSwap, inputToken, outputToken, quote, routeDisplay]);
+
+  const handlePrimaryPress = useCallback(() => {
+    if (canRefreshExpiredQuote) {
+      handleRefreshQuote();
+      return;
+    }
+
+    handleReviewSwap();
+  }, [canRefreshExpiredQuote, handleRefreshQuote, handleReviewSwap]);
 
   const openTokenPicker = useCallback((side: SwapSide) => {
     setPickerSide(side);
@@ -627,7 +708,7 @@ export const SwapScreen = () => {
 
         <Button
           title={primaryButtonTitle}
-          onPress={handleReviewSwap}
+          onPress={handlePrimaryPress}
           disabled={isPrimaryDisabled}
           style={styles.primaryButton}
         />
@@ -715,6 +796,7 @@ const styles = StyleSheet.create({
   },
   amountInput: {
     flex: 1,
+    minWidth: 0,
     color: colors.textPrimary,
     fontSize: 32,
     fontWeight: '700',
@@ -732,10 +814,13 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     paddingLeft: 7,
     paddingRight: 10,
-    minWidth: 118,
+    width: TOKEN_SELECTOR_WIDTH,
+    flexShrink: 0,
   },
   tokenSelectorSymbol: {
     flex: 1,
+    minWidth: 0,
+    flexShrink: 1,
     marginLeft: 8,
     color: colors.textPrimary,
     fontSize: 15,
@@ -743,6 +828,8 @@ const styles = StyleSheet.create({
   },
   tokenSelectorPlaceholder: {
     flex: 1,
+    minWidth: 0,
+    flexShrink: 1,
     color: colors.textSecondary,
     fontSize: 15,
     fontWeight: '600',
@@ -765,6 +852,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
     color: colors.textSecondary,
     fontSize: 12,
+    minWidth: 0,
   },
   switchContainer: {
     alignItems: 'center',
@@ -814,9 +902,11 @@ const styles = StyleSheet.create({
   detailLabel: {
     color: colors.textSecondary,
     fontSize: 13,
+    flexShrink: 0,
   },
   detailValue: {
     flex: 1,
+    minWidth: 0,
     color: colors.textPrimary,
     fontSize: 13,
     fontWeight: '600',
@@ -893,26 +983,33 @@ const styles = StyleSheet.create({
   },
   tokenPickerIcon: {
     marginRight: 12,
+    flexShrink: 0,
   },
   tokenPickerInfo: {
     flex: 1,
+    minWidth: 0,
   },
   tokenPickerName: {
     color: colors.textPrimary,
     fontSize: 16,
     fontWeight: '600',
+    minWidth: 0,
   },
   tokenPickerSymbol: {
     color: colors.textSecondary,
     fontSize: 13,
     marginTop: 2,
+    minWidth: 0,
   },
   tokenPickerBalance: {
     marginRight: 12,
+    maxWidth: 112,
+    flexShrink: 1,
   },
   tokenPickerBalanceText: {
     color: colors.textSecondary,
     fontSize: 14,
+    textAlign: 'right',
   },
   tokenPickerSeparator: {
     height: 8,
