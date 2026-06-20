@@ -95,4 +95,38 @@ describe('dappPermissionStore', () => {
     const { useDAppPermissionStore } = await loadStore();
     expect(useDAppPermissionStore.getState().grants).toEqual({});
   });
+
+  it('touches persistent grants without persisting non-public fields', async () => {
+    const { useDAppPermissionStore } = await loadStore();
+
+    useDAppPermissionStore.getState().upsertGrant({
+      version: 1,
+      origin: 'https://persistent.example',
+      hostname: 'persistent.example',
+      accounts: ['1walletAddrA'],
+      capabilities: [{ method: 'getAccounts', caveats: [] }],
+      lifetime: 'persistent',
+      riskAtGrant: 'notice',
+      createdAt: NOW,
+      lastUsedAt: NOW,
+    });
+
+    useDAppPermissionStore.getState().touchGrantLastUsed('https://persistent.example', NOW + 5000);
+
+    await flushPersistedWrites();
+    const stored = JSON.parse((await AsyncStorage.getItem(STORAGE_KEY)) ?? '{}');
+    const persistedGrant = stored.state?.grants?.['https://persistent.example'];
+
+    expect(persistedGrant).toEqual({
+      version: 1,
+      origin: 'https://persistent.example',
+      hostname: 'persistent.example',
+      accounts: ['1walletAddrA'],
+      capabilities: [{ method: 'getAccounts', caveats: [] }],
+      lifetime: 'persistent',
+      riskAtGrant: 'notice',
+      createdAt: NOW,
+      lastUsedAt: NOW + 5000,
+    });
+  });
 });

@@ -16,6 +16,7 @@ interface DAppPermissionState {
   grants: Record<string, DAppPermissionGrant>;
   hasHydrated: boolean;
   upsertGrant: (grant: DAppPermissionGrant) => void;
+  touchGrantLastUsed: (origin: string, lastUsedAt: number) => void;
   revokeGrant: (origin: string) => void;
   revokeAllGrants: () => void;
   setHasHydrated: (hydrated: boolean) => void;
@@ -115,6 +116,29 @@ export const useDAppPermissionStore = create<DAppPermissionState>()(
             { version: state.version, grants: state.grants },
             sanitized
           ).grants;
+          syncPersistentGrants(grants);
+          return { grants };
+        });
+      },
+
+      touchGrantLastUsed: (origin, lastUsedAt) => {
+        set((state) => {
+          const normalized = normalizeGrantOrigin(origin);
+          if (!normalized) {
+            return state;
+          }
+
+          const existingGrant = state.grants[normalized];
+          const sanitizedGrant = sanitizeGrant(existingGrant);
+          if (!sanitizedGrant) {
+            return state;
+          }
+
+          const grants = addGrant(
+            { version: state.version, grants: state.grants },
+            { ...sanitizedGrant, lastUsedAt }
+          ).grants;
+
           syncPersistentGrants(grants);
           return { grants };
         });

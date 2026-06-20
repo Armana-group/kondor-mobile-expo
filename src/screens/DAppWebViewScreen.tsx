@@ -135,10 +135,12 @@ export const DAppWebViewScreen = () => {
   const { accounts, address, getActiveAccount, activeAccountId } = useWalletStore();
   const permissionStoreHydrated = useDAppPermissionStore((state) => state.hasHydrated);
   const upsertGrant = useDAppPermissionStore((state) => state.upsertGrant);
+  const touchGrantLastUsed = useDAppPermissionStore((state) => state.touchGrantLastUsed);
 
   // Provider for blockchain queries
   const providerRef = useRef<Provider | null>(null);
   const currentOriginRef = useRef<string | null>(null);
+  const pendingConnectionRequestRef = useRef<PendingConnectionRequest | null>(null);
   const currentOriginSecurity = inspectDAppOrigin(getOriginFromUrl(currentUrl));
 
   if (!providerRef.current) {
@@ -397,7 +399,9 @@ export const DAppWebViewScreen = () => {
 
     setSelectedAddresses(defaultSelection);
     setRememberSite(true);
-    setPendingConnectionRequest({ id, origin, security });
+    const request = { id, origin, security };
+    pendingConnectionRequestRef.current = request;
+    setPendingConnectionRequest(request);
     setShowConnectionModal(true);
   }, [accounts, address, getActiveAccount]);
 
@@ -430,6 +434,7 @@ export const DAppWebViewScreen = () => {
     );
 
     if (resolution.canAutoConnect) {
+      touchGrantLastUsed(origin, Date.now());
       setIsConnected(true);
       return buildConnectedAccounts(resolution.accounts);
     }
@@ -439,10 +444,34 @@ export const DAppWebViewScreen = () => {
     return new Promise(() => {
       // The modal handlers send the actual response.
     });
-  }, [accounts, app.url, buildConnectedAccounts, currentUrl, openConnectionApproval, permissionStoreHydrated]);
+  }, [
+    accounts,
+    app.url,
+    buildConnectedAccounts,
+    currentUrl,
+    openConnectionApproval,
+    permissionStoreHydrated,
+    touchGrantLastUsed,
+  ]);
 
   const handleApproveConnection = useCallback(() => {
     if (!pendingConnectionRequest) {
+      return;
+    }
+
+    const livePendingRequest = pendingConnectionRequestRef.current;
+    if (!livePendingRequest || livePendingRequest.id !== pendingConnectionRequest.id) {
+      return;
+    }
+    if (currentOriginRef.current !== pendingConnectionRequest.origin) {
+      sendResponse({
+        type: 'kondor-response',
+        id: pendingConnectionRequest.id,
+        error: 'Navigation changed before account access was approved',
+      });
+      pendingConnectionRequestRef.current = null;
+      setShowConnectionModal(false);
+      setPendingConnectionRequest(null);
       return;
     }
 
@@ -473,6 +502,7 @@ export const DAppWebViewScreen = () => {
       id: pendingConnectionRequest.id,
       result: selectedAccounts,
     });
+    pendingConnectionRequestRef.current = null;
     setShowConnectionModal(false);
     setPendingConnectionRequest(null);
   }, [buildConnectedAccounts, pendingConnectionRequest, rememberSite, selectedAddresses, sendResponse, upsertGrant]);
@@ -486,6 +516,7 @@ export const DAppWebViewScreen = () => {
       });
     }
 
+    pendingConnectionRequestRef.current = null;
     setShowConnectionModal(false);
     setPendingConnectionRequest(null);
   }, [pendingConnectionRequest, sendResponse]);
@@ -551,6 +582,17 @@ export const DAppWebViewScreen = () => {
   const handleNavigationStateChange = useCallback((navState: WebViewNavigation) => {
     const nextOrigin = getOriginFromUrl(navState.url);
     if (nextOrigin !== currentOriginRef.current) {
+      const pendingRequestOnOrigin = pendingConnectionRequestRef.current;
+      if (pendingRequestOnOrigin && pendingRequestOnOrigin.origin !== nextOrigin) {
+        sendResponse({
+          type: 'kondor-response',
+          id: pendingRequestOnOrigin.id,
+          error: 'Navigation changed before account access was approved',
+        });
+        pendingConnectionRequestRef.current = null;
+        setShowConnectionModal(false);
+        setPendingConnectionRequest(null);
+      }
       currentOriginRef.current = nextOrigin;
       setIsConnected(false);
     }
@@ -559,7 +601,7 @@ export const DAppWebViewScreen = () => {
     setCanGoForward(navState.canGoForward);
     setCurrentUrl(navState.url);
     setShowOriginWarning(inspectDAppOrigin(nextOrigin).level !== 'trusted');
-  }, []);
+  }, [sendResponse]);
 
   // Block HTTP navigations - only allow HTTPS
   const handleShouldStartLoad = useCallback((request: ShouldStartLoadRequest): boolean => {
