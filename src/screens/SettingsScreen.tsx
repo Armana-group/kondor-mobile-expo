@@ -12,6 +12,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { useWalletStore } from '../stores/walletStore';
+import { useNetworkStore } from '../stores/networkStore';
 import { HapticFeedback } from '../lib/haptics';
 import { copyWithAutoClear } from '../lib/clipboard';
 import { sanitizeErrorForUser } from '../lib/logger';
@@ -20,7 +21,9 @@ import colors from '../theme/colors';
 export const SettingsScreen = () => {
   const navigation = useNavigation<any>();
   const { getMnemonic, getPrivateKey, clearWallet } = useWalletStore();
+  const networkMode = useNetworkStore((state) => state.mode);
   const [isLoading, setIsLoading] = useState(false);
+  const networkLabel = networkMode === 'harbinger' ? 'Harbinger' : 'Mainnet';
 
   const handleViewSeedPhrase = async () => {
     Alert.alert(
@@ -177,6 +180,21 @@ export const SettingsScreen = () => {
 
           {/* Network Section */}
           <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Assets</Text>
+
+            <TouchableOpacity
+              style={styles.settingItem}
+              onPress={() => navigation.navigate('TokenManagement')}
+            >
+              <View style={styles.settingItemLeft}>
+                <Ionicons name="logo-bitcoin" size={22} color={colors.purple} />
+                <Text style={styles.settingItemText}>Manage Tokens</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.section}>
             <Text style={styles.sectionTitle}>Network</Text>
 
             <View style={styles.settingItem}>
@@ -184,7 +202,7 @@ export const SettingsScreen = () => {
                 <Ionicons name="globe-outline" size={22} color={colors.purple} />
                 <Text style={styles.settingItemText}>Network</Text>
               </View>
-              <Text style={styles.settingItemValue}>Mainnet</Text>
+              <Text style={styles.settingItemValue}>{networkLabel}</Text>
             </View>
           </View>
 

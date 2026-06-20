@@ -25,15 +25,22 @@ import {
   isTokenScopeLoading,
 } from '../stores/tokenStore';
 import { useNetworkStore } from '../stores/networkStore';
+import { tokenPriceService } from '../lib/tokenPrices';
 import { truncateAddress, formatKoinBalance } from '../lib/utils';
 import { HapticFeedback } from '../lib/haptics';
 import { koinosLogger, sanitizeErrorForUser } from '../lib/logger';
 import colors from '../theme/colors';
 
+const USD_FORMATTER = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  maximumFractionDigits: 2,
+});
+
 export const HomeScreen = () => {
   const navigation = useNavigation<any>();
   const { address, updateBalance, accounts, getActiveAccount } = useWalletStore();
-  const { getBalance, getMana, initialize, reset: resetKoinos } = useKoinosStore();
+  const { provider, getBalance, getMana, initialize, reset: resetKoinos } = useKoinosStore();
   const {
     tokens,
     isLoading: tokensLoading,
@@ -47,6 +54,7 @@ export const HomeScreen = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [manaPercentage, setManaPercentage] = useState<number>(0);
   const [showAccountSwitcher, setShowAccountSwitcher] = useState(false);
+  const [portfolioValueUsd, setPortfolioValueUsd] = useState<number | null>(null);
   const initializedScopeRef = useRef<string | null>(null);
 
   // Get active account info
@@ -66,6 +74,49 @@ export const HomeScreen = () => {
     cacheKey: tokenCacheKey,
     isLoading: tokensLoading,
   });
+
+  const refreshPortfolioValue = useCallback(async (requestScope: string) => {
+    const currentProvider = useKoinosStore.getState().provider;
+    const tokenState = useTokenStore.getState();
+
+    if (!currentProvider || !address || !hasHydrated) {
+      if (initializedScopeRef.current === requestScope) {
+        setPortfolioValueUsd(null);
+      }
+      return;
+    }
+
+    const scopedVisibleTokens = getScopedTokens({
+      hasHydrated: true,
+      networkMode,
+      address,
+      cacheKey: tokenState.cacheKey,
+      tokens: tokenState.tokens,
+    });
+
+    if (scopedVisibleTokens.length === 0) {
+      if (initializedScopeRef.current === requestScope) {
+        setPortfolioValueUsd(null);
+      }
+      return;
+    }
+
+    try {
+      const result = await tokenPriceService.getPortfolioValue({
+        provider: currentProvider,
+        networkMode,
+        tokens: scopedVisibleTokens,
+      });
+
+      if (initializedScopeRef.current === requestScope) {
+        setPortfolioValueUsd(result.totalUsd);
+      }
+    } catch (_error) {
+      if (initializedScopeRef.current === requestScope) {
+        setPortfolioValueUsd(null);
+      }
+    }
+  }, [address, hasHydrated, networkMode]);
 
   // Core balance fetching logic (silent - no spinner)
   const fetchBalances = useCallback(async () => {
@@ -101,10 +152,12 @@ export const HomeScreen = () => {
       } catch (manaError: any) {
         koinosLogger.error('Mana fetch error:', manaError);
       }
+
+      await refreshPortfolioValue(requestScope);
     } catch (error: any) {
       koinosLogger.error('Balance fetch error:', error);
     }
-  }, [address, hasHydrated, networkMode, refreshBalances, getBalance, updateBalance, getMana]);
+  }, [address, hasHydrated, networkMode, refreshBalances, getBalance, updateBalance, getMana, refreshPortfolioValue]);
 
   // Initialize on first load (silent)
   const initializeAndLoadBalance = useCallback(async () => {
@@ -135,11 +188,43 @@ export const HomeScreen = () => {
   useEffect(() => {
     if (!initializationScope) {
       initializedScopeRef.current = null;
+      setPortfolioValueUsd(null);
       return;
     }
 
     initializeAndLoadBalance();
   }, [initializationScope, initializeAndLoadBalance]);
+
+  useEffect(() => {
+    if (!initializationScope || !provider || visibleTokens.length === 0) {
+      setPortfolioValueUsd(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    void tokenPriceService.getPortfolioValue({
+      provider,
+      networkMode,
+      tokens: visibleTokens,
+    }).then((result) => {
+      if (cancelled) {
+        return;
+      }
+
+      setPortfolioValueUsd(result.totalUsd);
+    }).catch(() => {
+      if (cancelled) {
+        return;
+      }
+
+      setPortfolioValueUsd(null);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initializationScope, networkMode, provider, visibleTokens]);
 
   // Manual pull-to-refresh (with spinner)
   const handleManualRefresh = async () => {
@@ -276,6 +361,11 @@ export const HomeScreen = () => {
           <Text style={styles.portfolioValue}>
             {formatKoinBalance(koinBalance)} KOIN
           </Text>
+          {portfolioValueUsd != null && (
+            <Text style={styles.portfolioUsdValue}>
+              {USD_FORMATTER.format(portfolioValueUsd)}
+            </Text>
+          )}
 
           {/* Mana Bar */}
           <View style={styles.manaContainer}>
@@ -490,7 +580,12 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: 'bold',
     color: colors.textPrimary,
+  },
+  portfolioUsdValue: {
+    marginTop: 6,
     marginBottom: 20,
+    fontSize: 15,
+    color: colors.textSecondary,
   },
   manaContainer: {
     paddingTop: 16,

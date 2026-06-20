@@ -10,6 +10,7 @@ import { Provider, utils } from 'koilib';
 import * as protobuf from 'protobufjs/minimal';
 import { tokenLogger as log } from '../lib/logger';
 import { getActiveNetworkConfig, type NetworkMode } from './networkStore';
+import { useCustomTokenStore, type CustomTokenDefinition } from './customTokenStore';
 
 // Token metadata interface
 export interface Token {
@@ -20,6 +21,8 @@ export interface Token {
   icon: string;
   balance: string;
   isLoading: boolean;
+  isCustom?: boolean;
+  isHidden?: boolean;
   error?: string;
 }
 
@@ -35,6 +38,7 @@ interface KoinDXToken {
 
 interface TokenState {
   tokens: Token[];
+  allTokens: Token[];
   isLoading: boolean;
   isInitialized: boolean;
   lastFetch: number;
@@ -45,6 +49,7 @@ interface TokenState {
   initialize: (address: string) => Promise<void>;
   refreshBalances: (address: string) => Promise<void>;
   refreshSingleBalance: (address: string, contractId: string) => Promise<void>;
+  syncManagedTokens: (address?: string | null) => Promise<void>;
   getTokenByContractId: (contractId: string) => Token | undefined;
   getTokenBySymbol: (symbol: string) => Token | undefined;
   reset: () => void;
@@ -207,6 +212,81 @@ export function buildTokensForNetwork(
   return Array.from(tokenMap.values());
 }
 
+function getVisibleTokens(tokens: Token[]): Token[] {
+  return tokens.filter((token) => !token.isHidden);
+}
+
+function toCustomToken(customToken: CustomTokenDefinition, existingToken?: Token): Token {
+  return {
+    contractId: customToken.contractId,
+    symbol: customToken.symbol,
+    name: customToken.name,
+    decimals: customToken.decimals,
+    icon: customToken.icon || '',
+    balance: existingToken?.balance || '0',
+    isLoading: existingToken?.isLoading || false,
+    error: existingToken?.error,
+    isCustom: true,
+    isHidden: false,
+  };
+}
+
+interface BuildManagedTokensParams {
+  systemTokens: Token[];
+  customTokens: CustomTokenDefinition[];
+  hiddenSystemTokenIds: string[];
+  existingTokens?: Token[];
+}
+
+export function buildManagedTokens({
+  systemTokens,
+  customTokens,
+  hiddenSystemTokenIds,
+  existingTokens = [],
+}: BuildManagedTokensParams): Token[] {
+  const existingTokenMap = new Map(existingTokens.map((token) => [token.contractId, token]));
+  const managedTokens: Token[] = [];
+  const seenContractIds = new Set<string>();
+  const hiddenSystemTokenIdSet = new Set(hiddenSystemTokenIds);
+
+  for (const systemToken of systemTokens) {
+    const existingToken = existingTokenMap.get(systemToken.contractId);
+    managedTokens.push({
+      ...systemToken,
+      balance: existingToken?.balance || systemToken.balance,
+      isLoading: existingToken?.isLoading || systemToken.isLoading,
+      error: existingToken?.error,
+      isCustom: false,
+      isHidden: hiddenSystemTokenIdSet.has(systemToken.contractId),
+    });
+    seenContractIds.add(systemToken.contractId);
+  }
+
+  for (const customToken of customTokens) {
+    if (seenContractIds.has(customToken.contractId)) {
+      continue;
+    }
+
+    managedTokens.push(
+      toCustomToken(customToken, existingTokenMap.get(customToken.contractId))
+    );
+    seenContractIds.add(customToken.contractId);
+  }
+
+  return managedTokens;
+}
+
+function getManagedTokenState(networkMode: NetworkMode): {
+  customTokens: CustomTokenDefinition[];
+  hiddenSystemTokenIds: string[];
+} {
+  const customTokenState = useCustomTokenStore.getState();
+  return {
+    customTokens: customTokenState.getCustomTokens(networkMode),
+    hiddenSystemTokenIds: customTokenState.getHiddenSystemTokenIds(networkMode),
+  };
+}
+
 /**
  * Encode balanceOf arguments using protobufjs
  */
@@ -312,6 +392,7 @@ export const useTokenStore = create<TokenState>()(
   persist(
     (set, get) => ({
       tokens: [],
+      allTokens: [],
       isLoading: false,
       isInitialized: false,
       lastFetch: 0,
@@ -326,6 +407,7 @@ export const useTokenStore = create<TokenState>()(
         if (cacheKey !== scope.cacheKey) {
           set({
             tokens: [],
+            allTokens: [],
             isInitialized: false,
             lastFetch: 0,
             cacheKey: scope.cacheKey,
@@ -347,15 +429,25 @@ export const useTokenStore = create<TokenState>()(
         try {
           // Fetch token list from KoinDX
           const koindxTokens = await fetchKoinDXTokenList(scope.network);
-          const tokens = buildTokensForNetwork(scope.network, koindxTokens);
-          log.debug(' Built token list with', tokens.length, 'tokens');
+          const systemTokens = buildTokensForNetwork(scope.network, koindxTokens);
+          const managedTokenState = getManagedTokenState(
+            scope.network.isTestnet ? 'harbinger' : 'mainnet'
+          );
+          const allTokens = buildManagedTokens({
+            systemTokens,
+            customTokens: managedTokenState.customTokens,
+            hiddenSystemTokenIds: managedTokenState.hiddenSystemTokenIds,
+            existingTokens: get().allTokens,
+          });
+          log.debug(' Built token list with', allTokens.length, 'tokens');
 
           if (get().cacheKey !== scope.cacheKey) {
             return;
           }
 
           set({
-            tokens,
+            tokens: getVisibleTokens(allTokens),
+            allTokens,
             isInitialized: true,
             lastFetch: now,
             isLoading: false,
@@ -375,11 +467,12 @@ export const useTokenStore = create<TokenState>()(
 
       refreshBalances: async (address: string) => {
         const scope = getTokenScope(address);
-        const { tokens, cacheKey } = get();
+        const { allTokens, cacheKey } = get();
 
         if (cacheKey !== scope.cacheKey) {
           set({
             tokens: [],
+            allTokens: [],
             isInitialized: false,
             lastFetch: 0,
             cacheKey: scope.cacheKey,
@@ -388,26 +481,27 @@ export const useTokenStore = create<TokenState>()(
           return;
         }
 
-        if (tokens.length === 0) {
+        if (allTokens.length === 0) {
           log.debug(' No tokens to refresh');
           return;
         }
 
-        log.debug(' Refreshing balances for', tokens.length, 'tokens');
+        log.debug(' Refreshing balances for', allTokens.length, 'tokens');
 
         const provider = new Provider(scope.network.rpcNodes);
 
         // Mark all tokens as loading
         set({
-          tokens: tokens.map((t) => ({ ...t, isLoading: true })),
+          allTokens: allTokens.map((token) => ({ ...token, isLoading: true })),
+          tokens: getVisibleTokens(allTokens.map((token) => ({ ...token, isLoading: true }))),
         });
 
         // Fetch balances in parallel (batch of 5 to avoid rate limiting)
         const batchSize = 5;
-        const updatedTokens = [...tokens];
+        const updatedTokens = [...allTokens];
 
-        for (let i = 0; i < tokens.length; i += batchSize) {
-          const batch = tokens.slice(i, i + batchSize);
+        for (let i = 0; i < allTokens.length; i += batchSize) {
+          const batch = allTokens.slice(i, i + batchSize);
 
           await Promise.all(
             batch.map(async (token, batchIndex) => {
@@ -441,7 +535,10 @@ export const useTokenStore = create<TokenState>()(
           if (get().cacheKey !== scope.cacheKey) {
             return;
           }
-          set({ tokens: [...updatedTokens] });
+          set({
+            allTokens: [...updatedTokens],
+            tokens: getVisibleTokens(updatedTokens),
+          });
         }
 
         log.debug(' Finished refreshing balances');
@@ -449,26 +546,29 @@ export const useTokenStore = create<TokenState>()(
 
       refreshSingleBalance: async (address: string, contractId: string) => {
         const scope = getTokenScope(address);
-        const { tokens, cacheKey } = get();
+        const { allTokens, cacheKey } = get();
 
         if (cacheKey !== scope.cacheKey) {
           return;
         }
 
-        const tokenIndex = tokens.findIndex((t) => t.contractId === contractId);
+        const tokenIndex = allTokens.findIndex((token) => token.contractId === contractId);
 
         if (tokenIndex === -1) {
           log.debug(' Token not found:', contractId);
           return;
         }
 
-        const token = tokens[tokenIndex];
+        const token = allTokens[tokenIndex];
         const provider = new Provider(scope.network.rpcNodes);
 
         // Mark token as loading
-        const updatedTokens = [...tokens];
+        const updatedTokens = [...allTokens];
         updatedTokens[tokenIndex] = { ...token, isLoading: true };
-        set({ tokens: updatedTokens });
+        set({
+          allTokens: updatedTokens,
+          tokens: getVisibleTokens(updatedTokens),
+        });
 
         try {
           const balance = await getTokenBalance(
@@ -487,7 +587,10 @@ export const useTokenStore = create<TokenState>()(
           if (get().cacheKey !== scope.cacheKey) {
             return;
           }
-          set({ tokens: updatedTokens });
+          set({
+            allTokens: updatedTokens,
+            tokens: getVisibleTokens(updatedTokens),
+          });
         } catch (error: any) {
           log.error(`Error refreshing ${token.symbol}:`, error);
           updatedTokens[tokenIndex] = {
@@ -498,21 +601,59 @@ export const useTokenStore = create<TokenState>()(
           if (get().cacheKey !== scope.cacheKey) {
             return;
           }
-          set({ tokens: updatedTokens });
+          set({
+            allTokens: updatedTokens,
+            tokens: getVisibleTokens(updatedTokens),
+          });
+        }
+      },
+
+      syncManagedTokens: async (address) => {
+        const activeNetwork = getActiveNetworkConfig();
+        const networkMode: NetworkMode = activeNetwork.isTestnet ? 'harbinger' : 'mainnet';
+        const { allTokens, cacheKey } = get();
+
+        if (address) {
+          const scope = getTokenScope(address);
+          if (cacheKey !== scope.cacheKey) {
+            return;
+          }
+        }
+
+        const managedTokenState = getManagedTokenState(networkMode);
+        const systemTokens = allTokens.filter((token) => !token.isCustom).map((token) => ({
+          ...token,
+          isHidden: false,
+        }));
+        const nextAllTokens = buildManagedTokens({
+          systemTokens,
+          customTokens: managedTokenState.customTokens,
+          hiddenSystemTokenIds: managedTokenState.hiddenSystemTokenIds,
+          existingTokens: allTokens,
+        });
+
+        set({
+          allTokens: nextAllTokens,
+          tokens: getVisibleTokens(nextAllTokens),
+        });
+
+        if (address) {
+          await get().refreshBalances(address);
         }
       },
 
       getTokenByContractId: (contractId: string) => {
-        return get().tokens.find((t) => t.contractId === contractId);
+        return get().allTokens.find((token) => token.contractId === contractId);
       },
 
       getTokenBySymbol: (symbol: string) => {
-        return get().tokens.find((t) => t.symbol.toLowerCase() === symbol.toLowerCase());
+        return get().allTokens.find((token) => token.symbol.toLowerCase() === symbol.toLowerCase());
       },
 
       reset: () => {
         set({
           tokens: [],
+          allTokens: [],
           isLoading: false,
           isInitialized: false,
           lastFetch: 0,

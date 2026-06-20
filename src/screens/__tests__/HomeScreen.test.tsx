@@ -21,6 +21,20 @@ const mockGetMana = jest.fn(async () => ({
   percentage: 0,
   availablePercentage: 50,
 }));
+const mockGetPortfolioValue = jest.fn<
+  Promise<{
+    totalUsd: number | null;
+    pricedTokenCount: number;
+    pricesByContractId: Record<string, number>;
+    unavailableContractIds: string[];
+  }>,
+  [unknown]
+>(async () => ({
+  totalUsd: null,
+  pricedTokenCount: 0,
+  pricesByContractId: {},
+  unavailableContractIds: [],
+}));
 const mockAddress = '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa';
 
 let mockNetworkState = {
@@ -68,17 +82,30 @@ jest.mock('../../stores/walletStore', () => ({
   }),
 }));
 
-jest.mock('../../stores/koinosStore', () => ({
-  useKoinosStore: () => ({
+jest.mock('../../stores/koinosStore', () => {
+  const useKoinosStore = () => ({
+    provider: {},
     getBalance: mockGetBalance,
     getMana: mockGetMana,
     initialize: mockInitializeKoinos,
     reset: mockResetKoinos,
-  }),
+  });
+
+  (useKoinosStore as any).getState = () => ({
+    provider: {},
+  });
+
+  return { useKoinosStore };
+});
+
+jest.mock('../../lib/tokenPrices', () => ({
+  tokenPriceService: {
+    getPortfolioValue: (args: unknown) => mockGetPortfolioValue(args),
+  },
 }));
 
-jest.mock('../../stores/tokenStore', () => ({
-  getScopedTokens: ({
+jest.mock('../../stores/tokenStore', () => {
+  const getScopedTokens = ({
     hasHydrated,
     networkMode,
     address,
@@ -96,8 +123,9 @@ jest.mock('../../stores/tokenStore', () => ({
     }
 
     return cacheKey === `${networkMode}:${address}` ? tokens : [];
-  },
-  isTokenScopeLoading: ({
+  };
+
+  const isTokenScopeLoading = ({
     hasHydrated,
     networkMode,
     address,
@@ -119,14 +147,25 @@ jest.mock('../../stores/tokenStore', () => ({
     }
 
     return isLoading || cacheKey !== `${networkMode}:${address}`;
-  },
-  useTokenStore: () => ({
+  };
+
+  const useTokenStore = () => ({
     ...mockTokenState,
     initialize: mockInitializeTokens,
     refreshBalances: mockRefreshBalances,
     reset: mockResetTokens,
-  }),
-}));
+  });
+
+  (useTokenStore as any).getState = () => ({
+    ...mockTokenState,
+  });
+
+  return {
+    getScopedTokens,
+    isTokenScopeLoading,
+    useTokenStore,
+  };
+});
 
 jest.mock('../../stores/networkStore', () => ({
   useNetworkStore: (selector?: (state: typeof mockNetworkState) => unknown) =>
@@ -157,6 +196,12 @@ describe('HomeScreen network initialization', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
+    mockGetPortfolioValue.mockResolvedValue({
+      totalUsd: null,
+      pricedTokenCount: 0,
+      pricesByContractId: {},
+      unavailableContractIds: [],
+    });
     mockNetworkState = {
       mode: 'mainnet',
       hasHydrated: false,
@@ -192,6 +237,7 @@ describe('HomeScreen network initialization', () => {
     await act(async () => {
       renderer = TestRenderer.create(<HomeScreen />);
     });
+    await flushEffects();
     await flushEffects();
 
     expect(mockInitializeKoinos).not.toHaveBeenCalled();
@@ -330,6 +376,7 @@ describe('HomeScreen network initialization', () => {
       renderer = TestRenderer.create(<HomeScreen />);
     });
     await flushEffects();
+    await flushEffects();
 
     expect(mockGetMana).toHaveBeenCalledTimes(1);
 
@@ -365,5 +412,62 @@ describe('HomeScreen network initialization', () => {
     const renderedText = collectRenderedText(renderer!);
     expect(renderedText).toContain('70.0%');
     expect(renderedText).not.toContain('12.5%');
+  });
+
+  it('shows portfolio USD only when price data is available', async () => {
+    mockNetworkState = {
+      mode: 'mainnet',
+      hasHydrated: true,
+    };
+    mockTokenState = {
+      tokens: [
+        {
+          contractId: 'koin-contract',
+          symbol: 'KOIN',
+          name: 'Koinos',
+          decimals: 8,
+          icon: '',
+          balance: '12.34000000',
+          isLoading: false,
+        },
+      ],
+      isLoading: false,
+      cacheKey: `mainnet:${mockAddress}`,
+    };
+    mockGetPortfolioValue.mockResolvedValue({
+      totalUsd: 3.14,
+      pricedTokenCount: 1,
+      pricesByContractId: { 'koin-contract': 0.2544 },
+      unavailableContractIds: [],
+    });
+
+    const { HomeScreen } = require('../HomeScreen');
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<HomeScreen />);
+    });
+    await flushEffects();
+
+    expect(collectRenderedText(renderer!).join(' ')).toContain('$3.14');
+
+    await act(async () => {
+      renderer!.unmount();
+    });
+
+    mockGetPortfolioValue.mockResolvedValue({
+      totalUsd: null,
+      pricedTokenCount: 0,
+      pricesByContractId: {},
+      unavailableContractIds: [],
+    });
+
+    await act(async () => {
+      renderer = TestRenderer.create(<HomeScreen />);
+    });
+    await flushEffects();
+
+    const renderedText = collectRenderedText(renderer!).join(' ');
+    expect(renderedText).not.toContain('$0.00');
   });
 });
