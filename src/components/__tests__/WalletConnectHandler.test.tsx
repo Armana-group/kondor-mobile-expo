@@ -21,6 +21,7 @@ const mockGetSessionTopicValidationForActiveNetwork = jest.fn<
 }));
 
 let lastTransactionApprovalModalProps: any = null;
+let lastSessionApprovalModalProps: any = null;
 
 let mockNetworkState = {
   mode: 'mainnet',
@@ -58,7 +59,10 @@ jest.mock('../../stores/walletConnectStore', () => ({
 }));
 
 jest.mock('../../components/WCSessionApprovalModal', () => ({
-  WCSessionApprovalModal: () => null,
+  WCSessionApprovalModal: (props: any) => {
+    lastSessionApprovalModalProps = props;
+    return null;
+  },
 }));
 
 jest.mock('../../components/TransactionApprovalModal', () => ({
@@ -121,6 +125,7 @@ describe('WalletConnectHandler network reconciliation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     lastTransactionApprovalModalProps = null;
+    lastSessionApprovalModalProps = null;
     mockNetworkState = {
       mode: 'mainnet',
       hasHydrated: true,
@@ -257,5 +262,43 @@ describe('WalletConnectHandler network reconciliation', () => {
       expect.stringMatching(/active network/i)
     );
     expect(lastTransactionApprovalModalProps?.visible).toBe(false);
+  });
+
+  it('keeps session approval hidden until hydration completes even when a proposal is pending', async () => {
+    mockNetworkState = {
+      mode: 'harbinger',
+      hasHydrated: false,
+    };
+    mockWalletConnectState = {
+      ...mockWalletConnectState,
+      pendingProposal: {
+        id: 44,
+        params: {
+          requiredNamespaces: {
+            koinos: {
+              chains: ['koinos:EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3e'],
+              methods: [],
+              events: [],
+            },
+          },
+        },
+        peerMeta: {
+          name: 'Pending dApp',
+          description: 'Pending approval',
+          url: 'https://pending.example.com',
+          icons: [],
+        },
+      },
+    };
+
+    const { WalletConnectHandler } = require('../WalletConnectHandler');
+
+    await act(async () => {
+      TestRenderer.create(<WalletConnectHandler />);
+    });
+    await flushEffects();
+
+    expect(lastSessionApprovalModalProps?.visible).toBe(false);
+    expect(mockApproveSession).not.toHaveBeenCalled();
   });
 });

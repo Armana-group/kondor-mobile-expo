@@ -350,3 +350,63 @@ tsc exit code 0
 ### Remaining concerns
 
 - `reconcileSessionsForActiveNetwork()` still owns the bulk session disconnect path after hydration. This fix keeps that behavior, but request gating now blocks stale-topic approval UI even if reconciliation resolves a moment later.
+
+---
+
+## Fourth fix pass after Important Task 2 follow-up review
+
+### Findings addressed
+
+- WalletConnect session approval UI now stays hidden until `useNetworkStore.hasHydrated` is true, even if a proposal arrives before hydration.
+- WalletConnect store approval now fails closed before hydration instead of approving namespaces against the temporary mainnet fallback.
+- Once hydrated, WalletConnect session approval still builds namespaces from the active app-wide network, including Harbinger.
+- Native swap provider acquisition now reinitializes against the active network when the cached provider chain no longer matches, so quote/execution no longer depend on `HomeScreen` side effects to refresh providers.
+
+### Additional regression coverage
+
+- Extended `src/components/__tests__/WalletConnectHandler.test.tsx`
+- Extended `src/stores/__tests__/walletConnectStore.test.ts`
+- Added `src/hooks/__tests__/useNativeSwap.provider.test.ts`
+
+### RED
+
+Command:
+
+```bash
+npm test -- src/components/__tests__/WalletConnectHandler.test.tsx src/stores/__tests__/walletConnectStore.test.ts src/hooks/__tests__/useNativeSwap.provider.test.ts --runInBand
+```
+
+Key failures before the fix:
+
+```text
+TypeError: ensureProviderForActiveNetwork is not a function
+Expected: false
+Received: true
+Received promise resolved instead of rejected
+Expected buildApprovedNamespaces to be called with the hydrated Harbinger namespace
+```
+
+Those failures mapped directly to the remaining review findings: pre-hydration WalletConnect approval was still possible and native swap still reused a stale provider after a network change.
+
+### GREEN
+
+Focused regression suite:
+
+```bash
+npm test -- src/components/__tests__/WalletConnectHandler.test.tsx src/stores/__tests__/walletConnectStore.test.ts src/hooks/__tests__/useNativeSwap.provider.test.ts --runInBand
+```
+
+Result:
+
+```text
+PASS src/hooks/__tests__/useNativeSwap.provider.test.ts
+PASS src/components/__tests__/WalletConnectHandler.test.tsx
+PASS src/stores/__tests__/walletConnectStore.test.ts
+
+Test Suites: 3 passed, 3 total
+Tests:       9 passed, 9 total
+```
+
+### Remaining concerns
+
+- Harbinger swap remains intentionally unsupported for this parity pass. This fix only guarantees the swap hook refreshes provider state against the active network before it decides whether to quote or execute.

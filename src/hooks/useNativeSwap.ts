@@ -462,14 +462,15 @@ function getWalletStoreModule(): WalletStoreModule {
   return require<WalletStoreModule>('../stores/walletStore');
 }
 
-async function ensureProvider(): Promise<Provider> {
+export async function ensureProviderForActiveNetwork(): Promise<Provider> {
   const { useKoinosStore } = getKoinosStoreModule();
-  let { provider, isInitialized, initialize } = useKoinosStore.getState();
-  if (!provider || !isInitialized) {
+  const activeNetwork = getActiveNetworkConfig();
+  let { provider, isInitialized, initialize, networkChainId } = useKoinosStore.getState();
+  if (!provider || !isInitialized || networkChainId !== activeNetwork.chainId) {
     await initialize();
-    ({ provider } = useKoinosStore.getState());
+    ({ provider, networkChainId } = useKoinosStore.getState());
   }
-  if (!provider) {
+  if (!provider || networkChainId !== activeNetwork.chainId) {
     throw new Error('Provider not initialized');
   }
   return provider;
@@ -546,7 +547,7 @@ export function useNativeSwap(): UseNativeSwapResult {
           throw new Error(swapUnavailableMessage);
         }
 
-        const provider = await ensureProvider();
+        const provider = await ensureProviderForActiveNetwork();
         const { inputToken, outputToken, tokens } = latestRef.current;
         if (!inputToken || !outputToken) {
           throw new Error('Select two tokens before quoting');
@@ -587,7 +588,7 @@ export function useNativeSwap(): UseNativeSwapResult {
           throw new Error(invalidReason);
         }
 
-        const provider = await ensureProvider();
+        const provider = await ensureProviderForActiveNetwork();
         const privateKey = await getWalletStoreModule().useWalletStore.getState().getPrivateKey();
         if (!privateKey) {
           throw new Error('Authentication required to swap');

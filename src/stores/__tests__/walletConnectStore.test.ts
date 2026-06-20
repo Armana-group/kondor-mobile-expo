@@ -157,4 +157,104 @@ describe('walletConnectStore network reconciliation', () => {
     expect(useWalletConnectStore.getState().pendingRequest).toBeNull();
     expect(useWalletConnectStore.getState().pendingTransaction).toBeNull();
   });
+
+  it('refuses to approve a session before the active network hydrates', async () => {
+    const { useNetworkStore, useWalletConnectStore } = await loadStores();
+
+    useNetworkStore.setState({ mode: 'harbinger', hasHydrated: false });
+
+    const approveSession = jest.fn(async () => undefined);
+    useWalletConnectStore.setState({
+      _walletKit: {
+        approveSession,
+        getActiveSessions: () => ({}),
+      },
+      pendingProposal: {
+        id: 55,
+        params: {
+          requiredNamespaces: {
+            koinos: {
+              chains: [],
+              methods: [],
+              events: [],
+            },
+          },
+        },
+        peerMeta: {
+          name: 'Pending dApp',
+          description: 'Pending approval',
+          url: 'https://pending.example.com',
+          icons: [],
+        },
+      },
+    });
+
+    await expect(
+      useWalletConnectStore.getState().approveSession('1SessionAddress')
+    ).rejects.toThrow(/finish loading/i);
+
+    expect(approveSession).not.toHaveBeenCalled();
+  });
+
+  it('approves sessions with the hydrated active-network namespace', async () => {
+    const { KOINOS_CHAIN_IDS, useNetworkStore, useWalletConnectStore } = await loadStores();
+    const { buildApprovedNamespaces } = require('@walletconnect/utils');
+
+    useNetworkStore.setState({ mode: 'harbinger', hasHydrated: true });
+
+    const approveSession = jest.fn(async () => undefined);
+    useWalletConnectStore.setState({
+      _walletKit: {
+        approveSession,
+        getActiveSessions: () => ({}),
+      },
+      pendingProposal: {
+        id: 77,
+        params: {
+          requiredNamespaces: {
+            koinos: {
+              chains: [KOINOS_CHAIN_IDS.Harbinger],
+              methods: [],
+              events: [],
+            },
+          },
+        },
+        peerMeta: {
+          name: 'Harbinger dApp',
+          description: 'Harbinger approval',
+          url: 'https://harbinger.example.com',
+          icons: [],
+        },
+      },
+    });
+
+    (buildApprovedNamespaces as jest.Mock).mockReturnValue({
+      koinos: {
+        chains: [KOINOS_CHAIN_IDS.Harbinger],
+        accounts: [`${KOINOS_CHAIN_IDS.Harbinger}:1SessionAddress`],
+      },
+    });
+
+    await useWalletConnectStore.getState().approveSession('1SessionAddress');
+
+    expect(buildApprovedNamespaces).toHaveBeenCalledWith(
+      expect.objectContaining({
+        supportedNamespaces: {
+          koinos: expect.objectContaining({
+            chains: [KOINOS_CHAIN_IDS.Harbinger],
+            accounts: [`${KOINOS_CHAIN_IDS.Harbinger}:1SessionAddress`],
+          }),
+        },
+      })
+    );
+    expect(approveSession).toHaveBeenCalledWith({
+      id: 77,
+      namespaces: {
+        koinos: {
+          chains: [KOINOS_CHAIN_IDS.Harbinger],
+          accounts: [`${KOINOS_CHAIN_IDS.Harbinger}:1SessionAddress`],
+        },
+      },
+    });
+  });
 });

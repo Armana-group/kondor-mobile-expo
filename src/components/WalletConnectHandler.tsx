@@ -249,8 +249,6 @@ export const WalletConnectHandler: React.FC = () => {
     }
   }, [
     getSessionTopicValidationForActiveNetwork,
-    hasHydrated,
-    networkMode,
     pendingRequest,
     rejectRequest,
     respondToRequest,
@@ -261,7 +259,7 @@ export const WalletConnectHandler: React.FC = () => {
     if (pendingRequest) {
       handleGenericRequest();
     }
-  }, [hasHydrated, pendingRequest, handleGenericRequest]);
+  }, [hasHydrated, networkMode, pendingRequest, handleGenericRequest]);
 
   // Handle transaction approval
   const handleApproveTransaction = useCallback(
@@ -320,7 +318,7 @@ export const WalletConnectHandler: React.FC = () => {
     <>
       {/* Session Approval Modal */}
       <WCSessionApprovalModal
-        visible={!!pendingProposal}
+        visible={hasHydrated && !!pendingProposal}
         proposal={pendingProposal}
         walletAddress={address}
         onApprove={handleApproveSession}

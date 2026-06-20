@@ -475,6 +475,10 @@ export const useWalletConnectStore = create<WalletConnectState>()(
           throw new Error('No pending proposal');
         }
 
+        if (!useNetworkStore.getState().hasHydrated) {
+          throw new Error(WALLETCONNECT_NETWORK_NOT_READY_ERROR);
+        }
+
         try {
           wcLogger.debug('Approving session:', pendingProposal.id);
           const activeChainId = getActiveWalletConnectChainId();
