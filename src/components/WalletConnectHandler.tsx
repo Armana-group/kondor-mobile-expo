@@ -5,7 +5,7 @@
  * Should be mounted at the app root to handle incoming requests.
  */
 
-import React, { useEffect, useCallback, useState } from 'react';
+import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import { Provider, Transaction, TransactionJson, utils } from 'koilib';
 import { useWalletStore } from '../stores/walletStore';
@@ -58,6 +58,10 @@ export const WalletConnectHandler: React.FC = () => {
     current: WCTransactionRequest;
   } | null>(null);
   const [signingApproval, setSigningApproval] = useState<{
+    request: DAppMessageSigningRequest;
+    current: WCSigningRequest;
+  } | null>(null);
+  const signingApprovalRef = useRef<{
     request: DAppMessageSigningRequest;
     current: WCSigningRequest;
   } | null>(null);
@@ -144,6 +148,7 @@ export const WalletConnectHandler: React.FC = () => {
 
   useEffect(() => {
     if (!pendingSigningRequest) {
+      signingApprovalRef.current = null;
       setSigningApproval(null);
       return;
     }
@@ -151,11 +156,13 @@ export const WalletConnectHandler: React.FC = () => {
     const validation = getSessionTopicValidationForActiveNetwork(pendingSigningRequest.topic);
 
     if (validation.status === 'defer') {
+      signingApprovalRef.current = null;
       setSigningApproval(null);
       return;
     }
 
     if (validation.status === 'reject') {
+      signingApprovalRef.current = null;
       setSigningApproval(null);
       rejectRequest(pendingSigningRequest.id, pendingSigningRequest.topic, validation.message).catch(
         (error) => {
@@ -165,7 +172,10 @@ export const WalletConnectHandler: React.FC = () => {
       return;
     }
 
-    setSigningApproval({
+    const nextSigningApproval: {
+      request: DAppMessageSigningRequest;
+      current: WCSigningRequest;
+    } = {
       request: {
         signerAddress: pendingSigningRequest.signerAddress,
         kind:
@@ -176,7 +186,9 @@ export const WalletConnectHandler: React.FC = () => {
         hash: pendingSigningRequest.hash,
       },
       current: pendingSigningRequest,
-    });
+    };
+    signingApprovalRef.current = nextSigningApproval;
+    setSigningApproval(nextSigningApproval);
   }, [
     getSessionTopicValidationForActiveNetwork,
     hasHydrated,
@@ -374,17 +386,30 @@ export const WalletConnectHandler: React.FC = () => {
 
   const handleApproveSigningRequest = useCallback(
     async (signature: string | Uint8Array) => {
-      if (!signingApproval) {
+      const approval = signingApprovalRef.current;
+      if (!approval) {
+        return;
+      }
+
+      const livePendingSigningRequest = useWalletConnectStore.getState().pendingSigningRequest;
+      if (
+        !livePendingSigningRequest ||
+        livePendingSigningRequest.id !== approval.current.id ||
+        livePendingSigningRequest.topic !== approval.current.topic
+      ) {
+        signingApprovalRef.current = null;
+        setSigningApproval(null);
         return;
       }
 
       try {
         const result =
-          signingApproval.current.method === KOINOS_METHODS.SignHash
+          approval.current.method === KOINOS_METHODS.SignHash
             ? utils.encodeBase64(signature as Uint8Array)
             : utils.encodeBase64(utils.decodeBase64url(signature as string));
 
-        await respondToRequest(signingApproval.current.id, signingApproval.current.topic, result);
+        await respondToRequest(approval.current.id, approval.current.topic, result);
+        signingApprovalRef.current = null;
         clearPendingSigningRequest();
         setSigningApproval(null);
       } catch (error: any) {
@@ -401,10 +426,12 @@ export const WalletConnectHandler: React.FC = () => {
         return;
       }
 
+      signingApprovalRef.current = null;
+      setSigningApproval(null);
+
       try {
         await rejectRequest(signingApproval.current.id, signingApproval.current.topic, error);
         clearPendingSigningRequest();
-        setSigningApproval(null);
       } catch (err) {
         wcLogger.error('Signing rejection error:', err);
       }

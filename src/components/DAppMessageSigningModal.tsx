@@ -127,6 +127,14 @@ export const DAppMessageSigningModal: React.FC<DAppMessageSigningModalProps> = (
     onReject(request?.kind === 'hash' ? 'User rejected the hash signing request' : 'User rejected the message signing request');
   };
 
+  const handleRequestClose = () => {
+    if (signing) {
+      return;
+    }
+
+    handleReject();
+  };
+
   const handleApprove = async () => {
     if (!request) {
       setError('No signing request is active.');
@@ -170,7 +178,7 @@ export const DAppMessageSigningModal: React.FC<DAppMessageSigningModalProps> = (
       visible={visible}
       animationType="slide"
       presentationStyle="pageSheet"
-      onRequestClose={handleReject}
+      onRequestClose={handleRequestClose}
     >
       <View style={styles.container}>
         <View style={styles.header}>

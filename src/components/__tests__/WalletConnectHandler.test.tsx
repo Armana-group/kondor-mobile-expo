@@ -69,7 +69,13 @@ jest.mock('../../stores/walletConnectStore', () => ({
     'WalletConnect is waiting for the active network to finish loading',
   WALLETCONNECT_SEND_TRANSACTION_UNSUPPORTED_ERROR:
     'WalletConnect transaction broadcasting requires manual approval. Use koinos_signAndSendTransaction instead.',
-  useWalletConnectStore: () => mockWalletConnectState,
+  useWalletConnectStore: Object.assign(
+    (selector?: (state: typeof mockWalletConnectState) => unknown) =>
+      selector ? selector(mockWalletConnectState) : mockWalletConnectState,
+    {
+      getState: () => mockWalletConnectState,
+    }
+  ),
 }));
 
 jest.mock('../../components/WCSessionApprovalModal', () => ({
@@ -529,6 +535,50 @@ describe('WalletConnectHandler network reconciliation', () => {
       })
     );
     expect(mockRejectRequest).not.toHaveBeenCalled();
+  });
+
+  it('does not send a WalletConnect signing success after the request was already rejected', async () => {
+    mockWalletConnectState = {
+      ...mockWalletConnectState,
+      pendingSigningRequest: {
+        id: 43,
+        topic: 'stale-sign-topic',
+        method: 'koinos_signMessage',
+        signerAddress: '1WalletAddress',
+        message: 'hello after reject',
+        peerMeta: {
+          name: 'Signer dApp',
+          url: 'https://sign.example.com',
+        },
+      },
+    };
+
+    const { WalletConnectHandler } = require('../WalletConnectHandler');
+
+    await act(async () => {
+      TestRenderer.create(<WalletConnectHandler />);
+    });
+    await flushEffects();
+
+    await act(async () => {
+      const rejectPromise = lastMessageSigningModalProps.onReject(
+        'User rejected the message signing request'
+      );
+      mockWalletConnectState = {
+        ...mockWalletConnectState,
+        pendingSigningRequest: null,
+      };
+      await lastMessageSigningModalProps.onApprove('-_8');
+      await rejectPromise;
+    });
+    await flushEffects();
+
+    expect(mockRejectRequest).toHaveBeenCalledWith(
+      43,
+      'stale-sign-topic',
+      'User rejected the message signing request'
+    );
+    expect(mockRespondToRequest).not.toHaveBeenCalled();
   });
 
   it('keeps session approval hidden until hydration completes even when a proposal is pending', async () => {
