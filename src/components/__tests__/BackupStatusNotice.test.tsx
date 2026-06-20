@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text, TouchableOpacity } from 'react-native';
+import { Text } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import { BackupStatusNotice } from '../BackupStatusNotice';
 import type { BackupHealth } from '../../lib/backupHealth';
@@ -148,7 +148,8 @@ describe('BackupStatusNotice', () => {
     });
 
     await act(async () => {
-      renderer!.root.findByType(TouchableOpacity).props.onPress();
+      const pressable = renderer!.root.findAll((node) => typeof node.props.onPress === 'function')[0];
+      pressable.props.onPress();
     });
 
     expect(onPress).toHaveBeenCalledTimes(1);

@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
   getBackupHealthLabel,
@@ -37,7 +37,7 @@ export function BackupStatusNotice({
   const showBody = !compact || backupHealth.status === 'stale' || backupHealth.status === 'failed';
 
   return (
-    <TouchableOpacity style={[styles.container, compact && styles.compact]} onPress={onPress}>
+    <Pressable style={[styles.container, compact && styles.compact]} onPress={onPress}>
       <View style={styles.iconWrap}>
         <Ionicons name="warning-outline" size={18} color={colors.warning} />
       </View>
@@ -48,7 +48,7 @@ export function BackupStatusNotice({
         {showBody && <Text style={styles.body}>{body}</Text>}
       </View>
       <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
