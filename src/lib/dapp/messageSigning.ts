@@ -36,6 +36,16 @@ function decodeHexString(value: string): Uint8Array {
   return new Uint8Array(bytes);
 }
 
+function isHexString(value: string): boolean {
+  const normalized = value.startsWith('0x') ? value.slice(2) : value;
+
+  if (value.startsWith('0x')) {
+    return normalized.length % 2 === 0 && !/[^0-9a-f]/i.test(normalized);
+  }
+
+  return normalized.length > 0 && normalized.length % 2 === 0 && !/[^0-9a-f]/i.test(normalized);
+}
+
 export function normalizeBytesInput(value: unknown): Uint8Array {
   if (value instanceof Uint8Array) {
     return value;
@@ -55,9 +65,11 @@ export function normalizeBytesInput(value: unknown): Uint8Array {
 
   if (typeof value === 'string') {
     try {
-      return value.startsWith('0x')
-        ? decodeHexString(value)
-        : utils.decodeBase64url(value);
+      if (isHexString(value)) {
+        return decodeHexString(value);
+      }
+
+      return utils.decodeBase64url(value);
     } catch {
       throw new Error(BYTE_INPUT_ERROR);
     }
@@ -86,7 +98,11 @@ export function normalizeHashBytes(hash: unknown): Uint8Array {
 }
 
 export function normalizeMessageForSigning(message: unknown): string | Uint8Array {
-  return typeof message === 'string' ? message : normalizeBytesInput(message);
+  if (typeof message === 'string') {
+    return isHexString(message) ? decodeHexString(message) : message;
+  }
+
+  return normalizeBytesInput(message);
 }
 
 function getAccountByAddress(address: string): Account {

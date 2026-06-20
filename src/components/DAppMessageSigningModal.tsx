@@ -36,7 +36,6 @@ interface DAppMessageSigningModalProps {
   appOrigin: string;
   onApprove: (signature: string | Uint8Array) => void;
   onReject: (error: string) => void;
-  onClose: () => void;
 }
 
 function truncateMiddle(value: string, start = 16, end = 12): string {
@@ -84,7 +83,6 @@ export const DAppMessageSigningModal: React.FC<DAppMessageSigningModalProps> = (
   appOrigin,
   onApprove,
   onReject,
-  onClose,
 }) => {
   const accounts = useWalletStore((state) => state.accounts);
   const [signing, setSigning] = useState(false);
@@ -122,7 +120,6 @@ export const DAppMessageSigningModal: React.FC<DAppMessageSigningModalProps> = (
   const handleReject = () => {
     HapticFeedback.selection();
     onReject(request?.kind === 'hash' ? 'User rejected the hash signing request' : 'User rejected the message signing request');
-    onClose();
   };
 
   const handleApprove = async () => {

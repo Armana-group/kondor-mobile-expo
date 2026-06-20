@@ -480,14 +480,6 @@ export const DAppWebViewScreen = () => {
     clearPendingMessageSigningRequest();
   }, [clearPendingMessageSigningRequest, pendingMessageSigningRequest, sendResponse]);
 
-  const handleCloseMessageSigning = useCallback(() => {
-    if (pendingMessageSigningRequest) {
-      handleRejectMessageSigning('User rejected the signing request');
-    } else {
-      clearPendingMessageSigningRequest();
-    }
-  }, [clearPendingMessageSigningRequest, handleRejectMessageSigning, pendingMessageSigningRequest]);
-
   const openConnectionApproval = useCallback((id: string, origin: string, security: DAppOriginSecurity) => {
     const activeAccount = getActiveAccount();
     const defaultSelection = activeAccount?.address
@@ -924,7 +916,6 @@ export const DAppWebViewScreen = () => {
         appOrigin={pendingMessageSigningRequest?.origin || app.url}
         onApprove={handleApproveMessageSigning}
         onReject={handleRejectMessageSigning}
-        onClose={handleCloseMessageSigning}
       />
 
       <Modal

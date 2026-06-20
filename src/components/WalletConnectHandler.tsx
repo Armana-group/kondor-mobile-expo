@@ -410,11 +410,6 @@ export const WalletConnectHandler: React.FC = () => {
     [clearPendingSigningRequest, signingApproval, rejectRequest]
   );
 
-  const handleCloseSigningRequest = useCallback(() => {
-    clearPendingSigningRequest();
-    setSigningApproval(null);
-  }, [clearPendingSigningRequest]);
-
   return (
     <>
       {/* Session Approval Modal */}
@@ -445,7 +440,6 @@ export const WalletConnectHandler: React.FC = () => {
         appOrigin={signingApproval?.current.peerMeta.url || ''}
         onApprove={handleApproveSigningRequest}
         onReject={handleRejectSigningRequest}
-        onClose={handleCloseSigningRequest}
       />
     </>
   );

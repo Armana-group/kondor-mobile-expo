@@ -67,9 +67,23 @@ describe('messageSigning normalization', () => {
     expect(Array.from(normalizeMessageForSigning([10, 11, 12]) as Uint8Array)).toEqual([10, 11, 12]);
   });
 
+  it('treats bare and prefixed hex message strings as bytes', () => {
+    expect(Array.from(normalizeMessageForSigning('0102ff') as Uint8Array)).toEqual([1, 2, 255]);
+    expect(Array.from(normalizeMessageForSigning('0x0102ff') as Uint8Array)).toEqual([1, 2, 255]);
+  });
+
   it('enforces exactly 32 bytes for raw hashes', () => {
     expect(Array.from(normalizeHashBytes(hashBytes))).toEqual(Array.from(hashBytes));
     expect(Array.from(normalizeHashBytes(utils.encodeBase64url(hashBytes)))).toEqual(Array.from(hashBytes));
+    expect(
+      Array.from(
+        normalizeHashBytes(
+          Array.from(hashBytes)
+            .map((byte) => byte.toString(16).padStart(2, '0'))
+            .join('')
+        )
+      )
+    ).toEqual(Array.from(hashBytes));
     expect(() => normalizeHashBytes(new Uint8Array([1, 2, 3]))).toThrow(
       'Raw hash requests must provide exactly 32 bytes.'
     );

@@ -552,4 +552,30 @@ describe('DAppWebViewScreen getAccounts grants', () => {
       },
     ]);
   });
+
+  it('emits exactly one rejection response when the signing modal reject flow closes', async () => {
+    await renderScreen();
+
+    act(() => {
+      void emitCommand('sign-message-2', 'signer:signMessage', {
+        signerAddress: mockAccount.address,
+        message: 'reject me once',
+      });
+    });
+    await flushEffects();
+
+    act(() => {
+      lastMessageSigningModalProps?.onReject('User rejected the message signing request');
+      lastMessageSigningModalProps?.onClose?.();
+    });
+    await flushEffects();
+
+    expect(parseInjectedResponses()).toEqual([
+      {
+        type: 'kondor-response',
+        id: 'sign-message-2',
+        error: 'User rejected the message signing request',
+      },
+    ]);
+  });
 });
