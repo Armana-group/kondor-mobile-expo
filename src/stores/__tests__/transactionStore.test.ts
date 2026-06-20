@@ -25,6 +25,61 @@ async function loadStore(): Promise<TransactionStoreModule> {
   return mod;
 }
 
+function createPersistedPendingRecord(overrides: Record<string, unknown> = {}) {
+  return {
+    localId: 'persisted-local-id',
+    networkMode: 'mainnet',
+    address: '1WalletAddress',
+    chainTransactionId: '0xpersisted-chain-id',
+    type: 'send',
+    amount: '9.50',
+    token: '1TokenContract',
+    tokenSymbol: 'KOIN',
+    tokenDecimals: 8,
+    from: '1WalletAddress',
+    to: '1PersistedRecipient',
+    timestamp: NOW - 60_000,
+    fee: '0',
+    payer: '1WalletAddress',
+    ...overrides,
+  };
+}
+
+async function loadStoreWithPendingHydration(persistedValue?: string) {
+  jest.resetModules();
+  const asyncStorage = getAsyncStorage();
+  if (persistedValue != null) {
+    await asyncStorage.setItem(STORAGE_KEY, persistedValue);
+  }
+  let releaseHydration: (() => void) | null = null;
+  const hydrationGate = new Promise<void>((resolve) => {
+    releaseHydration = resolve;
+  });
+
+  asyncStorage.getItem.mockImplementation(async (key: string, callback?: (error?: Error | null, value?: string | null) => void) => {
+    const value = asyncStorage.__INTERNAL_MOCK_STORAGE__[key] ?? null;
+    await hydrationGate;
+    callback?.(null, value);
+    return value;
+  });
+
+  const mod = require('../transactionStore') as TransactionStoreModule;
+
+  return {
+    mod,
+    async finishHydration() {
+      releaseHydration?.();
+      await new Promise<void>((resolve) => {
+        const unsubscribe = mod.useTransactionStore.persist.onFinishHydration(() => {
+          unsubscribe();
+          resolve();
+        });
+      });
+      await flushPersistedWrites();
+    },
+  };
+}
+
 function createPendingInput(overrides: Partial<AddPendingTransactionInput> = {}): AddPendingTransactionInput {
   return {
     address: '1WalletAddress',
@@ -177,5 +232,53 @@ describe('transactionStore', () => {
     })).toEqual([
       expect.objectContaining({ id: '0xother-address' }),
     ]);
+  });
+
+  it('preserves in-memory pending transactions that are added before hydration finishes', async () => {
+    const persistedValue = JSON.stringify({
+      state: {
+        pendingTransactions: [
+          createPersistedPendingRecord(),
+        ],
+      },
+      version: 0,
+    });
+
+    const { mod, finishHydration } = await loadStoreWithPendingHydration(persistedValue);
+    const { useTransactionStore } = mod;
+
+    const localId = useTransactionStore.getState().addPendingTransaction(createPendingInput({
+      chainTransactionId: '0xcurrent-chain-id',
+      transaction: {
+        ...createPendingInput().transaction,
+        to: '1CurrentRecipient',
+        timestamp: NOW,
+      },
+    }));
+
+    expect(useTransactionStore.getState().hasHydrated).toBe(false);
+    expect(useTransactionStore.getState().getPendingTransactions({
+      address: '1WalletAddress',
+      networkMode: 'mainnet',
+    })).toEqual([
+      expect.objectContaining({ id: '0xcurrent-chain-id' }),
+    ]);
+
+    await finishHydration();
+
+    const pendingTransactions = useTransactionStore.getState().getPendingTransactions({
+      address: '1WalletAddress',
+      networkMode: 'mainnet',
+    });
+
+    expect(pendingTransactions).toEqual([
+      expect.objectContaining({ id: '0xcurrent-chain-id' }),
+      expect.objectContaining({ id: '0xpersisted-chain-id' }),
+    ]);
+    expect(useTransactionStore.getState().pendingTransactions.find(
+      (transaction) => transaction.chainTransactionId === '0xcurrent-chain-id'
+    )).toEqual(
+      expect.objectContaining({ localId })
+    );
   });
 });

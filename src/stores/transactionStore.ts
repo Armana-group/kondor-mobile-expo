@@ -274,6 +274,45 @@ function sortPendingTransactions(records: PendingTransactionRecord[]): PendingTr
   return [...records].sort((left, right) => right.timestamp - left.timestamp);
 }
 
+function getPendingTransactionIdentityKeys(record: PendingTransactionRecord): string[] {
+  const keys = [
+    `local:${record.localId}`,
+  ];
+
+  if (record.chainTransactionId) {
+    keys.push(`chain:${record.networkMode}:${record.address}:${record.chainTransactionId}`);
+  }
+
+  return keys;
+}
+
+function reconcilePendingTransactions(
+  currentRecords: unknown,
+  persistedRecords: unknown
+): PendingTransactionRecord[] {
+  const merged: PendingTransactionRecord[] = [];
+  const identities = new Set<string>();
+
+  const appendUnique = (records: PendingTransactionRecord[]) => {
+    for (const record of records) {
+      const keys = getPendingTransactionIdentityKeys(record);
+      if (keys.some((key) => identities.has(key))) {
+        continue;
+      }
+
+      merged.push(record);
+      for (const key of keys) {
+        identities.add(key);
+      }
+    }
+  };
+
+  appendUnique(sanitizePendingTransactions(currentRecords));
+  appendUnique(sanitizePendingTransactions(persistedRecords));
+
+  return sortPendingTransactions(merged);
+}
+
 function normalizeReceipt(receipt?: BroadcastPendingTransactionParams['receipt']) {
   if (!receipt || receipt.rc_used == null) {
     return undefined;
@@ -472,8 +511,9 @@ export const useTransactionStore = create<TransactionStoreState>()(
         const persisted = persistedState as { pendingTransactions?: unknown } | null;
         return {
           ...currentState,
-          pendingTransactions: sortPendingTransactions(
-            sanitizePendingTransactions(persisted?.pendingTransactions)
+          pendingTransactions: reconcilePendingTransactions(
+            currentState.pendingTransactions,
+            persisted?.pendingTransactions
           ),
         };
       },

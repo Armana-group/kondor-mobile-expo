@@ -165,3 +165,27 @@ Results:
 - Focused timing tests: PASS, 3 suites / 15 tests.
 - Type-check: PASS, exit code 0.
 - Full Jest suite: PASS, 41 suites / 303 tests.
+
+## Review Fixes: 9d90930..HEAD
+
+### Finding 3: pending-store hydration merge
+
+- Updated `transactionStore`'s persist merge to reconcile current in-memory pending rows with persisted pending rows instead of replacing current state outright when async hydration completes.
+- Identity reconciliation now uses both `localId` and scoped `chainTransactionId` (`networkMode + address + chain tx id`), and current in-memory rows win on conflicts.
+- This keeps a freshly added pending row alive if `addPendingTransaction` runs before rehydrate settles, while still restoring any older persisted pending rows that are not duplicates.
+
+### Regression coverage
+
+Commands:
+
+```bash
+npm test -- src/stores/__tests__/transactionStore.test.ts --runInBand
+npx tsc --noEmit
+npm test -- --runInBand
+```
+
+Results:
+
+- Focused hydration-race test: PASS, 1 suite / 6 tests.
+- Type-check: PASS, exit code 0.
+- Full Jest suite: PASS, 41 suites / 304 tests.
