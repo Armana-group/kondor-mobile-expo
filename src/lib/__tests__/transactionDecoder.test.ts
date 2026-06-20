@@ -1,5 +1,6 @@
 import {
   decodeKnownOperation,
+  hasKoinDxSwapOperation,
 } from '../transactionDecoder';
 import { KOINDX } from '../constants';
 
@@ -54,5 +55,27 @@ describe('transactionDecoder', () => {
       label: 'Arguments',
       value: 'opaque',
     });
+  });
+
+  it('detects KoinDX swap operations that need native swap handling', () => {
+    expect(hasKoinDxSwapOperation([
+      {
+        call_contract: {
+          contract_id: KOINDX.PERIPHERY_CONTRACT,
+          entry_point: KOINDX.ENTRY_POINTS.SWAP_TOKENS_IN,
+          args: 'encoded-swap',
+        },
+      },
+    ])).toBe(true);
+
+    expect(hasKoinDxSwapOperation([
+      {
+        call_contract: {
+          contract_id: KOINDX.PERIPHERY_CONTRACT,
+          entry_point: KOINDX.ENTRY_POINTS.GET_PAIR,
+          args: 'encoded-read',
+        },
+      },
+    ])).toBe(false);
   });
 });

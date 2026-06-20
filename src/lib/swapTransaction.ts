@@ -124,7 +124,12 @@ export async function executeSwapTransaction(
     throw new Error(`Swap simulation failed: ${getRevertReason(dryRunReceipt)}`);
   }
 
-  const finalRcLimit = Math.floor(Number(dryRunReceipt.rc_used) * 1.1);
+  const rcUsed = Number(dryRunReceipt.rc_used);
+  if (!Number.isFinite(rcUsed) || rcUsed <= 0) {
+    throw new Error('Could not estimate swap transaction cost');
+  }
+
+  const finalRcLimit = Math.floor(rcUsed * 1.1);
 
   onStatus?.('signing');
   const tx = await buildSwapTransaction({

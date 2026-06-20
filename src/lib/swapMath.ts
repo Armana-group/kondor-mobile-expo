@@ -1,3 +1,5 @@
+import { KOINOS_TOKEN_CONTRACTS } from './constants';
+
 export type SwapErrorCode =
   | 'INVALID_AMOUNT'
   | 'INVALID_AMOUNT_PRECISION'
@@ -159,10 +161,10 @@ export function assertProtectedMinOutput(amountInBaseUnits: string, amountOutMin
 }
 
 export function toKoinDxIdentifier(token: Pick<SwapToken, 'contractId' | 'symbol'>): string {
-  if (token.symbol === 'KOIN') {
+  if (token.contractId === KOINOS_TOKEN_CONTRACTS.KOIN) {
     return 'koin';
   }
-  if (token.symbol === 'VHP') {
+  if (token.contractId === KOINOS_TOKEN_CONTRACTS.VHP) {
     return 'vhp';
   }
   return token.contractId;
@@ -170,19 +172,19 @@ export function toKoinDxIdentifier(token: Pick<SwapToken, 'contractId' | 'symbol
 
 export function resolveApproveContractId(identifier: string, tokens: SwapToken[]): string {
   if (identifier === 'koin') {
-    const koin = tokens.find((token) => token.symbol === 'KOIN');
+    const koin = tokens.find((token) => token.contractId === KOINOS_TOKEN_CONTRACTS.KOIN);
     if (!koin) {
       throw new SwapError('Could not resolve KOIN identifier', 'CONTRACT_ERROR');
     }
-    return koin.contractId;
+    return KOINOS_TOKEN_CONTRACTS.KOIN;
   }
 
   if (identifier === 'vhp') {
-    const vhp = tokens.find((token) => token.symbol === 'VHP');
+    const vhp = tokens.find((token) => token.contractId === KOINOS_TOKEN_CONTRACTS.VHP);
     if (!vhp) {
       throw new SwapError('Could not resolve VHP identifier', 'CONTRACT_ERROR');
     }
-    return vhp.contractId;
+    return KOINOS_TOKEN_CONTRACTS.VHP;
   }
 
   return identifier;

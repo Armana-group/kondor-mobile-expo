@@ -8,6 +8,8 @@ import {
 import type { SwapToken } from '../swapMath';
 import type { SwapQuote } from '../swapQuote';
 
+let mockDryRunReceipt: { id: string; rc_used?: string; reverted: boolean };
+
 jest.mock('koilib', () => {
   const actual = jest.requireActual('koilib');
   return {
@@ -21,11 +23,11 @@ jest.mock('koilib', () => {
       this.prepare = jest.fn(async () => {
         this.transaction.id = '0xprepared';
       });
-      this.send = jest.fn(async ({ broadcast } = { broadcast: true }) => ({
-        id: broadcast ? '0xsent' : '0xdryrun',
-        rc_used: '50000000',
-        reverted: false,
-      }));
+      this.send = jest.fn(async ({ broadcast } = { broadcast: true }) => (
+        broadcast
+          ? { id: '0xsent', rc_used: '50000000', reverted: false }
+          : mockDryRunReceipt
+      ));
       this.wait = jest.fn(async () => ({ blockNumber: 123 }));
     }),
   };
@@ -80,6 +82,11 @@ const signer = {
 describe('swapTransaction', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockDryRunReceipt = {
+      id: '0xdryrun',
+      rc_used: '50000000',
+      reverted: false,
+    };
   });
 
   it('builds approve before swap_tokens_in with wallet as payer', async () => {
@@ -166,5 +173,27 @@ describe('swapTransaction', () => {
     })).rejects.toThrow(/slippage protection/i);
 
     expect(Transaction).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when dry-run does not return positive rc_used', async () => {
+    mockDryRunReceipt = {
+      id: '0xdryrun',
+      rc_used: '0',
+      reverted: false,
+    };
+
+    await expect(executeSwapTransaction({
+      provider: {} as Provider,
+      signer,
+      quote,
+      tokenIn: koin,
+      tokenOut: vhp,
+      allTokens: [koin, vhp],
+      maxRc: 1_000_000_000,
+      availableRc: 100_000_000,
+    })).rejects.toThrow(/estimate/i);
+
+    expect(Transaction).toHaveBeenCalledTimes(1);
+    expect(signer.signTransaction).not.toHaveBeenCalled();
   });
 });

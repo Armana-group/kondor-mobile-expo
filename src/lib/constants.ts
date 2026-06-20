@@ -22,6 +22,11 @@ export const TESTNET = {
 // Default to mainnet for production
 export const DEFAULT_NETWORK = MAINNET;
 
+export const KOINOS_TOKEN_CONTRACTS = {
+  KOIN: MAINNET.koinContract,
+  VHP: '12Y5vW6gk8GceH53YfRkRre2Rrcsgw7Naq',
+} as const;
+
 // REST endpoints for transaction history.
 // The account-history list endpoint omits block time, so per-transaction
 // timestamps are fetched separately from a node that serves /v1/transaction/{id}

@@ -25,7 +25,11 @@ import { requireBiometricAuth } from '../lib/biometrics';
 import { HapticFeedback } from '../lib/haptics';
 import { DEFAULT_NETWORK, FREE_MANA_SHARER } from '../lib/constants';
 import { txLogger } from '../lib/logger';
-import { type DecodedOperation, decodeKnownOperation } from '../lib/transactionDecoder';
+import {
+  type DecodedOperation,
+  decodeKnownOperation,
+  hasKoinDxSwapOperation,
+} from '../lib/transactionDecoder';
 
 // Transaction request from dApp
 export interface TransactionRequest {
@@ -128,6 +132,12 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
     setError(null);
 
     try {
+      if (hasKoinDxSwapOperation(request.transaction.operations)) {
+        setSigning(false);
+        setError('KoinDX swaps from dApps are not supported here. Use the native Swap tab.');
+        return;
+      }
+
       // Require biometric authentication
       const authenticated = await requireBiometricAuth(
         isSend ? 'send this transaction' : 'sign this transaction'

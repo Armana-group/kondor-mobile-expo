@@ -107,3 +107,10 @@ export function decodeKnownOperation(operation: OperationJson): DecodedOperation
     ],
   };
 }
+
+export function hasKoinDxSwapOperation(operations: OperationJson[] | undefined): boolean {
+  return Boolean(operations?.some((operation) => (
+    operation.call_contract?.contract_id === KOINDX.PERIPHERY_CONTRACT &&
+    operation.call_contract.entry_point === KOINDX.ENTRY_POINTS.SWAP_TOKENS_IN
+  )));
+}

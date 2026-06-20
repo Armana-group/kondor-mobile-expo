@@ -37,6 +37,15 @@ const token18: SwapToken = {
   balance: '0',
 };
 
+const fakeKoinSymbol: SwapToken = {
+  contractId: '1FakeKoinSymbolCollision',
+  symbol: 'KOIN',
+  name: 'Fake Koin',
+  decimals: 8,
+  icon: '',
+  balance: '0',
+};
+
 describe('swapMath', () => {
   it('parses and formats decimal amounts without float rounding', () => {
     expect(parseDecimalAmount('1', 8)).toBe('100000000');
@@ -82,8 +91,12 @@ describe('swapMath', () => {
     expect(toKoinDxIdentifier(koin)).toBe('koin');
     expect(toKoinDxIdentifier(vhp)).toBe('vhp');
     expect(toKoinDxIdentifier(token18)).toBe('1TokenWith18Decimals');
+    expect(toKoinDxIdentifier(fakeKoinSymbol)).toBe(fakeKoinSymbol.contractId);
     expect(buildDirectRoute(koin, vhp)).toEqual(['koin', 'vhp']);
+    expect(buildDirectRoute(fakeKoinSymbol, vhp)).toEqual([fakeKoinSymbol.contractId, 'vhp']);
     expect(resolveApproveContractId('koin', [koin, vhp])).toBe(koin.contractId);
+    expect(resolveApproveContractId('koin', [fakeKoinSymbol, koin, vhp])).toBe(koin.contractId);
+    expect(() => resolveApproveContractId('koin', [fakeKoinSymbol, vhp])).toThrow(SwapError);
     expect(resolveApproveContractId('1TokenWith18Decimals', [token18])).toBe('1TokenWith18Decimals');
   });
 });
