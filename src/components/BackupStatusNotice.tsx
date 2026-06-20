@@ -24,10 +24,11 @@ export function BackupStatusNotice({
   }
 
   const body = backupHealth.status === 'stale'
-    ? 'Your wallet changed after the last backup. Create a fresh encrypted backup.'
+    ? 'Create a fresh encrypted backup before sending.'
     : backupHealth.status === 'failed'
-      ? 'The last backup did not verify. Create a verified encrypted backup before relying on it.'
+      ? 'Create a verified backup before relying on it.'
       : 'Create a verified encrypted backup before relying on this wallet.';
+  const showBody = !compact || backupHealth.status === 'stale' || backupHealth.status === 'failed';
 
   return (
     <TouchableOpacity style={[styles.container, compact && styles.compact]} onPress={onPress}>
@@ -38,7 +39,7 @@ export function BackupStatusNotice({
         <Text style={styles.title}>
           {backupHealth.status === 'none' ? 'Back up this wallet' : getBackupHealthLabel(backupHealth)}
         </Text>
-        {!compact && <Text style={styles.body}>{body}</Text>}
+        {showBody && <Text style={styles.body}>{body}</Text>}
       </View>
       <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
     </TouchableOpacity>

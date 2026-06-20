@@ -308,6 +308,28 @@ describe('SendScreen balance scoping', () => {
     expect(collectRenderedText(renderer!).join(' ')).toContain('Back up this wallet');
   });
 
+  it('shows actionable compact copy for a stale backup before sending', async () => {
+    mockBackupHealth = {
+      status: 'stale',
+      provider: 'manual-file',
+      lastCreatedAt: '2026-06-20T00:00:00.000Z',
+      lastVerifiedAt: '2026-06-19T00:00:00.000Z',
+      walletFingerprint: 'wallet-hash',
+      accountSetHash: 'account-hash',
+      failureReason: 'wallet changed after backup',
+    };
+    const { SendScreen } = require('../SendScreen');
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<SendScreen />);
+    });
+
+    const renderedText = collectRenderedText(renderer!).join(' ');
+    expect(renderedText).toContain('Backup stale');
+    expect(renderedText).toContain('Create a fresh encrypted backup before sending.');
+  });
+
   it('adds a pending transaction as soon as broadcast is accepted, before transfer confirmation resolves', async () => {
     mockTokenState = {
       tokens: [

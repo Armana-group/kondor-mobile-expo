@@ -54,6 +54,49 @@ describe('BackupStatusNotice', () => {
     expect(text(renderer!)).toContain('Create a verified encrypted backup before relying on this wallet.');
   });
 
+  it('keeps stale compact copy actionable', async () => {
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <BackupStatusNotice
+          backupHealth={{
+            ...baseHealth,
+            status: 'stale',
+            provider: 'manual-file',
+          }}
+          compact
+          onPress={jest.fn()}
+        />
+      );
+    });
+
+    const rendered = text(renderer!);
+    expect(rendered).toContain('Backup stale');
+    expect(rendered).toContain('Create a fresh encrypted backup before sending.');
+  });
+
+  it('keeps failed compact copy actionable', async () => {
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <BackupStatusNotice
+          backupHealth={{
+            ...baseHealth,
+            status: 'failed',
+            provider: 'manual-file',
+            failureReason: 'verification failed',
+          }}
+          compact
+          onPress={jest.fn()}
+        />
+      );
+    });
+
+    const rendered = text(renderer!);
+    expect(rendered).toContain('Backup failed');
+    expect(rendered).toContain('Create a verified backup before relying on it.');
+  });
+
   it('fires onPress from the notice', async () => {
     const onPress = jest.fn();
     let renderer: TestRenderer.ReactTestRenderer;
