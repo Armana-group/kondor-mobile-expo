@@ -14,7 +14,10 @@ import {
   type ParsedTransaction,
 } from '../lib/transactionHistoryParser';
 import { getActiveNetworkConfig, useNetworkStore } from '../stores/networkStore';
-import { useTransactionStore } from '../stores/transactionStore';
+import {
+  PENDING_TRANSACTION_STALE_MS,
+  useTransactionStore,
+} from '../stores/transactionStore';
 
 export type { ParsedTransaction } from '../lib/transactionHistoryParser';
 
@@ -115,8 +118,11 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
     }),
     [address, hasHydrated, networkMode]
   );
-  const pendingTransactions = useTransactionStore(
-    (state) => state.getPendingTransactions(pendingTransactionScope)
+  const pendingTransactionRecords = useTransactionStore((state) => state.pendingTransactions);
+  const pendingStoreHasHydrated = useTransactionStore((state) => state.hasHydrated);
+  const pendingTransactions = useMemo(
+    () => useTransactionStore.getState().getPendingTransactions(pendingTransactionScope),
+    [pendingTransactionRecords, pendingTransactionScope]
   );
   const [transactions, setTransactions] = useState<ParsedTransaction[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -238,6 +244,51 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
   useEffect(() => {
     useTransactionStore.getState().pruneStalePendingTransactions();
   }, [historyScopeKey]);
+
+  useEffect(() => {
+    if (!address || !pendingStoreHasHydrated || settledScopeKey !== historyScopeKey) {
+      return;
+    }
+
+    if (pendingTransactions.length === 0) {
+      return;
+    }
+
+    const confirmedTransactionIds = new Set(
+      transactions.map((transaction) => transaction.id).filter(Boolean)
+    );
+    const hasConfirmedPending = pendingTransactions.some(
+      (transaction) => confirmedTransactionIds.has(transaction.id)
+    );
+    const now = Date.now();
+    const hasStalePending = pendingTransactions.some(
+      (transaction) => now - transaction.timestamp > PENDING_TRANSACTION_STALE_MS
+    );
+
+    if (!hasConfirmedPending && !hasStalePending) {
+      return;
+    }
+
+    const transactionStore = useTransactionStore.getState();
+    if (hasStalePending) {
+      transactionStore.pruneStalePendingTransactions(now);
+    }
+
+    if (hasConfirmedPending) {
+      transactionStore.confirmPendingTransactionsByChainIds(
+        pendingTransactionScope,
+        Array.from(confirmedTransactionIds)
+      );
+    }
+  }, [
+    address,
+    historyScopeKey,
+    pendingStoreHasHydrated,
+    pendingTransactionScope,
+    pendingTransactions,
+    settledScopeKey,
+    transactions,
+  ]);
 
   // Auto-refresh every 30 seconds
   useEffect(() => {

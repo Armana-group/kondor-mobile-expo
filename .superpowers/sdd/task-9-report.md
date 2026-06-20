@@ -219,3 +219,27 @@ Results:
 - Focused store + history tests: PASS, 2 suites / 12 tests.
 - Type-check: PASS, exit code 0.
 - Full Jest suite: PASS, 41 suites / 306 tests.
+
+## Review Fixes: 2c6335f..HEAD
+
+### Finding 4: late pending-store hydration reconciliation
+
+- Updated `useTransactionHistory` to subscribe to raw pending-store state plus the store hydration flag, instead of selecting a freshly derived pending array directly from Zustand on every render.
+- Added a settled-scope reconciliation effect that runs after pending-store hydration completes and only mutates the store when current-scope hydrated pending rows are stale or already represented in the latest confirmed history already held by the hook.
+- This closes the launch-time gap where persisted pending rows could arrive after the first history fetch and linger until the next manual or scheduled refresh.
+
+### Regression coverage
+
+Commands:
+
+```bash
+npm test -- src/stores/__tests__/transactionStore.test.ts src/hooks/__tests__/useTransactionHistory.test.ts --runInBand
+npx tsc --noEmit
+npm test -- --runInBand
+```
+
+Results:
+
+- Focused store + history tests: PASS, 2 suites / 14 tests.
+- Type-check: PASS, exit code 0.
+- Full Jest suite: PASS, 41 suites / 308 tests.
