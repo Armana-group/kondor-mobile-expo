@@ -222,10 +222,16 @@ export async function withAuthenticatedAccountSigner<T>(
 export async function signMessageWithAuthenticatedAccount(
   params: AuthenticatedSigningParams & { message: unknown }
 ): Promise<string> {
-  return withAuthenticatedAccountSigner(params, async ({ signer }) => {
-    const signature = await signer.signMessage(normalizeMessageForSigning(params.message));
-    return utils.encodeBase64url(signature);
-  });
+  return withAuthenticatedAccountSigner(
+    {
+      ...params,
+      authOperation: params.authOperation ?? 'sign this message',
+    },
+    async ({ signer }) => {
+      const signature = await signer.signMessage(normalizeMessageForSigning(params.message));
+      return utils.encodeBase64url(signature);
+    }
+  );
 }
 
 export async function signHashWithAuthenticatedAccount(
@@ -237,7 +243,7 @@ export async function signHashWithAuthenticatedAccount(
       authOperation: params.authOperation ?? 'sign this hash',
     },
     async ({ signer }) => {
-    return await signer.signHash(normalizeHashBytes(params.hash));
+      return await signer.signHash(normalizeHashBytes(params.hash));
     }
   );
 }

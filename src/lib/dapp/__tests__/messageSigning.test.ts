@@ -87,6 +87,7 @@ import {
   normalizeBytesInput,
   normalizeHashBytes,
   normalizeMessageForSigning,
+  signMessageWithAuthenticatedAccount,
   withAuthenticatedAccountSigner,
 } from '../messageSigning';
 
@@ -189,6 +190,29 @@ describe('messageSigning normalization', () => {
     expect(requireBiometricAuth).toHaveBeenCalledWith('sign this transaction');
     expect(createWalletFromMnemonic).toHaveBeenCalledWith('test mnemonic words', 4);
     expect(callback).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the message-specific authentication prompt by default', async () => {
+    const { requireBiometricAuth } = require('../../biometrics');
+    mockAccounts = [
+      {
+        id: 'account-1',
+        address: '1MockAddress',
+        derivationIndex: 0,
+        isImported: false,
+      },
+    ];
+
+    mockSecureStoreGetItemAsync.mockImplementation(async (key: string) =>
+      key === 'kondor_wallet_mnemonic' ? 'test mnemonic words' : null
+    );
+
+    await signMessageWithAuthenticatedAccount({
+      signerAddress: '1MockAddress',
+      message: 'hello',
+    });
+
+    expect(requireBiometricAuth).toHaveBeenCalledWith('sign this message');
   });
 
   it('rejects mismatched derived signers before signing', async () => {
