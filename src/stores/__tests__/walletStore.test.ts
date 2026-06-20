@@ -10,6 +10,7 @@ const PRIVATE_KEY_PREFIX = 'kondor_pk_';
 const LEGACY_PRIVATE_KEY = 'kondor_wallet_private_key';
 const MISSING_RECOVERY_PHRASE_MESSAGE =
   'Recovery phrase is missing from secure storage. Re-import this wallet from the recovery phrase to restore secret access.';
+const TEST_BACKUP_SECRET = 'ABCD-EFGH-IJKM-NPQR-STVW-XYZ2-3456-789A';
 
 const EXISTING_STATE = {
   accounts: [
@@ -79,9 +80,29 @@ async function loadWalletStore(options?: {
   jest.doMock('../../lib/biometrics', () => ({
     requireBiometricAuth,
   }));
+  jest.doMock('../../lib/wallet', () => ({
+    createWalletFromMnemonic: jest.fn((_mnemonic: string, derivationIndex: number) => ({
+      address: `hd-address-${derivationIndex}`,
+      privateKey: `hd-private-key-${derivationIndex}`,
+    })),
+    createWalletFromPrivateKey: jest.fn((privateKey: string) => ({
+      address: `imported-address-${privateKey.slice(0, 8)}`,
+      privateKey,
+    })),
+    validateMnemonic: jest.fn(() => true),
+  }));
   jest.doMock('../../lib/walletBackup', () => ({
     restoreWalletBackup,
     encryptSecretWithPin: jest.fn(),
+    encryptSecretWithBackupSecret: jest.fn(async (secret: string, _backupSecret: string) => ({
+      algorithm: 'pbkdf2-aes-256-gcm',
+      ciphertext: `enc:${secret.length}`,
+      iv: 'iv',
+      salt: 'salt',
+      iterations: 250000,
+      digest: 'SHA-256',
+      keyLength: 256,
+    })),
   }));
 
   const mod = require('../walletStore');
@@ -183,8 +204,72 @@ describe('walletStore backup restore hardening', () => {
 
     useWalletStore.setState(EXISTING_STATE);
 
-    await expect(useWalletStore.getState().createBackupSnapshot('123456')).rejects.toThrow(
+    await expect(
+      useWalletStore.getState().createBackupSnapshot('123456', TEST_BACKUP_SECRET)
+    ).rejects.toThrow(
       MISSING_RECOVERY_PHRASE_MESSAGE
     );
+  });
+
+  it('encrypts backup snapshots with the backup recovery key, not the wallet PIN', async () => {
+    const { useWalletStore, secureStoreState } = await loadWalletStore();
+
+    useWalletStore.setState(EXISTING_STATE);
+    secureStoreState.set(MNEMONIC_KEY, 'old mnemonic');
+    secureStoreState.set(`${PRIVATE_KEY_PREFIX}old-imported`, 'old-private-key');
+
+    const snapshot = await useWalletStore
+      .getState()
+      .createBackupSnapshot('123456', TEST_BACKUP_SECRET);
+
+    expect(JSON.stringify(snapshot)).not.toContain('old mnemonic');
+    expect(JSON.stringify(snapshot)).not.toContain('old-private-key');
+  });
+
+  it('marks backup health verified after a successful manual backup', async () => {
+    const { useWalletStore } = await loadWalletStore();
+
+    useWalletStore.getState().markBackupVerified({
+      provider: 'manual-file',
+      verifiedAt: '2026-06-20T00:00:00.000Z',
+      walletFingerprint: 'wallet-hash',
+      accountSetHash: 'account-hash',
+    });
+
+    expect(useWalletStore.getState().backupHealth).toEqual({
+      status: 'verified',
+      provider: 'manual-file',
+      lastCreatedAt: '2026-06-20T00:00:00.000Z',
+      lastVerifiedAt: '2026-06-20T00:00:00.000Z',
+      walletFingerprint: 'wallet-hash',
+      accountSetHash: 'account-hash',
+      failureReason: null,
+    });
+  });
+
+  it('marks an existing verified backup stale when an account is imported', async () => {
+    const { useWalletStore, secureStoreState } = await loadWalletStore();
+
+    useWalletStore.setState({
+      ...EXISTING_STATE,
+      accounts: [EXISTING_STATE.accounts[0]],
+    });
+    useWalletStore.getState().markBackupVerified({
+      provider: 'manual-file',
+      verifiedAt: '2026-06-20T00:00:00.000Z',
+      walletFingerprint: 'wallet-hash',
+      accountSetHash: 'account-hash',
+    });
+    secureStoreState.set(MNEMONIC_KEY, 'old mnemonic');
+
+    await useWalletStore
+      .getState()
+      .importAccountFromPrivateKey(
+        '1111111111111111111111111111111111111111111111111111111111111111',
+        'Imported Test'
+      );
+
+    expect(useWalletStore.getState().backupHealth.status).toBe('stale');
+    expect(useWalletStore.getState().backupHealth.failureReason).toBe('Account set changed');
   });
 });

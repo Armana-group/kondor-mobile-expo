@@ -11,9 +11,16 @@ import {
   BackupData,
   RestoredWalletSnapshot,
   WalletBackupSnapshot,
-  encryptSecretWithPin,
+  encryptSecretWithBackupSecret,
   restoreWalletBackup,
 } from '../lib/walletBackup';
+import {
+  EMPTY_BACKUP_HEALTH,
+  markBackupHealthStale,
+  markBackupHealthVerified,
+  type BackupHealth,
+  type MarkBackupVerifiedInput,
+} from '../lib/backupHealth';
 import { verifyPin } from '../services/auth';
 
 // Keys for secure storage
@@ -52,6 +59,7 @@ interface WalletState {
   balance: string;
   isWalletCreated: boolean;
   lastBackupAt: string | null;
+  backupHealth: BackupHealth;
 
   // Actions
   createWallet: (mnemonic: string) => Promise<void>;
@@ -69,9 +77,11 @@ interface WalletState {
   renameAccount: (accountId: string, name: string) => void;
   removeAccount: (accountId: string) => Promise<boolean>;
   getActiveAccount: () => Account | undefined;
-  createBackupSnapshot: (pin: string) => Promise<WalletBackupSnapshot>;
+  createBackupSnapshot: (currentPin: string, backupSecret: string) => Promise<WalletBackupSnapshot>;
   restoreFromBackup: (backup: BackupData, backupPin: string, currentPin: string) => Promise<void>;
   setLastBackupAt: (timestamp: string | null) => void;
+  markBackupVerified: (input: MarkBackupVerifiedInput) => void;
+  markBackupStale: (reason: string) => void;
 }
 
 interface StoredWalletSecrets {
@@ -174,6 +184,7 @@ export const useWalletStore = create<WalletState>()(
       balance: '0',
       isWalletCreated: false,
       lastBackupAt: null,
+      backupHealth: EMPTY_BACKUP_HEALTH,
 
       createWallet: async (mnemonic: string) => {
         try {
@@ -200,6 +211,7 @@ export const useWalletStore = create<WalletState>()(
             address,
             isWalletCreated: true,
             lastBackupAt: null,
+            backupHealth: EMPTY_BACKUP_HEALTH,
           });
 
           await HapticFeedback.walletCreated();
@@ -254,9 +266,10 @@ export const useWalletStore = create<WalletState>()(
               accounts: [migratedAccount],
               activeAccountId: accountId,
               nextDerivationIndex: 1,
-              address,
-              isWalletCreated: true,
-            });
+            address,
+            isWalletCreated: true,
+            backupHealth: EMPTY_BACKUP_HEALTH,
+          });
 
             return true;
           }
@@ -289,6 +302,7 @@ export const useWalletStore = create<WalletState>()(
             balance: '0',
             isWalletCreated: false,
             lastBackupAt: null,
+            backupHealth: EMPTY_BACKUP_HEALTH,
           });
         } catch (error) {
           log.error('Failed to clear wallet:', error);
@@ -363,10 +377,14 @@ export const useWalletStore = create<WalletState>()(
         }
       },
 
-      createBackupSnapshot: async (pin: string) => {
-        const pinIsValid = await verifyPin(pin);
+      createBackupSnapshot: async (currentPin: string, backupSecret: string) => {
+        const pinIsValid = await verifyPin(currentPin);
         if (!pinIsValid) {
           throw new Error('Incorrect PIN');
+        }
+
+        if (!backupSecret.trim()) {
+          throw new Error('Backup recovery key is required');
         }
 
         const { accounts, activeAccountId, nextDerivationIndex } = get();
@@ -381,7 +399,7 @@ export const useWalletStore = create<WalletState>()(
         }
 
         const encryptedMnemonic = mnemonic
-          ? await encryptSecretWithPin(mnemonic, pin)
+          ? await encryptSecretWithBackupSecret(mnemonic, backupSecret)
           : undefined;
 
         const encryptedAccounts = await Promise.all(
@@ -396,7 +414,7 @@ export const useWalletStore = create<WalletState>()(
 
             return {
               ...account,
-              encryptedPrivateKey: await encryptSecretWithPin(privateKey, pin),
+              encryptedPrivateKey: await encryptSecretWithBackupSecret(privateKey, backupSecret),
             };
           })
         );
@@ -448,10 +466,31 @@ export const useWalletStore = create<WalletState>()(
           balance: '0',
           isWalletCreated: true,
           lastBackupAt: null,
+          backupHealth: backup.version === 2
+            ? markBackupHealthVerified({
+                provider: 'manual-file',
+                verifiedAt: new Date().toISOString(),
+                walletFingerprint: backup.walletFingerprint,
+                accountSetHash: backup.accountSetHash,
+              })
+            : EMPTY_BACKUP_HEALTH,
         });
       },
 
       setLastBackupAt: (timestamp: string | null) => set({ lastBackupAt: timestamp }),
+
+      markBackupVerified: (input: MarkBackupVerifiedInput) => {
+        set({
+          backupHealth: markBackupHealthVerified(input),
+          lastBackupAt: input.verifiedAt,
+        });
+      },
+
+      markBackupStale: (reason: string) => {
+        set((state) => ({
+          backupHealth: markBackupHealthStale(state.backupHealth, reason),
+        }));
+      },
 
       // Multi-account methods
       addAccount: async (name?: string) => {
@@ -484,10 +523,11 @@ export const useWalletStore = create<WalletState>()(
 
         // HD account keys are derived on-demand from mnemonic — not cached
 
-        set({
+        set((state) => ({
           accounts: [...accounts, newAccount],
           nextDerivationIndex: nextDerivationIndex + 1,
-        });
+          backupHealth: markBackupHealthStale(state.backupHealth, 'Account set changed'),
+        }));
 
         await HapticFeedback.success();
         return newAccount;
@@ -525,9 +565,10 @@ export const useWalletStore = create<WalletState>()(
         // Store private key
         await SecureStore.setItemAsync(`${PRIVATE_KEY_PREFIX}${accountId}`, wallet.privateKey);
 
-        set({
+        set((state) => ({
           accounts: [...accounts, newAccount],
-        });
+          backupHealth: markBackupHealthStale(state.backupHealth, 'Account set changed'),
+        }));
 
         await HapticFeedback.success();
         return newAccount;
@@ -583,12 +624,13 @@ export const useWalletStore = create<WalletState>()(
           newAddress = updatedAccounts[0].address;
         }
 
-        set({
+        set((state) => ({
           accounts: updatedAccounts,
           activeAccountId: newActiveId,
           address: newAddress,
           balance: '0',
-        });
+          backupHealth: markBackupHealthStale(state.backupHealth, 'Account set changed'),
+        }));
 
         await HapticFeedback.success();
         return true;
@@ -610,6 +652,7 @@ export const useWalletStore = create<WalletState>()(
         balance: state.balance,
         isWalletCreated: state.isWalletCreated,
         lastBackupAt: state.lastBackupAt,
+        backupHealth: state.backupHealth,
       }),
     }
   )
