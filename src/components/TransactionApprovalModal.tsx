@@ -23,8 +23,8 @@ import colors from '../theme/colors';
 import { useWalletStore } from '../stores/walletStore';
 import { requireBiometricAuth } from '../lib/biometrics';
 import { HapticFeedback } from '../lib/haptics';
-import { DEFAULT_NETWORK, FREE_MANA_SHARER } from '../lib/constants';
 import { txLogger } from '../lib/logger';
+import { getActiveNetworkConfig } from '../stores/networkStore';
 import {
   type DecodedOperation,
   decodeKnownOperation,
@@ -162,7 +162,8 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
       }
 
       // Create provider and signer
-      const provider = new Provider(DEFAULT_NETWORK.rpcNodes);
+      const activeNetwork = getActiveNetworkConfig();
+      const provider = new Provider(activeNetwork.rpcNodes);
 
       let signer: Signer;
       if (privateKey.length === 64) {
@@ -176,7 +177,7 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
       let tx = { ...request.transaction };
 
       // Use free mana sharer to pay for transaction mana
-      const freeManaSharer = FREE_MANA_SHARER.mainnet;
+      const freeManaSharer = activeNetwork.freeManaSharer;
       txLogger.debug('Using free mana sharer:', freeManaSharer);
 
       // Ensure header exists with free mana sharer as payer
@@ -190,10 +191,7 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
       // Override payer to use free mana sharer
       tx.header.payer = freeManaSharer;
       tx.header.payee = request.signerAddress;
-
-      if (!tx.header.chain_id) {
-        tx.header.chain_id = DEFAULT_NETWORK.chainId;
-      }
+      tx.header.chain_id = activeNetwork.chainId;
 
       // Create Transaction object for dry-run estimation
       // We ALWAYS estimate rc_limit via dry-run because dApps may send incorrect values

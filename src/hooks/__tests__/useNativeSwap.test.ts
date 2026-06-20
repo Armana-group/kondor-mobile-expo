@@ -1,8 +1,15 @@
+jest.mock(
+  '@react-native-async-storage/async-storage',
+  () => require('@react-native-async-storage/async-storage/jest/async-storage-mock')
+);
+
 import {
   createNativeSwapController,
+  getSwapUnavailableMessage,
   getNativeSwapQuoteInvalidReason,
   type NativeSwapControllerDeps,
 } from '../useNativeSwap';
+import { MAINNET, TESTNET } from '../../lib/constants';
 
 function createDeps(
   overrides: Partial<NativeSwapControllerDeps> = {}
@@ -66,6 +73,17 @@ describe('getNativeSwapQuoteInvalidReason', () => {
       now: 1,
       requireMetadata: true,
     })).toMatch(/minimum output/i);
+  });
+});
+
+describe('getSwapUnavailableMessage', () => {
+  it('allows mainnet swap execution', () => {
+    expect(getSwapUnavailableMessage(MAINNET)).toBeNull();
+  });
+
+  it('fails closed on Harbinger', () => {
+    expect(getSwapUnavailableMessage(TESTNET)).toMatch(/mainnet/i);
+    expect(getSwapUnavailableMessage(TESTNET)).toMatch(/Harbinger/i);
   });
 });
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ import { AccountSwitcher } from '../components/AccountSwitcher';
 import { useWalletStore } from '../stores/walletStore';
 import { useKoinosStore } from '../stores/koinosStore';
 import { useTokenStore, Token } from '../stores/tokenStore';
+import { useNetworkStore } from '../stores/networkStore';
 import { truncateAddress, formatKoinBalance } from '../lib/utils';
 import { HapticFeedback } from '../lib/haptics';
 import { koinosLogger, sanitizeErrorForUser } from '../lib/logger';
@@ -28,14 +29,17 @@ export const HomeScreen = () => {
   const navigation = useNavigation<any>();
   const { address, balance, updateBalance, accounts, getActiveAccount } = useWalletStore();
   const { getBalance, getMana, initialize, reset: resetKoinos } = useKoinosStore();
-  const { tokens, isLoading: tokensLoading, initialize: initializeTokens, refreshBalances } = useTokenStore();
+  const { tokens, isLoading: tokensLoading, initialize: initializeTokens, refreshBalances, reset: resetTokens } = useTokenStore();
+  const networkMode = useNetworkStore((state) => state.mode);
+  const hasHydrated = useNetworkStore((state) => state.hasHydrated);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isInitialized, setIsInitialized] = useState(false);
   const [manaPercentage, setManaPercentage] = useState<number>(0);
   const [showAccountSwitcher, setShowAccountSwitcher] = useState(false);
+  const initializedScopeRef = useRef<string | null>(null);
 
   // Get active account info
   const activeAccount = getActiveAccount();
+  const initializationScope = hasHydrated && address ? `${networkMode}:${address}` : null;
 
   // Core balance fetching logic (silent - no spinner)
   const fetchBalances = useCallback(async () => {
@@ -69,22 +73,38 @@ export const HomeScreen = () => {
 
   // Initialize on first load (silent)
   const initializeAndLoadBalance = useCallback(async () => {
+    if (!initializationScope || !address) {
+      initializedScopeRef.current = null;
+      return;
+    }
+
+    if (initializedScopeRef.current === initializationScope) {
+      return;
+    }
+
     try {
-      if (!isInitialized && address) {
-        await initialize();
-        await initializeTokens(address);
-        setIsInitialized(true);
-        await fetchBalances();
-      }
+      initializedScopeRef.current = initializationScope;
+      setManaPercentage(0);
+      updateBalance('0');
+      resetKoinos();
+      resetTokens();
+      await initialize();
+      await initializeTokens(address);
+      await fetchBalances();
     } catch (error: any) {
+      initializedScopeRef.current = null;
       koinosLogger.error('Failed to initialize:', error);
     }
-  }, [isInitialized, address, initialize, initializeTokens, fetchBalances]);
+  }, [address, initializationScope, initialize, initializeTokens, fetchBalances, resetKoinos, resetTokens, updateBalance]);
 
-  // Only run on initial mount, not on every focus
   useEffect(() => {
+    if (!initializationScope) {
+      initializedScopeRef.current = null;
+      return;
+    }
+
     initializeAndLoadBalance();
-  }, [initializeAndLoadBalance]);
+  }, [initializationScope, initializeAndLoadBalance]);
 
   // Manual pull-to-refresh (with spinner)
   const handleManualRefresh = async () => {
@@ -322,12 +342,8 @@ export const HomeScreen = () => {
         onAccountSwitch={() => {
           // Reset koinos store to re-initialize with new account's private key
           resetKoinos();
-          // Reset initialization to reload balances for new account
-          setIsInitialized(false);
-          // Refresh balance and mana for new account (silent refresh)
-          setTimeout(() => {
-            fetchBalances();
-          }, 100);
+          resetTokens();
+          initializedScopeRef.current = null;
         }}
       />
     </Screen>

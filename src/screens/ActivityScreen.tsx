@@ -15,9 +15,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { useTransactionHistory, ParsedTransaction } from '../hooks/useTransactionHistory';
+import { getTransactionExplorerUrl } from '../lib/explorer';
 import { truncateAddress } from '../lib/utils';
 import colors from '../theme/colors';
-import { EXPLORER } from '../lib/constants';
 
 /**
  * Format transaction time relative to now
@@ -88,9 +88,9 @@ export const ActivityScreen = () => {
       `Time: ${tx.timestamp ? new Date(tx.timestamp).toLocaleString() : 'N/A'}`,
       [
         {
-          text: 'View on KoinScan',
+          text: 'View on Explorer',
           onPress: () => {
-            const url = `${EXPLORER.mainnet.tx}/${tx.id}`;
+            const url = getTransactionExplorerUrl(tx.id);
             Linking.openURL(url);
           },
         },

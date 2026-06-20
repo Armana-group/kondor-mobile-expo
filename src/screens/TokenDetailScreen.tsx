@@ -23,11 +23,10 @@ import { Screen } from '../components/Screen';
 import { useWalletStore } from '../stores/walletStore';
 import { useTokenStore, Token } from '../stores/tokenStore';
 import { useTransactionHistory, ParsedTransaction } from '../hooks/useTransactionHistory';
+import { getContractExplorerUrl, getTransactionExplorerUrl } from '../lib/explorer';
 import { truncateAddress, formatKoinBalance } from '../lib/utils';
 import { tokenLogger } from '../lib/logger';
 import colors from '../theme/colors';
-import { EXPLORER } from '../lib/constants';
-import { getContractExplorerUrl } from '../lib/explorer';
 
 type TokenDetailRouteParams = {
   TokenDetail: {
@@ -152,9 +151,9 @@ export const TokenDetailScreen = () => {
         `Time: ${tx.timestamp ? new Date(tx.timestamp).toLocaleString() : 'N/A'}`,
       [
         {
-          text: 'View on KoinScan',
+          text: 'View on Explorer',
           onPress: () => {
-            const url = `${EXPLORER.mainnet.tx}/${tx.id}`;
+            const url = getTransactionExplorerUrl(tx.id);
             Linking.openURL(url);
           },
         },

@@ -14,6 +14,7 @@ import {
   SwapError,
   type SwapToken,
 } from '../lib/swapMath';
+import { getActiveNetworkConfig, type NetworkConfig, useNetworkStore } from '../stores/networkStore';
 
 declare const require: <T = unknown>(moduleName: string) => T;
 
@@ -120,6 +121,16 @@ const REQUIRED_QUOTE_ERROR = 'Swap quote is required before execution';
 const EXPIRED_QUOTE_ERROR = 'Swap quote has expired';
 const STALE_QUOTE_ERROR = 'Swap quote is stale; refresh the quote before swapping';
 const ZERO_MIN_OUTPUT_ERROR = 'Swap quote has invalid zero minimum output';
+
+export function getSwapUnavailableMessage(
+  network: Pick<NetworkConfig, 'isTestnet' | 'name'>
+): string | null {
+  if (!network.isTestnet) {
+    return null;
+  }
+
+  return `Swap is currently only supported on Mainnet. ${network.name} is not supported.`;
+}
 
 function isPositiveAmount(amount: string): boolean {
   const trimmed = amount.trim();
@@ -502,6 +513,8 @@ function mapExecutionStatus(status: SwapExecutionStatus): NativeSwapStatus {
 export function useNativeSwap(): UseNativeSwapResult {
   const { useWalletStore } = getWalletStoreModule();
   const { useTokenStore } = getTokenStoreModule();
+  const networkMode = useNetworkStore((state) => state.mode);
+  const hasHydrated = useNetworkStore((state) => state.hasHydrated);
   const walletState = useWalletStore();
   const tokenState = useTokenStore();
   const [inputTokenId, setInputTokenId] = useState<string | null>(null);
@@ -528,6 +541,11 @@ export function useNativeSwap(): UseNativeSwapResult {
         return getSwapInputAmountInvalidReason(amount, inputToken);
       },
       getSwapQuote: async ({ amount, slippage }) => {
+        const swapUnavailableMessage = getSwapUnavailableMessage(getActiveNetworkConfig());
+        if (swapUnavailableMessage) {
+          throw new Error(swapUnavailableMessage);
+        }
+
         const provider = await ensureProvider();
         const { inputToken, outputToken, tokens } = latestRef.current;
         if (!inputToken || !outputToken) {
@@ -547,6 +565,11 @@ export function useNativeSwap(): UseNativeSwapResult {
         });
       },
       executeSwapTransaction: async (quote, context) => {
+        const swapUnavailableMessage = getSwapUnavailableMessage(getActiveNetworkConfig());
+        if (swapUnavailableMessage) {
+          throw new Error(swapUnavailableMessage);
+        }
+
         const { inputToken, outputToken, tokens } = latestRef.current;
         if (!inputToken || !outputToken) {
           throw new Error('Select two tokens before swapping');
@@ -659,6 +682,14 @@ export function useNativeSwap(): UseNativeSwapResult {
       void controller.refreshQuote();
     }
   }, [controller, inputToken?.contractId, outputToken?.contractId, tokens]);
+
+  useEffect(() => {
+    if (!hasHydrated) {
+      return;
+    }
+
+    controller.reset();
+  }, [controller, hasHydrated, networkMode]);
 
   useEffect(() => () => controller.dispose(), [controller]);
 

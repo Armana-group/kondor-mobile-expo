@@ -51,7 +51,7 @@ interface TokenState {
 }
 
 // Special tokens that are always included (even if not in KoinDX list)
-const SPECIAL_TOKENS: Partial<Token>[] = [
+const MAINNET_SPECIAL_TOKENS: Partial<Token>[] = [
   {
     contractId: '19GYjDBVXU7keLbYvMLazsGQn3GTWHjHkK', // KOIN
     symbol: 'KOIN',
@@ -68,6 +68,16 @@ const SPECIAL_TOKENS: Partial<Token>[] = [
   },
 ];
 
+const HARBINGER_SPECIAL_TOKENS: Partial<Token>[] = [
+  {
+    contractId: '1FaSvLjQJsCJKq5ybmGsMMQs8RQYyVv8ju', // Harbinger KOIN
+    symbol: 'KOIN',
+    name: 'Koinos',
+    decimals: 8,
+    icon: 'https://raw.githubusercontent.com/koindx/token-list/main/src/images/mainnet/koin.png',
+  },
+];
+
 // Blacklisted contracts that don't follow standard token interface
 // Also skip KoinDX nickname addresses for KOIN/VHP since we have proper entries in SPECIAL_TOKENS
 const BLACKLISTED_CONTRACTS = new Set([
@@ -76,7 +86,7 @@ const BLACKLISTED_CONTRACTS = new Set([
   'vhp',  // KoinDX uses nickname, we use full contract address in SPECIAL_TOKENS
 ]);
 
-const KOINDX_TOKEN_LIST_URL = 'https://raw.githubusercontent.com/koindx/token-list/main/src/tokens/mainnet.json';
+const MAINNET_TOKEN_LIST_URL = 'https://raw.githubusercontent.com/koindx/token-list/main/src/tokens/mainnet.json';
 const TOKEN_LIST_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 function getTokenScope(address: string): {
@@ -88,6 +98,59 @@ function getTokenScope(address: string): {
     cacheKey: `${network.isTestnet ? 'harbinger' : 'mainnet'}:${address}`,
     network,
   };
+}
+
+export function getTokenListUrlForNetwork(
+  network: ReturnType<typeof getActiveNetworkConfig>
+): string | null {
+  return network.isTestnet ? null : MAINNET_TOKEN_LIST_URL;
+}
+
+export function buildTokensForNetwork(
+  network: ReturnType<typeof getActiveNetworkConfig>,
+  koindxTokens: KoinDXToken[]
+): Token[] {
+  const tokenMap = new Map<string, Token>();
+  const specialTokens = network.isTestnet
+    ? HARBINGER_SPECIAL_TOKENS
+    : MAINNET_SPECIAL_TOKENS;
+
+  for (const special of specialTokens) {
+    tokenMap.set(special.contractId!, {
+      contractId: special.contractId!,
+      symbol: special.symbol!,
+      name: special.name!,
+      decimals: special.decimals!,
+      icon: special.icon!,
+      balance: '0',
+      isLoading: false,
+    });
+  }
+
+  if (network.isTestnet) {
+    return Array.from(tokenMap.values());
+  }
+
+  for (const token of koindxTokens) {
+    if (BLACKLISTED_CONTRACTS.has(token.address)) {
+      continue;
+    }
+    if (tokenMap.has(token.address)) {
+      continue;
+    }
+
+    tokenMap.set(token.address, {
+      contractId: token.address,
+      symbol: token.symbol,
+      name: token.name,
+      decimals: token.decimals,
+      icon: token.logoURI,
+      balance: '0',
+      isLoading: false,
+    });
+  }
+
+  return Array.from(tokenMap.values());
 }
 
 /**
@@ -163,10 +226,18 @@ async function getTokenBalance(
 /**
  * Fetch token list from KoinDX
  */
-async function fetchKoinDXTokenList(): Promise<KoinDXToken[]> {
+async function fetchKoinDXTokenList(
+  network: ReturnType<typeof getActiveNetworkConfig>
+): Promise<KoinDXToken[]> {
   try {
+    const tokenListUrl = getTokenListUrlForNetwork(network);
+    if (!tokenListUrl) {
+      log.debug(' No token list configured for this network; using fallback tokens only');
+      return [];
+    }
+
     log.debug(' Fetching KoinDX token list...');
-    const response = await fetch(KOINDX_TOKEN_LIST_URL);
+    const response = await fetch(tokenListUrl);
 
     if (!response.ok) {
       throw new Error(`Failed to fetch token list: ${response.status}`);
@@ -221,45 +292,8 @@ export const useTokenStore = create<TokenState>()(
 
         try {
           // Fetch token list from KoinDX
-          const koindxTokens = await fetchKoinDXTokenList();
-
-          // Build token list with special tokens first
-          const tokenMap = new Map<string, Token>();
-
-          // Add special tokens first
-          for (const special of SPECIAL_TOKENS) {
-            tokenMap.set(special.contractId!, {
-              contractId: special.contractId!,
-              symbol: special.symbol!,
-              name: special.name!,
-              decimals: special.decimals!,
-              icon: special.icon!,
-              balance: '0',
-              isLoading: false,
-            });
-          }
-
-          // Add KoinDX tokens (skip blacklisted and duplicates)
-          for (const token of koindxTokens) {
-            if (BLACKLISTED_CONTRACTS.has(token.address)) {
-              continue;
-            }
-            if (tokenMap.has(token.address)) {
-              continue; // Skip duplicates (special tokens take precedence)
-            }
-
-            tokenMap.set(token.address, {
-              contractId: token.address,
-              symbol: token.symbol,
-              name: token.name,
-              decimals: token.decimals,
-              icon: token.logoURI,
-              balance: '0',
-              isLoading: false,
-            });
-          }
-
-          const tokens = Array.from(tokenMap.values());
+          const koindxTokens = await fetchKoinDXTokenList(scope.network);
+          const tokens = buildTokensForNetwork(scope.network, koindxTokens);
           log.debug(' Built token list with', tokens.length, 'tokens');
 
           if (get().cacheKey !== scope.cacheKey) {

@@ -106,3 +106,93 @@ Tests:       4 passed, 4 total
 
 - `TransactionApprovalModal.tsx` and the native swap path still use mainnet constants directly. I left them untouched because they are outside the Task 2 file list and the current mainnet swap baseline must not regress.
 - Harbinger history/transaction REST metadata is now centralized in the network config, but I did not add live endpoint verification; the public testnet host behavior should be confirmed when the UI task for network switching lands.
+
+---
+
+## Fix pass after task review
+
+### Findings addressed
+
+- Fixed `TransactionApprovalModal` so signing/dry-run provider creation, free-mana payer selection, and `chain_id` all use the active network instead of hardcoded mainnet values.
+- Fixed Harbinger token initialization so testnet no longer bootstraps or queries mainnet token contracts. The Harbinger fallback token set is intentionally KOIN-only.
+- Fixed persisted-network adoption on `HomeScreen` so initialization waits for network hydration and re-runs when the active network scope changes.
+- Fixed explorer URL generation so Activity and Token Detail open the active network explorer instead of mainnet-only URLs.
+- Fixed native swap to fail closed on Harbinger with a clear unsupported-network error instead of using mainnet KoinDX paths.
+
+### Additional regression coverage
+
+- Added `src/components/__tests__/TransactionApprovalModal.test.tsx`
+- Added `src/screens/__tests__/HomeScreen.test.tsx`
+- Added `src/stores/__tests__/tokenStore.test.ts`
+- Extended `src/lib/__tests__/explorer.test.ts`
+- Extended `src/hooks/__tests__/useNativeSwap.test.ts`
+- Added `@types/react-test-renderer` for typed RN component tests
+
+### RED
+
+Command:
+
+```bash
+npm test -- src/lib/__tests__/explorer.test.ts src/stores/__tests__/tokenStore.test.ts src/screens/__tests__/HomeScreen.test.tsx src/components/__tests__/TransactionApprovalModal.test.tsx src/hooks/__tests__/useNativeSwap.test.ts --runInBand
+```
+
+Key failures before the fix:
+
+```text
+TypeError: getTokenListUrlForNetwork is not a function
+TypeError: buildTokensForNetwork is not a function
+TypeError: getSwapUnavailableMessage is not a function
+Expected Harbinger explorer URLs, received mainnet Koinscan URLs
+```
+
+### GREEN
+
+Focused regression suite:
+
+```bash
+npm test -- src/lib/__tests__/explorer.test.ts src/stores/__tests__/tokenStore.test.ts src/screens/__tests__/HomeScreen.test.tsx src/components/__tests__/TransactionApprovalModal.test.tsx src/hooks/__tests__/useNativeSwap.test.ts --runInBand
+```
+
+Result:
+
+```text
+PASS src/lib/__tests__/explorer.test.ts
+PASS src/stores/__tests__/tokenStore.test.ts
+PASS src/screens/__tests__/HomeScreen.test.tsx
+PASS src/components/__tests__/TransactionApprovalModal.test.tsx
+PASS src/hooks/__tests__/useNativeSwap.test.ts
+
+Test Suites: 5 passed, 5 total
+Tests:       21 passed, 21 total
+```
+
+Broader network-focused verification:
+
+```bash
+npm test -- src/stores/__tests__/networkStore.test.ts src/stores/__tests__/tokenStore.test.ts src/lib/__tests__/txHistory.test.ts src/lib/__tests__/explorer.test.ts src/hooks/__tests__/useNativeSwap.test.ts src/screens/__tests__/HomeScreen.test.tsx src/components/__tests__/TransactionApprovalModal.test.tsx --runInBand
+```
+
+Result:
+
+```text
+Test Suites: 7 passed, 7 total
+Tests:       32 passed, 32 total
+```
+
+Required final verification:
+
+```bash
+npm test -- --runInBand
+npx tsc --noEmit
+```
+
+Result:
+
+```text
+PASS 22 test suites, 167 tests, 2 snapshots
+tsc exit code 0
+```
+
+### Remaining concerns
+
+- Harbinger swap is intentionally disabled for this parity pass. Mainnet swap behavior remains unchanged; Harbinger now errors clearly instead of drifting onto mainnet KoinDX contracts.
