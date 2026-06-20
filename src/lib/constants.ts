@@ -68,17 +68,17 @@ export const KOINDX = {
 // Block explorer URLs
 export const EXPLORER = {
   mainnet: {
-    base: 'https://koinscan.com',
-    tx: 'https://koinscan.com/tx',
-    address: 'https://koinscan.com/address',
-    token: 'https://koinscan.com/token',
-    block: 'https://koinscan.com/block',
+    base: 'https://www.koinscan.com',
+    tx: 'https://www.koinscan.com/tx',
+    address: 'https://www.koinscan.com/address',
+    contract: 'https://www.koinscan.com/contracts',
+    block: 'https://www.koinscan.com/block',
   },
   testnet: {
     base: 'https://harbinger.koinscan.com',
     tx: 'https://harbinger.koinscan.com/tx',
     address: 'https://harbinger.koinscan.com/address',
-    token: 'https://harbinger.koinscan.com/token',
+    contract: 'https://harbinger.koinscan.com/contracts',
     block: 'https://harbinger.koinscan.com/block',
   },
 };

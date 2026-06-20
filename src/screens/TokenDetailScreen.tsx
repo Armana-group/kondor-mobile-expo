@@ -27,6 +27,7 @@ import { truncateAddress, formatKoinBalance } from '../lib/utils';
 import { tokenLogger } from '../lib/logger';
 import colors from '../theme/colors';
 import { EXPLORER } from '../lib/constants';
+import { getContractExplorerUrl } from '../lib/explorer';
 
 type TokenDetailRouteParams = {
   TokenDetail: {
@@ -128,8 +129,7 @@ export const TokenDetailScreen = () => {
   };
 
   const handleViewOnExplorer = () => {
-    const url = `${EXPLORER.mainnet.token}/${token.contractId}`;
-    Linking.openURL(url);
+    Linking.openURL(getContractExplorerUrl(token.contractId));
   };
 
   const handleTransactionPress = (tx: ParsedTransaction) => {
