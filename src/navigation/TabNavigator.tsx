@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
 // Screens
@@ -10,6 +11,8 @@ import { SendScreen } from '../screens/SendScreen';
 import { ReceiveScreen } from '../screens/ReceiveScreen';
 import { ContactsScreen } from '../screens/ContactsScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+import { SecurityPrivacyScreen } from '../screens/SecurityPrivacyScreen';
+import { NetworkSettingsScreen } from '../screens/NetworkSettingsScreen';
 import { BackupRecoveryScreen } from '../screens/BackupRecoveryScreen';
 import { TokenManagementScreen } from '../screens/TokenManagementScreen';
 import { ConnectedSitesScreen } from '../screens/ConnectedSitesScreen';
@@ -20,6 +23,7 @@ import { ActivityScreen, type ActivityFilter } from '../screens/ActivityScreen';
 import { BrowserScreen } from '../screens/BrowserScreen';
 import { TokenDetailScreen } from '../screens/TokenDetailScreen';
 import { DAppWebViewScreen } from '../screens/DAppWebViewScreen';
+import { AccountSwitcher } from '../components/AccountSwitcher';
 
 // Theme
 import colors from '../theme/colors';
@@ -28,6 +32,8 @@ import colors from '../theme/colors';
 import { Token } from '../stores/tokenStore';
 import { DApp } from '../constants/dapps';
 import type { NFT } from '../lib/nftService';
+import { useKoinosStore } from '../stores/koinosStore';
+import { useTokenStore } from '../stores/tokenStore';
 
 // Types
 export type HomeStackParamList = {
@@ -37,10 +43,17 @@ export type HomeStackParamList = {
   Activity: { initialFilter?: ActivityFilter } | undefined;
   Contacts: undefined;
   Settings: undefined;
-  BackupRecovery: undefined;
-  TokenManagement: undefined;
-  ConnectedSites: undefined;
   TokenDetail: { token: Token };
+};
+
+export type SettingsStackParamList = {
+  SettingsHome: undefined;
+  ManageAccounts: undefined;
+  TokenManagement: undefined;
+  SecurityPrivacy: undefined;
+  ConnectedSites: undefined;
+  BackupRecovery: undefined;
+  NetworkSettings: undefined;
 };
 
 export type AppsStackParamList = {
@@ -64,12 +77,52 @@ const Tab = createBottomTabNavigator<TabParamList>();
 const HomeStack = createNativeStackNavigator<HomeStackParamList>();
 const AppsStack = createNativeStackNavigator<AppsStackParamList>();
 const CollectiblesStack = createNativeStackNavigator<CollectiblesStackParamList>();
+const SettingsStack = createNativeStackNavigator<SettingsStackParamList>();
 
 // Icon name type for Ionicons
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
+const ManageAccountsScreen = () => {
+  const navigation = useNavigation<any>();
+  const resetKoinos = useKoinosStore((state) => state.reset);
+  const resetTokens = useTokenStore((state) => state.reset);
+
+  return (
+    <AccountSwitcher
+      visible
+      onClose={() => navigation.goBack()}
+      onAccountSwitch={() => {
+        resetKoinos();
+        resetTokens();
+      }}
+    />
+  );
+};
+
+type SettingsStackNavigatorProps = {
+  onLockWallet: () => void;
+};
+
+const SettingsStackNavigator = ({ onLockWallet }: SettingsStackNavigatorProps) => (
+  <SettingsStack.Navigator screenOptions={{ headerShown: false }}>
+    <SettingsStack.Screen name="SettingsHome">
+      {() => <SettingsScreen onLockWallet={onLockWallet} />}
+    </SettingsStack.Screen>
+    <SettingsStack.Screen name="ManageAccounts" component={ManageAccountsScreen} />
+    <SettingsStack.Screen name="TokenManagement" component={TokenManagementScreen} />
+    <SettingsStack.Screen name="SecurityPrivacy" component={SecurityPrivacyScreen} />
+    <SettingsStack.Screen name="ConnectedSites" component={ConnectedSitesScreen} />
+    <SettingsStack.Screen name="BackupRecovery" component={BackupRecoveryScreen} />
+    <SettingsStack.Screen name="NetworkSettings" component={NetworkSettingsScreen} />
+  </SettingsStack.Navigator>
+);
+
+type HomeStackNavigatorProps = {
+  onLockWallet: () => void;
+};
+
 // Home stack navigator (Home + Send modal + Receive modal + Activity + Contacts + Settings + TokenDetail)
-const HomeStackNavigator = () => (
+const HomeStackNavigator = ({ onLockWallet }: HomeStackNavigatorProps) => (
   <HomeStack.Navigator screenOptions={{ headerShown: false }}>
     <HomeStack.Screen name="HomeMain" component={HomeScreen} />
     <HomeStack.Screen
@@ -102,19 +155,10 @@ const HomeStackNavigator = () => (
     />
     <HomeStack.Screen
       name="Settings"
-      component={SettingsScreen}
-    />
-    <HomeStack.Screen
-      name="BackupRecovery"
-      component={BackupRecoveryScreen}
-    />
-    <HomeStack.Screen
-      name="TokenManagement"
-      component={TokenManagementScreen}
-    />
-    <HomeStack.Screen
-      name="ConnectedSites"
-      component={ConnectedSitesScreen}
+      children={() => <SettingsStackNavigator onLockWallet={onLockWallet} />}
+      options={{
+        animation: 'slide_from_right',
+      }}
     />
     <HomeStack.Screen
       name="TokenDetail"
@@ -145,7 +189,11 @@ const CollectiblesStackNavigator = () => (
   </CollectiblesStack.Navigator>
 );
 
-export const TabNavigator = () => {
+type TabNavigatorProps = {
+  onLockWallet: () => void;
+};
+
+export const TabNavigator = ({ onLockWallet }: TabNavigatorProps) => {
   return (
     <Tab.Navigator
       screenOptions={{
@@ -158,7 +206,7 @@ export const TabNavigator = () => {
     >
       <Tab.Screen
         name="HomeTab"
-        component={HomeStackNavigator}
+        children={() => <HomeStackNavigator onLockWallet={onLockWallet} />}
         options={{
           tabBarLabel: 'Home',
           tabBarIcon: ({ focused, color }) => (

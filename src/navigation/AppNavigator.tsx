@@ -70,6 +70,10 @@ export const AppNavigator = () => {
     setIsLocked(false);
   };
 
+  const handleLock = () => {
+    setIsLocked(true);
+  };
+
   const handlePinSetupComplete = async () => {
     setPinEnabled(true);
     // Don't lock immediately — user just set it up
@@ -130,7 +134,9 @@ export const AppNavigator = () => {
           </Stack.Screen>
         ) : (
           // Main App with Tabs
-          <Stack.Screen name="Main" component={TabNavigator} />
+          <Stack.Screen name="Main">
+            {() => <TabNavigator onLockWallet={handleLock} />}
+          </Stack.Screen>
         )}
       </Stack.Navigator>
     </NavigationContainer>
