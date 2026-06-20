@@ -93,9 +93,23 @@ export const KOINOS_METHODS = {
 } as const;
 
 // Methods we can honestly advertise during session approval.
-const APPROVED_METHODS = Object.values(KOINOS_METHODS).filter(
-  (method) => method !== KOINOS_METHODS.SendTransaction
-);
+const APPROVED_METHODS: string[] = [
+  KOINOS_METHODS.SignTransaction,
+  KOINOS_METHODS.SignAndSendTransaction,
+  KOINOS_METHODS.PrepareTransaction,
+  KOINOS_METHODS.WaitForTransaction,
+  KOINOS_METHODS.JsonRpcCall,
+  KOINOS_METHODS.GetNonce,
+  KOINOS_METHODS.GetNextNonce,
+  KOINOS_METHODS.GetAccountRc,
+  KOINOS_METHODS.GetTransactionsById,
+  KOINOS_METHODS.GetBlocksById,
+  KOINOS_METHODS.GetHeadInfo,
+  KOINOS_METHODS.GetChainId,
+  KOINOS_METHODS.GetBlocks,
+  KOINOS_METHODS.GetBlock,
+  KOINOS_METHODS.ReadContract,
+];
 
 // Events (none for now, but required by WalletConnect)
 const SUPPORTED_EVENTS: string[] = [];

@@ -197,8 +197,6 @@ tsc exit code 0
 
 - Harbinger swap is intentionally disabled for this parity pass. Mainnet swap behavior remains unchanged; Harbinger now errors clearly instead of drifting onto mainnet KoinDX contracts.
 
----
-
 ## Second fix pass after re-review
 
 ### Finding addressed
@@ -564,3 +562,70 @@ Result:
 PASS 25 test suites, 180 tests, 2 snapshots
 tsc exit code 0
 ```
+
+---
+
+## Seventh fix pass after review
+
+### Findings addressed
+
+- Blocked `provider:sendTransaction` inside the in-app WebView unless the caller explicitly requests `broadcast: false`; omitted or `true` now fails closed with a manual-approval-required error.
+- Kept the only safe WebView provider path as non-broadcast submission by forwarding `broadcast: false` unchanged.
+- Tightened WalletConnect approved namespaces to advertise only Task 2 runtime-supported methods.
+- Stopped advertising `koinos_signMessage`, `koinos_signHash`, `koinos_sendTransaction`, and `koinos_submitBlock` before those flows exist or are approval-safe.
+
+### Additional regression coverage
+
+- Added `src/screens/__tests__/DAppWebViewScreen.test.ts`
+- Tightened `src/stores/__tests__/walletConnectStore.test.ts`
+
+### RED
+
+Command:
+
+```bash
+npm test -- src/screens/__tests__/DAppWebViewScreen.test.ts src/stores/__tests__/walletConnectStore.test.ts --runInBand
+```
+
+Key failures before the fix:
+
+```text
+Cannot find module '../dappWebViewProviderGuards'
+Expected approved WalletConnect methods to exclude koinos_signMessage, koinos_signHash, and koinos_submitBlock
+```
+
+### GREEN
+
+Focused regression suite:
+
+```bash
+npm test -- src/screens/__tests__/DAppWebViewScreen.test.ts src/stores/__tests__/walletConnectStore.test.ts --runInBand
+```
+
+Result:
+
+```text
+PASS src/screens/__tests__/DAppWebViewScreen.test.ts
+PASS src/stores/__tests__/walletConnectStore.test.ts
+
+Test Suites: 2 passed, 2 total
+Tests:       5 passed, 5 total
+```
+
+Required final verification:
+
+```bash
+npm test -- --runInBand
+npx tsc --noEmit
+```
+
+Result:
+
+```text
+PASS 26 test suites, 181 tests, 2 snapshots
+tsc exit code 0
+```
+
+### Remaining concerns
+
+- The WebView provider still exposes `provider:sendTransaction` as a callable command name for compatibility, but the runtime now rejects anything except an explicit non-broadcast dry run and never auto-broadcasts.

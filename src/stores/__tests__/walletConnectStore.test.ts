@@ -258,7 +258,27 @@ describe('walletConnectStore network reconciliation', () => {
     );
     const approvedMethods = (buildApprovedNamespaces as jest.Mock).mock.calls[0][0]
       .supportedNamespaces.koinos.methods;
+    expect(approvedMethods).toEqual([
+      KOINOS_METHODS.SignTransaction,
+      KOINOS_METHODS.SignAndSendTransaction,
+      KOINOS_METHODS.PrepareTransaction,
+      KOINOS_METHODS.WaitForTransaction,
+      KOINOS_METHODS.JsonRpcCall,
+      KOINOS_METHODS.GetNonce,
+      KOINOS_METHODS.GetNextNonce,
+      KOINOS_METHODS.GetAccountRc,
+      KOINOS_METHODS.GetTransactionsById,
+      KOINOS_METHODS.GetBlocksById,
+      KOINOS_METHODS.GetHeadInfo,
+      KOINOS_METHODS.GetChainId,
+      KOINOS_METHODS.GetBlocks,
+      KOINOS_METHODS.GetBlock,
+      KOINOS_METHODS.ReadContract,
+    ]);
+    expect(approvedMethods).not.toContain(KOINOS_METHODS.SignMessage);
+    expect(approvedMethods).not.toContain(KOINOS_METHODS.SignHash);
     expect(approvedMethods).not.toContain(KOINOS_METHODS.SendTransaction);
+    expect(approvedMethods).not.toContain(KOINOS_METHODS.SubmitBlock);
     expect(approveSession).toHaveBeenCalledWith({
       id: 77,
       namespaces: {

@@ -32,6 +32,7 @@ import {
   SigningResult,
 } from '../components/TransactionApprovalModal';
 import { getActiveNetworkConfig, useNetworkStore } from '../stores/networkStore';
+import { handleWebViewProviderSendTransaction } from './dappWebViewProviderGuards';
 
 type DAppWebViewRouteParams = {
   DAppWebView: {
@@ -147,7 +148,7 @@ export const DAppWebViewScreen = () => {
         );
 
       case 'provider:sendTransaction':
-        return provider.sendTransaction(args.transaction as any, args.broadcast as boolean);
+        return handleWebViewProviderSendTransaction(provider, args);
 
       case 'provider:submitBlock':
         return provider.submitBlock(args.block as any);
