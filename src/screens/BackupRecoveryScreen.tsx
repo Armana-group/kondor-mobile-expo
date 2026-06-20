@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import {
   Alert,
   ScrollView,
@@ -17,6 +17,12 @@ import { Button } from '../components/Button';
 import { Input } from '../components/Input';
 import { HapticFeedback } from '../lib/haptics';
 import { sanitizeErrorForUser } from '../lib/logger';
+import { getBackupHealthLabel } from '../lib/backupHealth';
+import {
+  generateBackupRecoveryKey,
+  isValidBackupRecoveryKey,
+  normalizeBackupRecoveryKey,
+} from '../lib/backupRecoveryKey';
 import {
   createWalletBackup,
   verifyWalletBackup,
@@ -27,24 +33,18 @@ import colors from '../theme/colors';
 
 const BACKUP_DIRECTORY_NAME = 'backups';
 
-function formatTimestamp(value: string | null): string {
-  if (!value) {
-    return 'No successful backup yet';
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return 'No successful backup yet';
-  }
-
-  return parsed.toLocaleString();
-}
-
 export const BackupRecoveryScreen = () => {
   const navigation = useNavigation<any>();
-  const { createBackupSnapshot, restoreFromBackup, setLastBackupAt, lastBackupAt } = useWalletStore();
+  const {
+    backupHealth,
+    createBackupSnapshot,
+    restoreFromBackup,
+    markBackupVerified,
+  } = useWalletStore();
 
-  const [backupPin, setBackupPin] = useState('');
+  const [currentBackupPin, setCurrentBackupPin] = useState('');
+  const [generatedRecoveryKey, setGeneratedRecoveryKey] = useState('');
+  const [confirmedRecoveryKey, setConfirmedRecoveryKey] = useState('');
   const [restorePin, setRestorePin] = useState('');
   const [currentPin, setCurrentPin] = useState('');
   const [isCreatingBackup, setIsCreatingBackup] = useState(false);
@@ -55,19 +55,38 @@ export const BackupRecoveryScreen = () => {
   const [importedFileName, setImportedFileName] = useState<string | null>(null);
   const [isImportedBackupVerified, setIsImportedBackupVerified] = useState(false);
 
-  const lastBackupLabel = useMemo(() => formatTimestamp(lastBackupAt), [lastBackupAt]);
+  const handleGenerateRecoveryKey = async () => {
+    const key = await generateBackupRecoveryKey();
+    setGeneratedRecoveryKey(key);
+    setConfirmedRecoveryKey('');
+    await HapticFeedback.selection();
+  };
 
   const handleCreateBackup = async () => {
-    if (!backupPin.trim()) {
+    if (!currentBackupPin.trim()) {
       Alert.alert('PIN Required', 'Enter your current PIN to create an encrypted backup.');
+      return;
+    }
+
+    const normalizedConfirmedKey = normalizeBackupRecoveryKey(confirmedRecoveryKey);
+    if (!generatedRecoveryKey || normalizedConfirmedKey !== generatedRecoveryKey) {
+      Alert.alert(
+        'Recovery Key Required',
+        'Confirm the generated backup recovery key before creating this backup.'
+      );
+      return;
+    }
+
+    if (!isValidBackupRecoveryKey(normalizedConfirmedKey)) {
+      Alert.alert('Invalid Recovery Key', 'Use the generated backup recovery key exactly as shown.');
       return;
     }
 
     setIsCreatingBackup(true);
 
     try {
-      const snapshot = await createBackupSnapshot(backupPin.trim());
-      const backup = await createWalletBackup(snapshot, backupPin.trim());
+      const snapshot = await createBackupSnapshot(currentBackupPin.trim(), normalizedConfirmedKey);
+      const backup = await createWalletBackup(snapshot, normalizedConfirmedKey);
       const documentsDirectory = FileSystem.documentDirectory;
 
       if (!documentsDirectory) {
@@ -85,7 +104,12 @@ export const BackupRecoveryScreen = () => {
       });
 
       const completedAt = new Date().toISOString();
-      setLastBackupAt(completedAt);
+      markBackupVerified({
+        provider: 'manual-file',
+        verifiedAt: completedAt,
+        walletFingerprint: backup.version === 2 ? backup.walletFingerprint : '',
+        accountSetHash: backup.version === 2 ? backup.accountSetHash : '',
+      });
 
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(fileUri, {
@@ -147,7 +171,7 @@ export const BackupRecoveryScreen = () => {
     }
 
     if (!restorePin.trim()) {
-      Alert.alert('PIN Required', 'Enter the PIN used to create this backup.');
+      Alert.alert('Backup Secret Required', 'Enter the backup recovery key or legacy backup PIN used to create this backup.');
       return;
     }
 
@@ -161,7 +185,7 @@ export const BackupRecoveryScreen = () => {
 
       setIsImportedBackupVerified(true);
       await HapticFeedback.success();
-      Alert.alert('Backup Verified', 'This backup can be restored with the provided PIN.');
+      Alert.alert('Backup Verified', 'This backup can be restored with the provided backup secret.');
     } catch (error: any) {
       setIsImportedBackupVerified(false);
       await HapticFeedback.error();
@@ -230,7 +254,7 @@ export const BackupRecoveryScreen = () => {
             <Text style={styles.sectionTitle}>Backup Status</Text>
             <View style={styles.statusRow}>
               <Ionicons name="cloud-done-outline" size={20} color={colors.purple} />
-              <Text style={styles.statusText}>{lastBackupLabel}</Text>
+              <Text style={styles.statusText}>{getBackupHealthLabel(backupHealth)}</Text>
             </View>
             <Text style={styles.helperText}>
               Backups include encrypted account data, integrity checks, and account-by-account verification.
@@ -240,19 +264,37 @@ export const BackupRecoveryScreen = () => {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Create Backup</Text>
             <Text style={styles.helperText}>
-              Enter your current PIN to create an encrypted JSON backup file. Private keys and recovery phrases stay encrypted.
+              Generate a backup recovery key, confirm it, then use your current wallet PIN to authorize an encrypted JSON backup.
             </Text>
+            <Button
+              title="Generate Recovery Key"
+              onPress={handleGenerateRecoveryKey}
+              variant="secondary"
+            />
+            {generatedRecoveryKey ? (
+              <View style={styles.recoveryKeyBox}>
+                <Text style={styles.recoveryKeyText}>{generatedRecoveryKey}</Text>
+              </View>
+            ) : null}
             <Input
-              label="Current PIN"
-              value={backupPin}
-              onChangeText={setBackupPin}
+              label="Current wallet PIN"
+              value={currentBackupPin}
+              onChangeText={setCurrentBackupPin}
               keyboardType="number-pad"
               secureTextEntry
               maxLength={6}
               containerStyle={styles.input}
             />
+            <Input
+              label="Confirm backup recovery key"
+              value={confirmedRecoveryKey}
+              onChangeText={setConfirmedRecoveryKey}
+              autoCapitalize="characters"
+              secureTextEntry
+              containerStyle={styles.input}
+            />
             <Button
-              title="Create And Share Backup"
+              title="Create Manual Backup"
               onPress={handleCreateBackup}
               loading={isCreatingBackup}
             />
@@ -261,7 +303,7 @@ export const BackupRecoveryScreen = () => {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Import Recovery File</Text>
             <Text style={styles.helperText}>
-              Import a previously exported backup, verify it with the backup PIN, then restore it over the current wallet.
+              Import a previously exported backup, verify it with the backup recovery key or legacy backup PIN, then restore it over the current wallet.
             </Text>
 
             <TouchableOpacity style={styles.fileRow} onPress={handleImportBackup} activeOpacity={0.8}>
@@ -275,15 +317,13 @@ export const BackupRecoveryScreen = () => {
             </TouchableOpacity>
 
             <Input
-              label="Backup PIN"
+              label="Backup recovery key or legacy backup PIN"
               value={restorePin}
               onChangeText={(value) => {
                 setRestorePin(value);
                 setIsImportedBackupVerified(false);
               }}
-              keyboardType="number-pad"
               secureTextEntry
-              maxLength={6}
               containerStyle={styles.input}
             />
             <Input
@@ -393,6 +433,21 @@ const styles = StyleSheet.create({
   },
   input: {
     marginBottom: 0,
+  },
+  recoveryKeyBox: {
+    backgroundColor: colors.elevated,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginTop: 12,
+  },
+  recoveryKeyText: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 22,
   },
   fileRow: {
     flexDirection: 'row',
