@@ -15,6 +15,7 @@ const mockRejectSession = jest.fn(async () => undefined);
 const mockRespondToRequest = jest.fn(async () => undefined);
 const mockRejectRequest = jest.fn(async () => undefined);
 const mockClearPendingTransaction = jest.fn();
+const mockClearPendingSigningRequest = jest.fn();
 const mockReconcileSessionsForActiveNetwork = jest.fn(async () => undefined);
 const mockIsSessionTopicApprovedForActiveNetwork = jest.fn(() => true);
 const mockGetSessionTopicValidationForActiveNetwork = jest.fn<
@@ -26,6 +27,7 @@ const mockGetSessionTopicValidationForActiveNetwork = jest.fn<
 
 let lastTransactionApprovalModalProps: any = null;
 let lastSessionApprovalModalProps: any = null;
+let lastMessageSigningModalProps: any = null;
 
 let mockNetworkState = {
   mode: 'mainnet',
@@ -57,6 +59,8 @@ jest.mock('../../stores/walletConnectStore', () => ({
     GetNextNonce: 'koinos_getNextNonce',
     JsonRpcCall: 'koinos_JsonRpcCall',
     SendTransaction: 'koinos_sendTransaction',
+    SignMessage: 'koinos_signMessage',
+    SignHash: 'koinos_signHash',
     SignAndSendTransaction: 'koinos_signAndSendTransaction',
   },
   WALLETCONNECT_NETWORK_MISMATCH_ERROR:
@@ -78,6 +82,13 @@ jest.mock('../../components/WCSessionApprovalModal', () => ({
 jest.mock('../../components/TransactionApprovalModal', () => ({
   TransactionApprovalModal: (props: any) => {
     lastTransactionApprovalModalProps = props;
+    return null;
+  },
+}));
+
+jest.mock('../../components/DAppMessageSigningModal', () => ({
+  DAppMessageSigningModal: (props: any) => {
+    lastMessageSigningModalProps = props;
     return null;
   },
 }));
@@ -132,11 +143,22 @@ jest.mock('koilib', () => {
 
   class Transaction {}
   class Signer {}
+  const utils = {
+    encodeBase64: (bytes: Uint8Array) => Buffer.from(bytes).toString('base64'),
+    decodeBase64url: (value: string) =>
+      new Uint8Array(
+        Buffer.from(
+          value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '='),
+          'base64'
+        )
+      ),
+  };
 
   return {
     Provider,
     Transaction,
     Signer,
+    utils,
   };
 });
 
@@ -159,6 +181,7 @@ describe('WalletConnectHandler network reconciliation', () => {
     });
     lastTransactionApprovalModalProps = null;
     lastSessionApprovalModalProps = null;
+    lastMessageSigningModalProps = null;
     mockNetworkState = {
       mode: 'mainnet',
       hasHydrated: true,
@@ -168,12 +191,14 @@ describe('WalletConnectHandler network reconciliation', () => {
       initialize: mockInitialize,
       pendingProposal: null,
       pendingTransaction: null,
+      pendingSigningRequest: null,
       pendingRequest: null,
       approveSession: mockApproveSession,
       rejectSession: mockRejectSession,
       respondToRequest: mockRespondToRequest,
       rejectRequest: mockRejectRequest,
       clearPendingTransaction: mockClearPendingTransaction,
+      clearPendingSigningRequest: mockClearPendingSigningRequest,
       reconcileSessionsForActiveNetwork: mockReconcileSessionsForActiveNetwork,
       isSessionTopicApprovedForActiveNetwork: mockIsSessionTopicApprovedForActiveNetwork,
       getSessionTopicValidationForActiveNetwork: mockGetSessionTopicValidationForActiveNetwork,
@@ -400,6 +425,49 @@ describe('WalletConnectHandler network reconciliation', () => {
       expect.stringMatching(/active network/i)
     );
     expect(lastTransactionApprovalModalProps?.visible).toBe(false);
+  });
+
+  it('opens a signing modal for pending koinos_signMessage requests and responds with WalletConnect base64', async () => {
+    mockWalletConnectState = {
+      ...mockWalletConnectState,
+      pendingSigningRequest: {
+        id: 41,
+        topic: 'sign-topic',
+        method: 'koinos_signMessage',
+        signerAddress: '1WalletAddress',
+        message: 'hello walletconnect',
+        peerMeta: {
+          name: 'Signer dApp',
+          url: 'https://sign.example.com',
+        },
+      },
+    };
+
+    const { WalletConnectHandler } = require('../WalletConnectHandler');
+
+    await act(async () => {
+      TestRenderer.create(<WalletConnectHandler />);
+    });
+    await flushEffects();
+
+    expect(lastMessageSigningModalProps).toEqual(
+      expect.objectContaining({
+        visible: true,
+        request: expect.objectContaining({
+          signerAddress: '1WalletAddress',
+          kind: 'message',
+          message: 'hello walletconnect',
+        }),
+      })
+    );
+
+    await act(async () => {
+      await lastMessageSigningModalProps.onApprove('-_8');
+    });
+    await flushEffects();
+
+    expect(mockRespondToRequest).toHaveBeenCalledWith(41, 'sign-topic', '+/8=');
+    expect(mockClearPendingSigningRequest).toHaveBeenCalled();
   });
 
   it('keeps session approval hidden until hydration completes even when a proposal is pending', async () => {

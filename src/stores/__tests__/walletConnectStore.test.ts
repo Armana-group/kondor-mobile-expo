@@ -136,6 +136,17 @@ describe('walletConnectStore network reconciliation', () => {
           url: 'https://mismatch.example.com',
         },
       },
+      pendingSigningRequest: {
+        id: 3,
+        topic: 'mainnet-topic',
+        method: 'koinos_signMessage',
+        signerAddress: '1SignerAddress',
+        message: 'hello',
+        peerMeta: {
+          name: 'Mismatch dApp',
+          url: 'https://mismatch.example.com',
+        },
+      },
     });
 
     await useWalletConnectStore.getState().reconcileSessionsForActiveNetwork();
@@ -156,6 +167,7 @@ describe('walletConnectStore network reconciliation', () => {
     ]);
     expect(useWalletConnectStore.getState().pendingRequest).toBeNull();
     expect(useWalletConnectStore.getState().pendingTransaction).toBeNull();
+    expect(useWalletConnectStore.getState().pendingSigningRequest).toBeNull();
   });
 
   it('refuses to approve a session before the active network hydrates', async () => {
@@ -259,6 +271,8 @@ describe('walletConnectStore network reconciliation', () => {
     const approvedMethods = (buildApprovedNamespaces as jest.Mock).mock.calls[0][0]
       .supportedNamespaces.koinos.methods;
     expect(approvedMethods).toEqual([
+      KOINOS_METHODS.SignMessage,
+      KOINOS_METHODS.SignHash,
       KOINOS_METHODS.SignTransaction,
       KOINOS_METHODS.SignAndSendTransaction,
       KOINOS_METHODS.PrepareTransaction,
@@ -274,8 +288,6 @@ describe('walletConnectStore network reconciliation', () => {
       KOINOS_METHODS.GetBlock,
       KOINOS_METHODS.ReadContract,
     ]);
-    expect(approvedMethods).not.toContain(KOINOS_METHODS.SignMessage);
-    expect(approvedMethods).not.toContain(KOINOS_METHODS.SignHash);
     expect(approvedMethods).not.toContain(KOINOS_METHODS.JsonRpcCall);
     expect(approvedMethods).not.toContain(KOINOS_METHODS.SendTransaction);
     expect(approvedMethods).not.toContain(KOINOS_METHODS.SubmitBlock);

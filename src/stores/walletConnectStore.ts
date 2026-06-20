@@ -94,6 +94,8 @@ export const KOINOS_METHODS = {
 
 // Methods we can honestly advertise during session approval.
 const APPROVED_METHODS: string[] = [
+  KOINOS_METHODS.SignMessage,
+  KOINOS_METHODS.SignHash,
   KOINOS_METHODS.SignTransaction,
   KOINOS_METHODS.SignAndSendTransaction,
   KOINOS_METHODS.PrepareTransaction,
@@ -167,6 +169,19 @@ export interface WCTransactionRequest {
   };
 }
 
+export interface WCSigningRequest {
+  id: number;
+  topic: string;
+  method: typeof KOINOS_METHODS.SignMessage | typeof KOINOS_METHODS.SignHash;
+  signerAddress: string;
+  message?: unknown;
+  hash?: unknown;
+  peerMeta: {
+    name: string;
+    url: string;
+  };
+}
+
 interface WalletConnectState {
   // State
   initialized: boolean;
@@ -174,6 +189,7 @@ interface WalletConnectState {
   pendingProposal: WCSessionProposal | null;
   pendingRequest: WCPendingRequest | null;
   pendingTransaction: WCTransactionRequest | null;
+  pendingSigningRequest: WCSigningRequest | null;
 
   // Actions
   initialize: (address: string) => Promise<void>;
@@ -185,6 +201,7 @@ interface WalletConnectState {
   respondToRequest: (id: number, topic: string, result: unknown) => Promise<void>;
   rejectRequest: (id: number, topic: string, message?: string) => Promise<void>;
   clearPendingTransaction: () => void;
+  clearPendingSigningRequest: () => void;
 
   // Internal (using any for WalletKit since it's dynamically imported)
   _walletKit: any | null;
@@ -192,6 +209,7 @@ interface WalletConnectState {
   _setPendingProposal: (proposal: WCSessionProposal | null) => void;
   _setPendingRequest: (request: WCPendingRequest | null) => void;
   _setPendingTransaction: (request: WCTransactionRequest | null) => void;
+  _setPendingSigningRequest: (request: WCSigningRequest | null) => void;
   _updateSessions: () => void;
   isSessionTopicApprovedForActiveNetwork: (topic: string) => boolean;
   getSessionTopicValidationForActiveNetwork: (topic: string) => WalletConnectTopicValidation;
@@ -206,6 +224,7 @@ export const useWalletConnectStore = create<WalletConnectState>()(
       pendingProposal: null,
       pendingRequest: null,
       pendingTransaction: null,
+      pendingSigningRequest: null,
       _walletKit: null,
 
       _setWalletKit: (kit) => set({ _walletKit: kit }),
@@ -216,7 +235,11 @@ export const useWalletConnectStore = create<WalletConnectState>()(
 
       _setPendingTransaction: (request) => set({ pendingTransaction: request }),
 
+      _setPendingSigningRequest: (request) => set({ pendingSigningRequest: request }),
+
       clearPendingTransaction: () => set({ pendingTransaction: null }),
+
+      clearPendingSigningRequest: () => set({ pendingSigningRequest: null }),
 
       _updateSessions: () => {
         const { _walletKit } = get();
@@ -286,7 +309,7 @@ export const useWalletConnectStore = create<WalletConnectState>()(
       },
 
       reconcileSessionsForActiveNetwork: async () => {
-        const { _walletKit, pendingRequest, pendingTransaction } = get();
+        const { _walletKit, pendingRequest, pendingTransaction, pendingSigningRequest } = get();
         if (!_walletKit) {
           set({ sessions: [] });
           return;
@@ -326,6 +349,10 @@ export const useWalletConnectStore = create<WalletConnectState>()(
             pendingTransaction && mismatchedTopics.includes(pendingTransaction.topic)
               ? null
               : pendingTransaction,
+          pendingSigningRequest:
+            pendingSigningRequest && mismatchedTopics.includes(pendingSigningRequest.topic)
+              ? null
+              : pendingSigningRequest,
         });
 
         get()._updateSessions();
@@ -420,9 +447,14 @@ export const useWalletConnectStore = create<WalletConnectState>()(
               request.method === KOINOS_METHODS.SignAndSendTransaction
             ) {
               // Extract transaction from params
-              const txParams = request.params as { transaction?: TransactionJson; signer?: string };
+              const txParams = request.params as {
+                transaction?: TransactionJson;
+                address?: string;
+                signer?: string;
+                signerAddress?: string;
+              };
               const transaction = txParams.transaction;
-              const signerAddress = txParams.signer || address;
+              const signerAddress = txParams.address || txParams.signer || txParams.signerAddress || address;
 
               if (transaction) {
                 get()._setPendingTransaction({
@@ -437,6 +469,29 @@ export const useWalletConnectStore = create<WalletConnectState>()(
                 // Reject if no transaction provided
                 get().rejectRequest(id, topic, 'No transaction provided');
               }
+            } else if (
+              request.method === KOINOS_METHODS.SignMessage ||
+              request.method === KOINOS_METHODS.SignHash
+            ) {
+              const signingParams = request.params as {
+                address?: string;
+                signer?: string;
+                signerAddress?: string;
+                message?: unknown;
+                hash?: unknown;
+              };
+              const signerAddress =
+                signingParams.address || signingParams.signer || signingParams.signerAddress || address;
+
+              get()._setPendingSigningRequest({
+                id,
+                topic,
+                method: request.method,
+                signerAddress,
+                message: signingParams.message,
+                hash: signingParams.hash,
+                peerMeta,
+              });
             } else {
               // Handle as generic request
               get()._setPendingRequest({
@@ -614,7 +669,7 @@ export const useWalletConnectStore = create<WalletConnectState>()(
             },
           });
 
-          set({ pendingRequest: null, pendingTransaction: null });
+          set({ pendingRequest: null, pendingTransaction: null, pendingSigningRequest: null });
 
           wcLogger.debug('Request response sent');
         } catch (error) {
@@ -645,7 +700,7 @@ export const useWalletConnectStore = create<WalletConnectState>()(
             },
           });
 
-          set({ pendingRequest: null, pendingTransaction: null });
+          set({ pendingRequest: null, pendingTransaction: null, pendingSigningRequest: null });
 
           wcLogger.debug('Request rejected');
         } catch (error) {

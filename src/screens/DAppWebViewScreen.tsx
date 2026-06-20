@@ -34,6 +34,10 @@ import {
   TransactionRequest,
   SigningResult,
 } from '../components/TransactionApprovalModal';
+import {
+  DAppMessageSigningModal,
+  DAppMessageSigningRequest,
+} from '../components/DAppMessageSigningModal';
 import { getActiveNetworkConfig, useNetworkStore } from '../stores/networkStore';
 import {
   handleWebViewProviderCall,
@@ -61,6 +65,13 @@ interface PendingConnectionRequest {
   id: string;
   origin: string;
   security: DAppOriginSecurity;
+}
+
+interface PendingMessageSigningRequest {
+  id: string;
+  origin: string;
+  security: DAppOriginSecurity;
+  request: DAppMessageSigningRequest;
 }
 
 interface KondorConnectedAccount {
@@ -110,7 +121,7 @@ export const DAppWebViewScreen = () => {
   const hasHydrated = useNetworkStore((state) => state.hasHydrated);
   const activeNetwork = getActiveNetworkConfig();
   const rpcNodesKey = activeNetwork.rpcNodes.join(',');
-  const rpcNodes = useMemo(() => [...activeNetwork.rpcNodes], [rpcNodesKey]);
+  const rpcNodes = useMemo(() => rpcNodesKey.split(',').filter(Boolean), [rpcNodesKey]);
 
   const webViewRef = useRef<WebView>(null);
   const [canGoBack, setCanGoBack] = useState(false);
@@ -128,6 +139,7 @@ export const DAppWebViewScreen = () => {
   const [pendingRequest, setPendingRequest] = useState<PendingSignRequest | null>(null);
   const [showConnectionModal, setShowConnectionModal] = useState(false);
   const [pendingConnectionRequest, setPendingConnectionRequest] = useState<PendingConnectionRequest | null>(null);
+  const [pendingMessageSigningRequest, setPendingMessageSigningRequest] = useState<PendingMessageSigningRequest | null>(null);
   const [selectedAddresses, setSelectedAddresses] = useState<string[]>([]);
   const [rememberSite, setRememberSite] = useState(true);
 
@@ -141,6 +153,7 @@ export const DAppWebViewScreen = () => {
   const providerRef = useRef<Provider | null>(null);
   const currentOriginRef = useRef<string | null>(null);
   const pendingConnectionRequestRef = useRef<PendingConnectionRequest | null>(null);
+  const pendingMessageSigningRequestRef = useRef<PendingMessageSigningRequest | null>(null);
   const currentOriginSecurity = inspectDAppOrigin(getOriginFromUrl(currentUrl));
 
   if (!providerRef.current) {
@@ -161,10 +174,21 @@ export const DAppWebViewScreen = () => {
       browserLogger.debug('Sending response:', response.id, response.error ? 'error' : 'success');
       // Use direct callback for responses - avoids wildcard postMessage security risk
       // The injected provider script also listens for postMessage with origin check
-      const responseJson = JSON.stringify(response);
+      const responsePayload = response.result instanceof Uint8Array
+        ? {
+            ...response,
+            result: Array.from(response.result),
+            __kondorUint8ArrayResult: true,
+          }
+        : response;
+      const responseJson = JSON.stringify(responsePayload);
       const script = `
         (function() {
           var resp = ${responseJson};
+          if (resp.__kondorUint8ArrayResult) {
+            resp.result = new Uint8Array(resp.result);
+            delete resp.__kondorUint8ArrayResult;
+          }
           if (window.__kondorMobileResponse) {
             window.__kondorMobileResponse(resp);
           }
@@ -303,7 +327,35 @@ export const DAppWebViewScreen = () => {
 
     // Handle signHash and signMessage
     if (command === 'signer:signHash' || command === 'signer:signMessage') {
-      throw new Error('Message signing not yet implemented');
+      const origin = getOriginFromUrl(currentUrl || app.url);
+      const security = inspectDAppOrigin(origin, {
+        highRiskRequest: command === 'signer:signHash' ? 'raw hash signing' : 'message signing',
+      });
+
+      if (security.denyApproval) {
+        throw new Error(
+          security.signals[0]?.detail || 'This site cannot be approved because its origin looks unsafe.'
+        );
+      }
+
+      const pendingSigningRequest: PendingMessageSigningRequest = {
+        id,
+        origin,
+        security,
+        request: {
+          signerAddress: (args.signerAddress as string) || '',
+          kind: command === 'signer:signHash' ? 'hash' : 'message',
+          message: args.message,
+          hash: args.hash,
+        },
+      };
+
+      pendingMessageSigningRequestRef.current = pendingSigningRequest;
+      setPendingMessageSigningRequest(pendingSigningRequest);
+
+      return new Promise(() => {
+        // The modal handlers send the actual response.
+      });
     }
 
     // For signTransaction and sendTransaction, show approval modal
@@ -335,7 +387,7 @@ export const DAppWebViewScreen = () => {
     }
 
     throw new Error(`Unknown signer command: ${command}`);
-  }, [handlePrepareTransaction]);
+  }, [app.url, currentUrl, handlePrepareTransaction]);
 
   // Handle transaction approval
   const handleApproveTransaction = useCallback((result: SigningResult) => {
@@ -386,6 +438,55 @@ export const DAppWebViewScreen = () => {
       setShowApprovalModal(false);
     }
   }, [pendingRequest, handleRejectTransaction]);
+
+  const clearPendingMessageSigningRequest = useCallback(() => {
+    pendingMessageSigningRequestRef.current = null;
+    setPendingMessageSigningRequest(null);
+  }, []);
+
+  const handleApproveMessageSigning = useCallback((signature: string | Uint8Array) => {
+    const livePendingRequest = pendingMessageSigningRequestRef.current;
+    if (!pendingMessageSigningRequest || !livePendingRequest || livePendingRequest.id !== pendingMessageSigningRequest.id) {
+      return;
+    }
+
+    if (currentOriginRef.current !== pendingMessageSigningRequest.origin) {
+      sendResponse({
+        type: 'kondor-response',
+        id: pendingMessageSigningRequest.id,
+        error: 'Navigation changed before signing was approved',
+      });
+      clearPendingMessageSigningRequest();
+      return;
+    }
+
+    sendResponse({
+      type: 'kondor-response',
+      id: pendingMessageSigningRequest.id,
+      result: signature,
+    });
+    clearPendingMessageSigningRequest();
+  }, [clearPendingMessageSigningRequest, pendingMessageSigningRequest, sendResponse]);
+
+  const handleRejectMessageSigning = useCallback((errorMessage = 'User rejected the signing request') => {
+    if (pendingMessageSigningRequest) {
+      sendResponse({
+        type: 'kondor-response',
+        id: pendingMessageSigningRequest.id,
+        error: errorMessage,
+      });
+    }
+
+    clearPendingMessageSigningRequest();
+  }, [clearPendingMessageSigningRequest, pendingMessageSigningRequest, sendResponse]);
+
+  const handleCloseMessageSigning = useCallback(() => {
+    if (pendingMessageSigningRequest) {
+      handleRejectMessageSigning('User rejected the signing request');
+    } else {
+      clearPendingMessageSigningRequest();
+    }
+  }, [clearPendingMessageSigningRequest, handleRejectMessageSigning, pendingMessageSigningRequest]);
 
   const openConnectionApproval = useCallback((id: string, origin: string, security: DAppOriginSecurity) => {
     const activeAccount = getActiveAccount();
@@ -583,6 +684,7 @@ export const DAppWebViewScreen = () => {
     const nextOrigin = getOriginFromUrl(navState.url);
     if (nextOrigin !== currentOriginRef.current) {
       const pendingRequestOnOrigin = pendingConnectionRequestRef.current;
+      const pendingSigningRequestOnOrigin = pendingMessageSigningRequestRef.current;
       if (pendingRequestOnOrigin && pendingRequestOnOrigin.origin !== nextOrigin) {
         sendResponse({
           type: 'kondor-response',
@@ -593,6 +695,14 @@ export const DAppWebViewScreen = () => {
         setShowConnectionModal(false);
         setPendingConnectionRequest(null);
       }
+      if (pendingSigningRequestOnOrigin && pendingSigningRequestOnOrigin.origin !== nextOrigin) {
+        sendResponse({
+          type: 'kondor-response',
+          id: pendingSigningRequestOnOrigin.id,
+          error: 'Navigation changed before signing was approved',
+        });
+        clearPendingMessageSigningRequest();
+      }
       currentOriginRef.current = nextOrigin;
       setIsConnected(false);
     }
@@ -601,7 +711,7 @@ export const DAppWebViewScreen = () => {
     setCanGoForward(navState.canGoForward);
     setCurrentUrl(navState.url);
     setShowOriginWarning(inspectDAppOrigin(nextOrigin).level !== 'trusted');
-  }, [sendResponse]);
+  }, [clearPendingMessageSigningRequest, sendResponse]);
 
   // Block HTTP navigations - only allow HTTPS
   const handleShouldStartLoad = useCallback((request: ShouldStartLoadRequest): boolean => {
@@ -805,6 +915,16 @@ export const DAppWebViewScreen = () => {
         onApprove={handleApproveTransaction}
         onReject={handleRejectTransaction}
         onClose={handleCloseApprovalModal}
+      />
+
+      <DAppMessageSigningModal
+        visible={!!pendingMessageSigningRequest}
+        request={pendingMessageSigningRequest?.request || null}
+        appName={app.name}
+        appOrigin={pendingMessageSigningRequest?.origin || app.url}
+        onApprove={handleApproveMessageSigning}
+        onReject={handleRejectMessageSigning}
+        onClose={handleCloseMessageSigning}
       />
 
       <Modal

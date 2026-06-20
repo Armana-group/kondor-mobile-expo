@@ -39,6 +39,7 @@ const mockRehydrate = jest.fn(async () => undefined);
 const injectedScripts: string[] = [];
 
 let latestWebViewProps: Record<string, any> | null = null;
+let lastMessageSigningModalProps: Record<string, any> | null = null;
 let mockNetworkState = {
   mode: 'mainnet',
   hasHydrated: true,
@@ -92,6 +93,13 @@ jest.mock('koilib', () => ({
 
 jest.mock('../../components/TransactionApprovalModal', () => ({
   TransactionApprovalModal: () => null,
+}));
+
+jest.mock('../../components/DAppMessageSigningModal', () => ({
+  DAppMessageSigningModal: (props: Record<string, any>) => {
+    lastMessageSigningModalProps = props;
+    return null;
+  },
 }));
 
 jest.mock('../../stores/networkStore', () => ({
@@ -179,8 +187,16 @@ function findButtonByText(
 function parseInjectedResponses() {
   return injectedScripts
     .map((script) => {
-      const match = script.match(/var resp = (.*?);\s*if \(window\.__kondorMobileResponse\)/s);
-      return match ? JSON.parse(match[1]) : null;
+      const match = script.match(
+        /var resp = (.*?);\s*(?:if \(resp\.__kondorUint8ArrayResult\)|if \(window\.__kondorMobileResponse\))/s
+      );
+      if (!match) {
+        return null;
+      }
+
+      const response = JSON.parse(match[1]);
+      delete response.__kondorUint8ArrayResult;
+      return response;
     })
     .filter(Boolean);
 }
@@ -198,6 +214,10 @@ async function renderScreen() {
 }
 
 function emitGetAccounts() {
+  return emitCommand('request-1', 'getAccounts', {});
+}
+
+function emitCommand(id: string, command: string, args: Record<string, unknown>) {
   if (!latestWebViewProps?.onMessage) {
     throw new Error('WebView onMessage handler missing');
   }
@@ -206,9 +226,9 @@ function emitGetAccounts() {
     nativeEvent: {
       data: JSON.stringify({
         type: 'kondor',
-        id: 'request-1',
-        command: 'getAccounts',
-        args: {},
+        id,
+        command,
+        args,
       }),
     },
   });
@@ -313,6 +333,7 @@ describe('DAppWebViewScreen getAccounts grants', () => {
       grants: {},
     };
     latestWebViewProps = null;
+    lastMessageSigningModalProps = null;
     injectedScripts.length = 0;
     mockNetworkState = {
       mode: 'mainnet',
@@ -464,6 +485,70 @@ describe('DAppWebViewScreen getAccounts grants', () => {
         type: 'kondor-response',
         id: 'request-1',
         error: 'Navigation changed before account access was approved',
+      },
+    ]);
+  });
+
+  it('opens a signing modal for signer:signMessage and returns the approved signature', async () => {
+    await renderScreen();
+
+    act(() => {
+      void emitCommand('sign-message-1', 'signer:signMessage', {
+        signerAddress: mockAccount.address,
+        message: 'hello from fogata',
+      });
+    });
+    await flushEffects();
+
+    expect(lastMessageSigningModalProps).toEqual(
+      expect.objectContaining({
+        visible: true,
+        request: expect.objectContaining({
+          signerAddress: mockAccount.address,
+          kind: 'message',
+          message: 'hello from fogata',
+        }),
+      })
+    );
+
+    act(() => {
+      lastMessageSigningModalProps?.onApprove('signed-message-base64url');
+    });
+    await flushEffects();
+
+    expect(parseInjectedResponses()).toEqual([
+      {
+        type: 'kondor-response',
+        id: 'sign-message-1',
+        result: 'signed-message-base64url',
+      },
+    ]);
+  });
+
+  it('rejects a pending signing approval if the WebView navigates away before approval', async () => {
+    await renderScreen();
+
+    act(() => {
+      void emitCommand('sign-hash-1', 'signer:signHash', {
+        signerAddress: mockAccount.address,
+        hash: Array.from({ length: 32 }, (_, index) => index),
+      });
+    });
+    await flushEffects();
+
+    navigateWebView('https://evil.example/path');
+    await flushEffects();
+
+    act(() => {
+      lastMessageSigningModalProps?.onApprove(new Uint8Array([1, 2, 3]));
+    });
+    await flushEffects();
+
+    expect(parseInjectedResponses()).toEqual([
+      {
+        type: 'kondor-response',
+        id: 'sign-hash-1',
+        error: 'Navigation changed before signing was approved',
       },
     ]);
   });
