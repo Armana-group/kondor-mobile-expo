@@ -22,6 +22,15 @@ const vhp: SwapToken = {
   balance: '0',
 };
 
+const vUsdt: SwapToken = {
+  contractId: '12VoHz41a4HtfiyhTWbg9RXqGMRbYk6pXh',
+  symbol: 'vUSDT',
+  name: 'Vortex USDT',
+  decimals: 8,
+  icon: '',
+  balance: '0',
+};
+
 describe('KoinDxSwapQuoteService', () => {
   it('gets a direct quote from pair, reserves, and amount_out calls', async () => {
     const call = jest.fn(async (_method: string, params: any) => {
@@ -138,6 +147,40 @@ describe('KoinDxSwapQuoteService', () => {
       contract_id: KOINDX.PERIPHERY_CONTRACT,
       entry_point: KOINDX.ENTRY_POINTS.GET_AMOUNT_OUT,
       args: encodeGetAmountOutArgs('100000000', '1000000000', '200000000'),
+    });
+  });
+
+  it('orients KOIN stablecoin reserves by token identity instead of address sort', async () => {
+    const call = jest.fn(async (_method: string, params: any) => {
+      if (params.entry_point === KOINDX.ENTRY_POINTS.GET_PAIR) return { result: 'encoded-pair-address' };
+      if (params.entry_point === KOINDX.ENTRY_POINTS.GET_RESERVES) return { result: 'encoded-reserves' };
+      if (params.entry_point === KOINDX.ENTRY_POINTS.GET_AMOUNT_OUT) return { result: 'encoded-amount-out' };
+      return {};
+    });
+    const service = new KoinDxSwapQuoteService({
+      now: () => 1_000,
+      decodeGetPairResult: () => '17PairAddress',
+      decodeGetReservesResult: () => ({
+        reserveA: '5325992421831',
+        reserveB: '31541683597',
+      }),
+      decodeUint64Result: () => '590730',
+    });
+
+    const quote = await service.getSwapQuote({
+      provider: { call } as unknown as Provider,
+      tokenIn: koin,
+      tokenOut: vUsdt,
+      amountIn: '1',
+      slippagePercent: 0.5,
+      allTokens: [koin, vhp, vUsdt],
+    });
+
+    expect(quote.amountOut).toBe('0.0059073');
+    expect(call).toHaveBeenCalledWith('chain.read_contract', {
+      contract_id: KOINDX.PERIPHERY_CONTRACT,
+      entry_point: KOINDX.ENTRY_POINTS.GET_AMOUNT_OUT,
+      args: encodeGetAmountOutArgs('100000000', '5325992421831', '31541683597'),
     });
   });
 });

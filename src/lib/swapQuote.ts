@@ -70,6 +70,11 @@ interface QuoteCacheEntry {
   cachedAt: number;
 }
 
+const KOINDX_STABLECOIN_CONTRACTS = new Set([
+  '12VoHz41a4HtfiyhTWbg9RXqGMRbYk6pXh', // vUSDT
+  '1N8iYrYEJdCVK1rhbqv3qZUzHcpoeKmFnj', // vUSDC
+]);
+
 export class KoinDxSwapQuoteService {
   private readonly now: () => number;
   private readonly decodeGetPairResult: typeof defaultDecodeGetPairResult;
@@ -265,11 +270,55 @@ export class KoinDxSwapQuoteService {
     reserveA: string,
     reserveB: string
   ): { reserveIn: string; reserveOut: string } {
+    const stablecoinReserves = this.orientKoinStablecoinReserves(
+      sortedPairLegs,
+      tokenInLeg,
+      reserveA,
+      reserveB
+    );
+    if (stablecoinReserves) {
+      return stablecoinReserves;
+    }
+
     if (sortedPairLegs[0].address === tokenInLeg.address) {
       return { reserveIn: reserveA, reserveOut: reserveB };
     }
 
     return { reserveIn: reserveB, reserveOut: reserveA };
+  }
+
+  private orientKoinStablecoinReserves(
+    sortedPairLegs: [TokenQuoteLeg, TokenQuoteLeg],
+    tokenInLeg: TokenQuoteLeg,
+    reserveA: string,
+    reserveB: string
+  ): { reserveIn: string; reserveOut: string } | null {
+    const [firstLeg, secondLeg] = sortedPairLegs;
+    const hasKoin = this.isKoinLeg(firstLeg) || this.isKoinLeg(secondLeg);
+    const hasStablecoin = this.isStablecoinLeg(firstLeg) || this.isStablecoinLeg(secondLeg);
+
+    if (!hasKoin || !hasStablecoin) {
+      return null;
+    }
+
+    const reserveABigInt = BigInt(reserveA);
+    const reserveBBigInt = BigInt(reserveB);
+    const koinReserve = reserveABigInt >= reserveBBigInt ? reserveA : reserveB;
+    const stablecoinReserve = reserveABigInt >= reserveBBigInt ? reserveB : reserveA;
+
+    if (this.isKoinLeg(tokenInLeg)) {
+      return { reserveIn: koinReserve, reserveOut: stablecoinReserve };
+    }
+
+    return { reserveIn: stablecoinReserve, reserveOut: koinReserve };
+  }
+
+  private isKoinLeg(leg: TokenQuoteLeg): boolean {
+    return leg.identifier === 'koin';
+  }
+
+  private isStablecoinLeg(leg: TokenQuoteLeg): boolean {
+    return KOINDX_STABLECOIN_CONTRACTS.has(leg.address);
   }
 
   private async getAmountOut(
