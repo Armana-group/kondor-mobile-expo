@@ -20,6 +20,8 @@ let mockBroadcastReceipt: {
   reverted: boolean;
   rpc_error?: unknown;
 };
+let mockDryRunError: Error | null;
+let mockBroadcastError: Error | null;
 let mockWait: jest.Mock;
 
 jest.mock('koilib', () => {
@@ -35,11 +37,19 @@ jest.mock('koilib', () => {
       this.prepare = jest.fn(async () => {
         this.transaction.id = '0xprepared';
       });
-      this.send = jest.fn(async ({ broadcast } = { broadcast: true }) => (
-        broadcast
-          ? mockBroadcastReceipt
-          : mockDryRunReceipt
-      ));
+      this.send = jest.fn(async ({ broadcast } = { broadcast: true }) => {
+        if (broadcast) {
+          if (mockBroadcastError) {
+            throw mockBroadcastError;
+          }
+          return mockBroadcastReceipt;
+        }
+
+        if (mockDryRunError) {
+          throw mockDryRunError;
+        }
+        return mockDryRunReceipt;
+      });
       this.wait = mockWait;
     }),
   };
@@ -104,6 +114,8 @@ describe('swapTransaction', () => {
       rc_used: '50000000',
       reverted: false,
     };
+    mockDryRunError = null;
+    mockBroadcastError = null;
     mockWait = jest.fn(async () => ({ blockNumber: 123 }));
   });
 
@@ -142,7 +154,7 @@ describe('swapTransaction', () => {
       tokenOut: vhp,
       allTokens: [koin, vhp],
       maxRc: 1_000_000_000,
-      availableRc: 100_000_000,
+      availableRc: 1_000_000_000,
       onStatus: (status) => statuses.push(status),
     });
 
@@ -177,6 +189,86 @@ describe('swapTransaction', () => {
       'confirming',
       'confirmed',
     ]);
+  });
+
+  it('caps the swap dry-run rc limit to currently available rc', async () => {
+    await executeSwapTransaction({
+      provider: {} as Provider,
+      signer,
+      quote,
+      tokenIn: koin,
+      tokenOut: vhp,
+      allTokens: [koin, vhp],
+      maxRc: 1_000_000_000,
+      availableRc: 100_000_000,
+    });
+
+    const transactionMock = Transaction as unknown as jest.Mock;
+    expect(transactionMock.mock.calls[0][0].options.rcLimit).toBe(100_000_000);
+  });
+
+  it('caps the final rc limit to available rc when the estimate fits', async () => {
+    mockDryRunReceipt = {
+      id: '0xdryrun',
+      rc_used: '50000000',
+      reverted: false,
+    };
+
+    await executeSwapTransaction({
+      provider: {} as Provider,
+      signer,
+      quote,
+      tokenIn: koin,
+      tokenOut: vhp,
+      allTokens: [koin, vhp],
+      maxRc: 1_000_000_000,
+      availableRc: 52_000_000,
+    });
+
+    const transactionMock = Transaction as unknown as jest.Mock;
+    expect(transactionMock.mock.calls[0][0].options.rcLimit).toBe(52_000_000);
+    expect(transactionMock.mock.calls[1][0].options.rcLimit).toBe(52_000_000);
+  });
+
+  it('reports insufficient mana when the dry-run rc rejection is returned as an error', async () => {
+    mockDryRunError = new Error(JSON.stringify({
+      error: 'payer does not have the rc to cover transaction rc limit',
+      code: -1,
+      logs: [],
+    }));
+
+    await expect(executeSwapTransaction({
+      provider: {} as Provider,
+      signer,
+      quote,
+      tokenIn: koin,
+      tokenOut: vhp,
+      allTokens: [koin, vhp],
+      maxRc: 1_000_000_000,
+      availableRc: 100_000_000,
+    })).rejects.toThrow(/Insufficient mana to pay for this swap/i);
+
+    expect(Transaction).toHaveBeenCalledTimes(1);
+    expect(signer.signTransaction).not.toHaveBeenCalled();
+  });
+
+  it('reports insufficient mana when the final broadcast rc rejection is returned as an error', async () => {
+    mockBroadcastError = new Error(JSON.stringify({
+      error: 'payer does not have the rc to cover transaction rc limit',
+      code: -1,
+      logs: [],
+    }));
+
+    await expect(executeSwapTransaction({
+      provider: {} as Provider,
+      signer,
+      quote,
+      tokenIn: koin,
+      tokenOut: vhp,
+      allTokens: [koin, vhp],
+      maxRc: 1_000_000_000,
+      availableRc: 100_000_000,
+    })).rejects.toThrow(/Insufficient mana to pay for this swap/i);
   });
 
   it('refuses zero minimum output before building operations', async () => {

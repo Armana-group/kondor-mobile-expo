@@ -9,6 +9,9 @@ import {
 } from './swapMath';
 import type { SwapQuote } from './swapQuote';
 
+const INSUFFICIENT_SWAP_MANA_MESSAGE =
+  'Insufficient mana to pay for this swap. Wait for mana to recharge or add KOIN to this account, then try again.';
+
 export type SwapExecutionStatus =
   | 'building'
   | 'estimating_mana'
@@ -74,6 +77,19 @@ function isRpcDeadlineError(value: unknown): boolean {
   return /context deadline exceeded|transaction not mined after/i.test(stringifyError(value));
 }
 
+function isInsufficientRcError(value: unknown): boolean {
+  return /payer does not have the rc to cover transaction rc limit|insufficient rc/i.test(
+    stringifyError(value)
+  );
+}
+
+function normalizeSwapExecutionError(error: unknown): unknown {
+  if (isInsufficientRcError(error)) {
+    return new Error(INSUFFICIENT_SWAP_MANA_MESSAGE);
+  }
+  return error;
+}
+
 function rpcDeadlineMessage(value: unknown): string {
   return stringifyError(value);
 }
@@ -88,6 +104,43 @@ function pendingConfirmationResult(
     confirmationPending: true,
     confirmationError: rpcDeadlineMessage(error),
   };
+}
+
+function positiveFloor(value: number | undefined): number | undefined {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return undefined;
+  }
+  return Math.floor(numeric);
+}
+
+function swapDryRunRcLimit(params: SwapTransactionParams): number {
+  const estimationLimit = dryRunRcLimit({
+    maxRc: params.maxRc,
+    availableRc: params.availableRc,
+  });
+  const availableRc = positiveFloor(params.availableRc);
+
+  if (availableRc !== undefined && availableRc < estimationLimit) {
+    return availableRc;
+  }
+
+  return estimationLimit;
+}
+
+function swapFinalRcLimit(rcUsed: number, availableRcValue: number | undefined): number {
+  const bufferedRcLimit = Math.floor(rcUsed * 1.1);
+  const availableRc = positiveFloor(availableRcValue);
+
+  if (availableRc === undefined || bufferedRcLimit <= availableRc) {
+    return bufferedRcLimit;
+  }
+
+  if (rcUsed < availableRc) {
+    return availableRc;
+  }
+
+  throw new Error(INSUFFICIENT_SWAP_MANA_MESSAGE);
 }
 
 export async function buildSwapTransaction(params: SwapTransactionParams): Promise<Transaction> {
@@ -155,12 +208,20 @@ export async function executeSwapTransaction(
   onStatus?.('building');
   const dryRunTx = await buildSwapTransaction({
     ...params,
-    rcLimit: dryRunRcLimit({ maxRc: params.maxRc, availableRc: params.availableRc }),
+    rcLimit: swapDryRunRcLimit(params),
   });
 
   onStatus?.('estimating_mana');
-  const dryRunReceipt = await dryRunTx.send({ broadcast: false });
+  let dryRunReceipt: TransactionReceipt;
+  try {
+    dryRunReceipt = await dryRunTx.send({ broadcast: false });
+  } catch (error) {
+    throw normalizeSwapExecutionError(error);
+  }
   const dryRunRpcError = getReceiptRpcError(dryRunReceipt);
+  if (dryRunRpcError && isInsufficientRcError(dryRunRpcError)) {
+    throw new Error(INSUFFICIENT_SWAP_MANA_MESSAGE);
+  }
   if (dryRunRpcError && isRpcDeadlineError(dryRunRpcError)) {
     throw new Error(
       `Koinos RPC timed out while simulating the swap. No transaction was submitted. Try again. ${rpcDeadlineMessage(dryRunRpcError)}`
@@ -175,7 +236,7 @@ export async function executeSwapTransaction(
     throw new Error('Could not estimate swap transaction cost');
   }
 
-  const finalRcLimit = Math.floor(rcUsed * 1.1);
+  const finalRcLimit = swapFinalRcLimit(rcUsed, params.availableRc);
 
   onStatus?.('signing');
   const tx = await buildSwapTransaction({
@@ -186,8 +247,16 @@ export async function executeSwapTransaction(
   await params.signer.signTransaction(tx.transaction);
 
   onStatus?.('broadcasting');
-  const receipt = await tx.send({ broadcast: true });
+  let receipt: TransactionReceipt;
+  try {
+    receipt = await tx.send({ broadcast: true });
+  } catch (error) {
+    throw normalizeSwapExecutionError(error);
+  }
   const broadcastRpcError = getReceiptRpcError(receipt);
+  if (broadcastRpcError && isInsufficientRcError(broadcastRpcError)) {
+    throw new Error(INSUFFICIENT_SWAP_MANA_MESSAGE);
+  }
   if (broadcastRpcError && isRpcDeadlineError(broadcastRpcError)) {
     onStatus?.('confirming');
     return pendingConfirmationResult(receipt, broadcastRpcError);
