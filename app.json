@@ -48,7 +48,8 @@
         {
           "cameraPermission": "Kondor needs camera access to scan QR codes for sending tokens."
         }
-      ]
+      ],
+      "expo-font"
     ],
     "extra": {
       "eas": {
