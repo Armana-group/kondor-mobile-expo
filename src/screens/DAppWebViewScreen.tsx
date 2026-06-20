@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,7 +18,6 @@ import * as SecureStore from 'expo-secure-store';
 import { DApp, isCuratedUrl } from '../constants/dapps';
 import colors from '../theme/colors';
 import { useWalletStore } from '../stores/walletStore';
-import { DEFAULT_NETWORK } from '../lib/constants';
 import { browserLogger } from '../lib/logger';
 import {
   KONDOR_PROVIDER_SCRIPT,
@@ -32,6 +31,7 @@ import {
   TransactionRequest,
   SigningResult,
 } from '../components/TransactionApprovalModal';
+import { getActiveNetworkConfig, useNetworkStore } from '../stores/networkStore';
 
 type DAppWebViewRouteParams = {
   DAppWebView: {
@@ -50,6 +50,9 @@ export const DAppWebViewScreen = () => {
   const navigation = useNavigation();
   const route = useRoute<RouteProp<DAppWebViewRouteParams, 'DAppWebView'>>();
   const { app } = route.params;
+  const networkMode = useNetworkStore((state) => state.mode);
+  const hasHydrated = useNetworkStore((state) => state.hasHydrated);
+  const activeNetwork = getActiveNetworkConfig();
 
   const webViewRef = useRef<WebView>(null);
   const [canGoBack, setCanGoBack] = useState(false);
@@ -68,7 +71,11 @@ export const DAppWebViewScreen = () => {
   const { accounts, address, getActiveAccount, activeAccountId } = useWalletStore();
 
   // Provider for blockchain queries
-  const providerRef = useRef<Provider>(new Provider(DEFAULT_NETWORK.rpcNodes));
+  const providerRef = useRef<Provider>(new Provider(activeNetwork.rpcNodes));
+
+  useEffect(() => {
+    providerRef.current = new Provider(activeNetwork.rpcNodes);
+  }, [activeNetwork.chainId, hasHydrated, networkMode]);
 
   // Send response back to WebView
   const sendResponse = useCallback((response: KondorResponse) => {
@@ -195,7 +202,7 @@ export const DAppWebViewScreen = () => {
       tx.header.payer = signerAddress;
     }
     if (!tx.header.chain_id) {
-      tx.header.chain_id = DEFAULT_NETWORK.chainId;
+      tx.header.chain_id = activeNetwork.chainId;
     }
 
     const txObj = new Transaction({ signer, provider });
@@ -203,7 +210,7 @@ export const DAppWebViewScreen = () => {
     await txObj.prepare();
 
     return txObj.transaction;
-  }, [activeAccountId]);
+  }, [activeAccountId, activeNetwork.chainId]);
 
   // Handle signer commands (require user approval)
   const handleSignerCommand = useCallback(async (

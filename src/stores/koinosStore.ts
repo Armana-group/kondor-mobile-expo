@@ -1,12 +1,14 @@
 import { create } from 'zustand';
 import { Provider, Signer, Contract, utils } from 'koilib';
 import * as SecureStore from 'expo-secure-store';
-import { DEFAULT_NETWORK, DEFAULT_RC_LIMIT } from '../lib/constants';
+import { DEFAULT_RC_LIMIT } from '../lib/constants';
 import { ManualTokenContract } from '../lib/manualTokenContract';
 import { koinosLogger as log } from '../lib/logger';
+import { getActiveNetworkConfig } from './networkStore';
 
 interface KoinosState {
   provider: Provider | null;
+  networkChainId: string | null;
   isInitialized: boolean;
   isLoading: boolean;
   error: string | null;
@@ -68,8 +70,31 @@ async function getTemporarySigner(provider: Provider): Promise<Signer> {
   return signer;
 }
 
+async function ensureActiveProvider(get: () => KoinosState): Promise<{
+  provider: Provider;
+  network: ReturnType<typeof getActiveNetworkConfig>;
+}> {
+  const activeNetwork = getActiveNetworkConfig();
+  const { provider, isInitialized, networkChainId } = get();
+
+  if (!provider || !isInitialized || networkChainId !== activeNetwork.chainId) {
+    await get().initialize();
+  }
+
+  const currentProvider = get().provider;
+  if (!currentProvider) {
+    throw new Error('Provider not initialized');
+  }
+
+  return {
+    provider: currentProvider,
+    network: getActiveNetworkConfig(),
+  };
+}
+
 export const useKoinosStore = create<KoinosState>((set, get) => ({
   provider: null,
+  networkChainId: null,
   isInitialized: false,
   isLoading: false,
   error: null,
@@ -79,7 +104,8 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
     try {
       set({ isLoading: true, error: null });
 
-      const provider = new Provider(DEFAULT_NETWORK.rpcNodes);
+      const network = getActiveNetworkConfig();
+      const provider = new Provider(network.rpcNodes);
 
       // Verify a private key exists (but don't cache the signer)
       const { useWalletStore } = await import('./walletStore');
@@ -114,6 +140,7 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
 
       set({
         provider,
+        networkChainId: network.chainId,
         isInitialized: true,
         isLoading: false,
         error: null
@@ -131,25 +158,13 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
 
   getBalance: async (address: string) => {
     log.debug(' getBalance called for address:', address);
-    const { provider, isInitialized } = get();
-
-    // Initialize if needed
-    if (!provider || !isInitialized) {
-      log.debug(' Provider not initialized, initializing...');
-      await get().initialize();
-    }
-
-    const currentProvider = get().provider;
-    if (!currentProvider) {
-      log.error(' Provider still not initialized after init attempt');
-      throw new Error('Provider not initialized');
-    }
+    const { provider: currentProvider, network } = await ensureActiveProvider(get);
 
     try {
       set({ isLoading: true, error: null });
 
       const tokenContract = new ManualTokenContract(
-        DEFAULT_NETWORK.koinContract,
+        network.koinContract,
         currentProvider
       );
 
@@ -171,19 +186,7 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
 
   getMana: async (address: string) => {
     log.debug(' getMana called for address:', address);
-    const { provider, isInitialized } = get();
-
-    // Initialize if needed
-    if (!provider || !isInitialized) {
-      log.debug(' Provider not initialized, initializing...');
-      await get().initialize();
-    }
-
-    const currentProvider = get().provider;
-    if (!currentProvider) {
-      log.error(' Provider still not initialized after init attempt');
-      throw new Error('Provider not initialized');
-    }
+    const { provider: currentProvider } = await ensureActiveProvider(get);
 
     try {
       log.debug(' Fetching account resource credits...');
@@ -239,16 +242,7 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
   },
 
   transfer: async (to: string, amount: string) => {
-    const { provider, isInitialized } = get();
-
-    if (!provider || !isInitialized) {
-      await get().initialize();
-    }
-
-    const currentProvider = get().provider;
-    if (!currentProvider) {
-      throw new Error('Not initialized');
-    }
+    const { provider: currentProvider, network } = await ensureActiveProvider(get);
 
     try {
       set({ isLoading: true, error: null });
@@ -269,7 +263,7 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
       }
 
       const tokenContract = new ManualTokenContract(
-        DEFAULT_NETWORK.koinContract,
+        network.koinContract,
         currentProvider
       );
 
@@ -295,16 +289,7 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
   },
 
   transferToken: async (contractId: string, to: string, amount: string, decimals: number) => {
-    const { provider, isInitialized } = get();
-
-    if (!provider || !isInitialized) {
-      await get().initialize();
-    }
-
-    const currentProvider = get().provider;
-    if (!currentProvider) {
-      throw new Error('Not initialized');
-    }
+    const { provider: currentProvider } = await ensureActiveProvider(get);
 
     try {
       set({ isLoading: true, error: null });
@@ -352,22 +337,13 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
   },
 
   estimateMana: async (to: string, amount: string) => {
-    const { provider, isInitialized } = get();
-
-    if (!provider || !isInitialized) {
-      await get().initialize();
-    }
-
-    const currentProvider = get().provider;
-    if (!currentProvider) {
-      throw new Error('Not initialized');
-    }
+    const { provider: currentProvider, network } = await ensureActiveProvider(get);
 
     try {
       const signer = await getTemporarySigner(currentProvider);
 
       const koin = new Contract({
-        id: DEFAULT_NETWORK.koinContract,
+        id: network.koinContract,
         abi: utils.tokenAbi,
         provider: currentProvider,
         signer,
@@ -393,6 +369,7 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
   reset: () => {
     set({
       provider: null,
+      networkChainId: null,
       isInitialized: false,
       isLoading: false,
       error: null

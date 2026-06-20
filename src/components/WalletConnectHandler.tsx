@@ -21,13 +21,15 @@ import {
   TransactionRequest,
   SigningResult,
 } from './TransactionApprovalModal';
-import { DEFAULT_NETWORK } from '../lib/constants';
 import { requireBiometricAuth } from '../lib/biometrics';
 import { HapticFeedback } from '../lib/haptics';
 import { wcLogger, sanitizeErrorForUser } from '../lib/logger';
+import { getActiveNetworkConfig, useNetworkStore } from '../stores/networkStore';
 
 export const WalletConnectHandler: React.FC = () => {
   const { address, activeAccountId, isWalletCreated } = useWalletStore();
+  const networkMode = useNetworkStore((state) => state.mode);
+  const hasHydrated = useNetworkStore((state) => state.hasHydrated);
   const {
     initialized,
     initialize,
@@ -102,9 +104,10 @@ export const WalletConnectHandler: React.FC = () => {
     if (!pendingRequest) return;
 
     const { id, topic, method, params } = pendingRequest;
+    const activeNetwork = getActiveNetworkConfig();
 
     try {
-      const provider = new Provider(DEFAULT_NETWORK.rpcNodes);
+      const provider = new Provider(activeNetwork.rpcNodes);
       let result: unknown;
 
       switch (method) {
@@ -168,7 +171,6 @@ export const WalletConnectHandler: React.FC = () => {
         case KOINOS_METHODS.PrepareTransaction: {
           // Prepare transaction without signing
           const prepParams = params as { transaction: TransactionJson };
-          const provider = new Provider(DEFAULT_NETWORK.rpcNodes);
           const txObj = new Transaction({ provider });
           txObj.transaction = prepParams.transaction;
           await txObj.prepare();
@@ -204,7 +206,7 @@ export const WalletConnectHandler: React.FC = () => {
       wcLogger.error('Request error:', error);
       await rejectRequest(id, topic, error.message || 'Request failed');
     }
-  }, [pendingRequest, respondToRequest, rejectRequest]);
+  }, [hasHydrated, networkMode, pendingRequest, respondToRequest, rejectRequest]);
 
   // Handle transaction approval
   const handleApproveTransaction = useCallback(

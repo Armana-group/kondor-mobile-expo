@@ -16,6 +16,7 @@ import { Core } from '@walletconnect/core';
 import { WalletKit } from '@reown/walletkit';
 import { buildApprovedNamespaces, getSdkError } from '@walletconnect/utils';
 import { wcLogger } from '../lib/logger';
+import { useNetworkStore } from './networkStore';
 
 // WalletConnect feature flag
 const WALLETCONNECT_ENABLED = true;
@@ -25,6 +26,14 @@ export const KOINOS_CHAIN_IDS = {
   Mainnet: 'koinos:EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3e',
   Harbinger: 'koinos:EiBncD4pKRIQWco_WRqo5Q-xnXR7JuO3',
 } as const;
+
+function getActiveWalletConnectChainId() {
+  const { mode, hasHydrated } = useNetworkStore.getState();
+  const activeMode = hasHydrated ? mode : 'mainnet';
+  return activeMode === 'harbinger'
+    ? KOINOS_CHAIN_IDS.Harbinger
+    : KOINOS_CHAIN_IDS.Mainnet;
+}
 
 // Koinos methods from @armana/walletconnect-koinos-sdk-js
 export const KOINOS_METHODS = {
@@ -341,16 +350,17 @@ export const useWalletConnectStore = create<WalletConnectState>()(
 
         try {
           wcLogger.debug('Approving session:', pendingProposal.id);
+          const activeChainId = getActiveWalletConnectChainId();
 
           // Build approved namespaces for Koinos
           const approvedNamespaces = buildApprovedNamespaces({
             proposal: pendingProposal.params,
             supportedNamespaces: {
               koinos: {
-                chains: [KOINOS_CHAIN_IDS.Mainnet],
+                chains: [activeChainId],
                 methods: SUPPORTED_METHODS,
                 events: SUPPORTED_EVENTS,
-                accounts: [`${KOINOS_CHAIN_IDS.Mainnet}:${address}`],
+                accounts: [`${activeChainId}:${address}`],
               },
             },
           });

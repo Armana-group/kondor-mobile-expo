@@ -1,31 +1,18 @@
-// Network configurations for Koinos blockchain
-export const MAINNET = {
-  chainId: 'EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3ejxRSewi7qIBfSA==',
-  name: 'Mainnet',
-  rpcNodes: [
-    'https://api.koinos.io',
-    'https://api.koinosblocks.com'
-  ],
-  koinContract: '19GYjDBVXU7keLbYvMLazsGQn3GTWHjHkK' // Updated KOIN contract (old: 15DJN4a8SgrbGhhGksSBASiSYjGnMU8dGL was in system space)
+const MAINNET_EXPLORER = {
+  base: 'https://www.koinscan.com',
+  tx: 'https://www.koinscan.com/tx',
+  address: 'https://www.koinscan.com/address',
+  contract: 'https://www.koinscan.com/contracts',
+  block: 'https://www.koinscan.com/block',
 };
 
-export const TESTNET = {
-  chainId: 'EiBncD4pKRIQWco_WRqo5Q-xnXR7JuO3PtZv983mKdKHSQ==',
-  name: 'Harbinger (testnet)',
-  rpcNodes: [
-    'https://harbinger-api.koinos.io',
-    'https://testnet.koinosblocks.com'
-  ],
-  koinContract: '1FaSvLjQJsCJKq5ybmGsMMQs8RQYyVv8ju'
+const TESTNET_EXPLORER = {
+  base: 'https://harbinger.koinscan.com',
+  tx: 'https://harbinger.koinscan.com/tx',
+  address: 'https://harbinger.koinscan.com/address',
+  contract: 'https://harbinger.koinscan.com/contracts',
+  block: 'https://harbinger.koinscan.com/block',
 };
-
-// Default to mainnet for production
-export const DEFAULT_NETWORK = MAINNET;
-
-export const KOINOS_TOKEN_CONTRACTS = {
-  KOIN: MAINNET.koinContract,
-  VHP: '12Y5vW6gk8GceH53YfRkRre2Rrcsgw7Naq',
-} as const;
 
 // REST endpoints for transaction history.
 // The account-history list endpoint omits block time, so per-transaction
@@ -35,6 +22,14 @@ export const KOINOS_TOKEN_CONTRACTS = {
 export const KOINOS_REST = {
   history: 'https://rest.koinos.io', // GET /v1/account/{address}/history
   transaction: 'https://seed.koinosfoundation.org', // GET /v1/transaction/{id} (has timestamp)
+};
+
+// Harbinger metadata mirrors the mobile testnet RPC defaults plus the explorer
+// and REST fields that parity consumers need. The RPC base currently doubles as
+// the best-known public testnet history/transaction host for mobile.
+export const HARBINGER_REST = {
+  history: 'https://harbinger-api.koinos.io',
+  transaction: 'https://harbinger-api.koinos.io',
 };
 
 // BIP44 path for Koinos (SLIP44: 659)
@@ -48,6 +43,43 @@ export const FREE_MANA_SHARER = {
   mainnet: '162GhJwsciDiKsgwzj2t6VoFHt3RMzGKdG',
   testnet: '17mzHQmfp3qNWQpvJLvNgFXqoW4HoS7Xbj',
 };
+
+// Network configurations for Koinos blockchain
+export const MAINNET = {
+  chainId: 'EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3ejxRSewi7qIBfSA==',
+  name: 'Mainnet',
+  rpcNodes: [
+    'https://api.koinos.io',
+    'https://api.koinosblocks.com'
+  ],
+  koinContract: '19GYjDBVXU7keLbYvMLazsGQn3GTWHjHkK',
+  explorer: MAINNET_EXPLORER,
+  rest: KOINOS_REST,
+  freeManaSharer: FREE_MANA_SHARER.mainnet,
+  isTestnet: false,
+};
+
+export const TESTNET = {
+  chainId: 'EiBncD4pKRIQWco_WRqo5Q-xnXR7JuO3PtZv983mKdKHSQ==',
+  name: 'Harbinger (testnet)',
+  rpcNodes: [
+    'https://harbinger-api.koinos.io',
+    'https://testnet.koinosblocks.com'
+  ],
+  koinContract: '1FaSvLjQJsCJKq5ybmGsMMQs8RQYyVv8ju',
+  explorer: TESTNET_EXPLORER,
+  rest: HARBINGER_REST,
+  freeManaSharer: FREE_MANA_SHARER.testnet,
+  isTestnet: true,
+};
+
+// Default to mainnet for production
+export const DEFAULT_NETWORK = MAINNET;
+
+export const KOINOS_TOKEN_CONTRACTS = {
+  KOIN: MAINNET.koinContract,
+  VHP: '12Y5vW6gk8GceH53YfRkRre2Rrcsgw7Naq',
+} as const;
 
 export const KOINDX = {
   PERIPHERY_CONTRACT: '17e1q6Fh5RgnuA8K7v4KvXXH4k9qHgsT5s',
@@ -67,20 +99,8 @@ export const KOINDX = {
 
 // Block explorer URLs
 export const EXPLORER = {
-  mainnet: {
-    base: 'https://www.koinscan.com',
-    tx: 'https://www.koinscan.com/tx',
-    address: 'https://www.koinscan.com/address',
-    contract: 'https://www.koinscan.com/contracts',
-    block: 'https://www.koinscan.com/block',
-  },
-  testnet: {
-    base: 'https://harbinger.koinscan.com',
-    tx: 'https://harbinger.koinscan.com/tx',
-    address: 'https://harbinger.koinscan.com/address',
-    contract: 'https://harbinger.koinscan.com/contracts',
-    block: 'https://harbinger.koinscan.com/block',
-  },
+  mainnet: MAINNET_EXPLORER,
+  testnet: TESTNET_EXPLORER,
 };
 
 // Storage keys

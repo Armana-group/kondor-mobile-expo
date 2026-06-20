@@ -8,12 +8,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { useWalletStore } from '../stores/walletStore';
 import { useTokenStore } from '../stores/tokenStore';
 import { txLogger } from '../lib/logger';
-import { KOINOS_REST } from '../lib/constants';
 import { fetchTransactionTimestamps } from '../lib/txHistory';
 import {
   parseHistoryTransaction,
   type ParsedTransaction,
 } from '../lib/transactionHistoryParser';
+import { getActiveNetworkConfig, useNetworkStore } from '../stores/networkStore';
 
 export type { ParsedTransaction } from '../lib/transactionHistoryParser';
 
@@ -38,6 +38,12 @@ interface UseTransactionHistoryResult {
 
 const REFRESH_INTERVAL = 30000; // 30 seconds
 
+function getCurrentHistoryScopeKey(): string {
+  const currentAddress = useWalletStore.getState().address || '';
+  const { mode, hasHydrated } = useNetworkStore.getState();
+  return `${hasHydrated ? mode : 'mainnet'}:${currentAddress}`;
+}
+
 /**
  * Hook to fetch and manage transaction history
  * Auto-refreshes every 30 seconds
@@ -46,10 +52,14 @@ const REFRESH_INTERVAL = 30000; // 30 seconds
 export const useTransactionHistory = (): UseTransactionHistoryResult => {
   const { address } = useWalletStore();
   const { getTokenByContractId } = useTokenStore();
+  const networkMode = useNetworkStore((state) => state.mode);
+  const hasHydrated = useNetworkStore((state) => state.hasHydrated);
   const [transactions, setTransactions] = useState<ParsedTransaction[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const activeNetwork = getActiveNetworkConfig();
+  const historyScopeKey = `${hasHydrated ? networkMode : 'mainnet'}:${address || ''}`;
 
   /**
    * Fetch transaction history from Koinos REST API
@@ -60,6 +70,7 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
       return;
     }
 
+    const requestScopeKey = historyScopeKey;
     txLogger.debug('Fetching transactions for:', address);
 
     try {
@@ -71,7 +82,7 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
       setError(null);
 
       // Fetch transaction history from REST API
-      const url = `${KOINOS_REST.history}/v1/account/${address}/history?limit=50&ascending=false`;
+      const url = `${activeNetwork.rest.history}/v1/account/${address}/history?limit=50&ascending=false`;
       txLogger.debug('Fetching from:', url);
 
       const response = await fetch(url);
@@ -102,8 +113,9 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
           .map((t) => t.id)
           .filter((id) => id && !id.startsWith('tx-')); // skip seq_num fallback ids
         const tsMap = await fetchTransactionTimestamps(realIds, {
-          baseUrl: KOINOS_REST.transaction,
+          baseUrl: activeNetwork.rest.transaction,
           cache: timestampCache,
+          cacheKeyPrefix: historyScopeKey,
         });
         for (const tx of parsedTransactions) {
           const ts = tsMap.get(tx.id);
@@ -114,15 +126,24 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
         txLogger.warn('Timestamp enrichment failed:', tsErr);
       }
 
+      if (getCurrentHistoryScopeKey() !== requestScopeKey) {
+        return;
+      }
       setTransactions(parsedTransactions);
     } catch (err: any) {
+      if (getCurrentHistoryScopeKey() !== requestScopeKey) {
+        return;
+      }
       txLogger.error('Fetch error:', err);
       setError(err.message || 'Failed to fetch transaction history');
     } finally {
+      if (getCurrentHistoryScopeKey() !== requestScopeKey) {
+        return;
+      }
       setLoading(false);
       setRefreshing(false);
     }
-  }, [address, getTokenByContractId]);
+  }, [activeNetwork.rest.history, activeNetwork.rest.transaction, address, getTokenByContractId, historyScopeKey]);
 
   /**
    * Calculate transaction statistics
@@ -139,10 +160,13 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
 
   // Initial fetch
   useEffect(() => {
+    setTransactions([]);
+    setError(null);
+
     if (address) {
       fetchTransactions();
     }
-  }, [address]); // Only run on address change
+  }, [address, fetchTransactions, historyScopeKey]);
 
   // Auto-refresh every 30 seconds
   useEffect(() => {
@@ -154,7 +178,7 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
     }, REFRESH_INTERVAL);
 
     return () => clearInterval(interval);
-  }, [address, fetchTransactions]);
+  }, [address, fetchTransactions, historyScopeKey]);
 
   return {
     transactions,

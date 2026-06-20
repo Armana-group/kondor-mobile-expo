@@ -8,8 +8,8 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Provider, utils } from 'koilib';
 import * as protobuf from 'protobufjs/minimal';
-import { DEFAULT_NETWORK } from '../lib/constants';
 import { tokenLogger as log } from '../lib/logger';
+import { getActiveNetworkConfig } from './networkStore';
 
 // Token metadata interface
 export interface Token {
@@ -38,6 +38,7 @@ interface TokenState {
   isLoading: boolean;
   isInitialized: boolean;
   lastFetch: number;
+  cacheKey: string | null;
   error: string | null;
 
   // Actions
@@ -77,6 +78,17 @@ const BLACKLISTED_CONTRACTS = new Set([
 
 const KOINDX_TOKEN_LIST_URL = 'https://raw.githubusercontent.com/koindx/token-list/main/src/tokens/mainnet.json';
 const TOKEN_LIST_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+function getTokenScope(address: string): {
+  cacheKey: string;
+  network: ReturnType<typeof getActiveNetworkConfig>;
+} {
+  const network = getActiveNetworkConfig();
+  return {
+    cacheKey: `${network.isTestnet ? 'harbinger' : 'mainnet'}:${address}`,
+    network,
+  };
+}
 
 /**
  * Encode balanceOf arguments using protobufjs
@@ -178,14 +190,26 @@ export const useTokenStore = create<TokenState>()(
       isLoading: false,
       isInitialized: false,
       lastFetch: 0,
+      cacheKey: null,
       error: null,
 
       initialize: async (address: string) => {
-        const { lastFetch, isInitialized } = get();
+        const { cacheKey, lastFetch, isInitialized } = get();
+        const scope = getTokenScope(address);
         const now = Date.now();
 
+        if (cacheKey !== scope.cacheKey) {
+          set({
+            tokens: [],
+            isInitialized: false,
+            lastFetch: 0,
+            cacheKey: scope.cacheKey,
+            error: null,
+          });
+        }
+
         // Skip if recently fetched
-        if (isInitialized && now - lastFetch < TOKEN_LIST_CACHE_DURATION) {
+        if (cacheKey === scope.cacheKey && isInitialized && now - lastFetch < TOKEN_LIST_CACHE_DURATION) {
           log.debug(' Using cached token list');
           // Still refresh balances
           await get().refreshBalances(address);
@@ -193,7 +217,7 @@ export const useTokenStore = create<TokenState>()(
         }
 
         log.debug(' Initializing token store for:', address);
-        set({ isLoading: true, error: null });
+        set({ isLoading: true, error: null, cacheKey: scope.cacheKey });
 
         try {
           // Fetch token list from KoinDX
@@ -238,11 +262,16 @@ export const useTokenStore = create<TokenState>()(
           const tokens = Array.from(tokenMap.values());
           log.debug(' Built token list with', tokens.length, 'tokens');
 
+          if (get().cacheKey !== scope.cacheKey) {
+            return;
+          }
+
           set({
             tokens,
             isInitialized: true,
             lastFetch: now,
             isLoading: false,
+            cacheKey: scope.cacheKey,
           });
 
           // Fetch balances for all tokens
@@ -257,7 +286,20 @@ export const useTokenStore = create<TokenState>()(
       },
 
       refreshBalances: async (address: string) => {
-        const { tokens } = get();
+        const scope = getTokenScope(address);
+        const { tokens, cacheKey } = get();
+
+        if (cacheKey !== scope.cacheKey) {
+          set({
+            tokens: [],
+            isInitialized: false,
+            lastFetch: 0,
+            cacheKey: scope.cacheKey,
+            isLoading: false,
+          });
+          return;
+        }
+
         if (tokens.length === 0) {
           log.debug(' No tokens to refresh');
           return;
@@ -265,7 +307,7 @@ export const useTokenStore = create<TokenState>()(
 
         log.debug(' Refreshing balances for', tokens.length, 'tokens');
 
-        const provider = new Provider(DEFAULT_NETWORK.rpcNodes);
+        const provider = new Provider(scope.network.rpcNodes);
 
         // Mark all tokens as loading
         set({
@@ -308,6 +350,9 @@ export const useTokenStore = create<TokenState>()(
           );
 
           // Update state after each batch
+          if (get().cacheKey !== scope.cacheKey) {
+            return;
+          }
           set({ tokens: [...updatedTokens] });
         }
 
@@ -315,7 +360,13 @@ export const useTokenStore = create<TokenState>()(
       },
 
       refreshSingleBalance: async (address: string, contractId: string) => {
-        const { tokens } = get();
+        const scope = getTokenScope(address);
+        const { tokens, cacheKey } = get();
+
+        if (cacheKey !== scope.cacheKey) {
+          return;
+        }
+
         const tokenIndex = tokens.findIndex((t) => t.contractId === contractId);
 
         if (tokenIndex === -1) {
@@ -324,7 +375,7 @@ export const useTokenStore = create<TokenState>()(
         }
 
         const token = tokens[tokenIndex];
-        const provider = new Provider(DEFAULT_NETWORK.rpcNodes);
+        const provider = new Provider(scope.network.rpcNodes);
 
         // Mark token as loading
         const updatedTokens = [...tokens];
@@ -345,6 +396,9 @@ export const useTokenStore = create<TokenState>()(
             isLoading: false,
             error: undefined,
           };
+          if (get().cacheKey !== scope.cacheKey) {
+            return;
+          }
           set({ tokens: updatedTokens });
         } catch (error: any) {
           log.error(`Error refreshing ${token.symbol}:`, error);
@@ -353,6 +407,9 @@ export const useTokenStore = create<TokenState>()(
             isLoading: false,
             error: error.message,
           };
+          if (get().cacheKey !== scope.cacheKey) {
+            return;
+          }
           set({ tokens: updatedTokens });
         }
       },
@@ -371,6 +428,7 @@ export const useTokenStore = create<TokenState>()(
           isLoading: false,
           isInitialized: false,
           lastFetch: 0,
+          cacheKey: null,
           error: null,
         });
       },
@@ -382,6 +440,7 @@ export const useTokenStore = create<TokenState>()(
         tokens: state.tokens,
         lastFetch: state.lastFetch,
         isInitialized: state.isInitialized,
+        cacheKey: state.cacheKey,
       }),
     }
   )
