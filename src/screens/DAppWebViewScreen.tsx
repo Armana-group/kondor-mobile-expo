@@ -1158,7 +1158,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   loadingContainer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: colors.background,

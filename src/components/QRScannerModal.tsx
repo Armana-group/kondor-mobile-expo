@@ -352,7 +352,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'transparent',
   },
   overlaySection: {
