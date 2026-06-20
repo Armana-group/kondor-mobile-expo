@@ -83,7 +83,7 @@ const LEGACY_V1_BACKUP: BackupData = {
       },
     ],
   },
-  checksum: 'b6f43ef7dcc3c13890fab7515584f4edbdc481ccc360678e873a8055adf23a3a',
+  checksum: '52b3a1eb',
 };
 
 async function buildSnapshot(): Promise<WalletBackupSnapshot> {
@@ -146,6 +146,9 @@ describe('walletBackup', () => {
     const serialized = JSON.stringify(backup);
 
     expect(backup.version).toBe(2);
+    if (backup.version !== 2) {
+      throw new Error('Expected v2 backup');
+    }
     expect(backup.kind).toBe('kondor-wallet-backup');
     expect(backup.updatedAt).toBe('2026-06-20T00:00:00.000Z');
     expect(backup.appVersion).toBe('1.0.0-test');
@@ -165,7 +168,7 @@ describe('walletBackup', () => {
 
   it('restores an existing v1 backup encrypted with the legacy PIN', async () => {
     await expect(
-      restoreWalletBackup(LEGACY_V1_BACKUP, LEGACY_PIN, { skipChecksum: true })
+      restoreWalletBackup(LEGACY_V1_BACKUP, LEGACY_PIN)
     ).resolves.toMatchObject({
       activeAccountId: 'acc-1',
       mnemonic: TEST_MNEMONIC,
@@ -183,7 +186,7 @@ describe('walletBackup', () => {
     expect(backup.version).toBe(2);
   });
 
-  it('rejects the wrong PIN during verification', async () => {
+  it('rejects the wrong backup secret during verification', async () => {
     const snapshot = await buildSnapshot();
     const backup = await createWalletBackup(snapshot, TEST_BACKUP_SECRET);
 

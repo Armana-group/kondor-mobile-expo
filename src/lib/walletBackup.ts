@@ -109,15 +109,15 @@ function getSubtleCrypto(): SubtleCrypto {
 }
 
 async function deriveAesKey(
-  pin: string,
+  backupSecret: string,
   salt: Uint8Array,
   usages: KeyUsage[]
 ): Promise<CryptoKey> {
   const subtle = getSubtleCrypto();
-  const encodedPin = normalizeBytes(new TextEncoder().encode(pin));
+  const encodedSecret = normalizeBytes(new TextEncoder().encode(backupSecret));
   const baseKey = await subtle.importKey(
     'raw',
-    toArrayBuffer(encodedPin),
+    toArrayBuffer(encodedSecret),
     'PBKDF2',
     false,
     ['deriveKey']
@@ -341,9 +341,9 @@ export async function getBackupWalletFingerprint(snapshot: WalletBackupSnapshot)
   );
 }
 
-export async function verifyWalletBackup(backup: BackupData, pin: string): Promise<boolean> {
+export async function verifyWalletBackup(backup: BackupData, backupSecret: string): Promise<boolean> {
   try {
-    await restoreWalletBackup(backup, pin);
+    await restoreWalletBackup(backup, backupSecret);
     return true;
   } catch {
     return false;
