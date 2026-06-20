@@ -10,6 +10,18 @@ import { dryRunRcLimit } from './manaEstimation';
 
 const log = createLogger('TokenContract');
 
+export interface TransferBroadcastAcceptedDetails {
+  transactionId: string;
+  timestamp: number;
+}
+
+export interface TransferOptions {
+  rcLimit?: number;
+  decimals?: number;
+  maxRc?: number;
+  onBroadcastAccepted?: (details: TransferBroadcastAcceptedDetails) => void;
+}
+
 // Configure protobufjs for the environment
 if (typeof window !== 'undefined' && window.Buffer) {
   // protobufjs: assigning Long = null disables 64-bit Long support
@@ -152,7 +164,7 @@ export class ManualTokenContract {
     signer: Signer,
     to: string,
     amount: string,
-    options: { rcLimit?: number; decimals?: number; maxRc?: number } = {}
+    options: TransferOptions = {}
   ): Promise<{ transactionId: string }> {
     try {
       const decimals = options.decimals ?? 8;
@@ -247,6 +259,10 @@ export class ManualTokenContract {
       log.debug(' Sending transaction...');
       const receipt = await tx.send();
       log.debug(' Transaction sent, receipt:', receipt);
+      options.onBroadcastAccepted?.({
+        transactionId: receipt.id,
+        timestamp: Date.now(),
+      });
 
       // Wait for confirmation
       log.debug(' Waiting for confirmation...');

@@ -2,9 +2,16 @@ import { create } from 'zustand';
 import { Provider, Signer, Contract, utils } from 'koilib';
 import * as SecureStore from 'expo-secure-store';
 import { DEFAULT_RC_LIMIT } from '../lib/constants';
-import { ManualTokenContract } from '../lib/manualTokenContract';
+import {
+  ManualTokenContract,
+  type TransferBroadcastAcceptedDetails,
+} from '../lib/manualTokenContract';
 import { koinosLogger as log } from '../lib/logger';
 import { getActiveNetworkConfig } from './networkStore';
+
+interface TransferExecutionOptions {
+  onBroadcastAccepted?: (details: TransferBroadcastAcceptedDetails) => void;
+}
 
 interface KoinosState {
   provider: Provider | null;
@@ -17,8 +24,14 @@ interface KoinosState {
   initialize: () => Promise<void>;
   getBalance: (address: string) => Promise<string>;
   getMana: (address: string) => Promise<{ current: string; reserved: string; available: string; max: string; percentage: number; availablePercentage: number }>;
-  transfer: (to: string, amount: string) => Promise<string>;
-  transferToken: (contractId: string, to: string, amount: string, decimals: number) => Promise<string>;
+  transfer: (to: string, amount: string, options?: TransferExecutionOptions) => Promise<string>;
+  transferToken: (
+    contractId: string,
+    to: string,
+    amount: string,
+    decimals: number,
+    options?: TransferExecutionOptions
+  ) => Promise<string>;
   estimateMana: (to: string, amount: string) => Promise<string>;
   reset: () => void;
 }
@@ -241,7 +254,7 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
     }
   },
 
-  transfer: async (to: string, amount: string) => {
+  transfer: async (to: string, amount: string, options?: TransferExecutionOptions) => {
     const { provider: currentProvider, network } = await ensureActiveProvider(get);
 
     try {
@@ -271,7 +284,7 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
         signer,
         to,
         amount,
-        { maxRc }
+        { maxRc, onBroadcastAccepted: options?.onBroadcastAccepted }
       );
 
       log.debug(' Transfer complete, transaction ID:', transactionId);
@@ -288,7 +301,13 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
     }
   },
 
-  transferToken: async (contractId: string, to: string, amount: string, decimals: number) => {
+  transferToken: async (
+    contractId: string,
+    to: string,
+    amount: string,
+    decimals: number,
+    options?: TransferExecutionOptions
+  ) => {
     const { provider: currentProvider } = await ensureActiveProvider(get);
 
     try {
@@ -319,7 +338,7 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
         signer,
         to,
         amount,
-        { decimals, maxRc }
+        { decimals, maxRc, onBroadcastAccepted: options?.onBroadcastAccepted }
       );
 
       log.debug(' Token transfer complete, transaction ID:', transactionId);

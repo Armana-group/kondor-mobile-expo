@@ -343,6 +343,7 @@ describe('swapTransaction', () => {
         data: 'rpc failed, context deadline exceeded',
       },
     };
+    const onBroadcast = jest.fn();
 
     const result = await executeSwapTransaction({
       provider: {} as Provider,
@@ -353,12 +354,14 @@ describe('swapTransaction', () => {
       allTokens: [koin, vhp],
       maxRc: 1_000_000_000,
       availableRc: 100_000_000,
+      onBroadcast,
     });
 
     expect(result.transactionId).toBe('0xsent');
     expect(result.confirmationPending).toBe(true);
     expect(result.confirmationError).toContain('context deadline exceeded');
     expect(mockWait).not.toHaveBeenCalled();
+    expect(onBroadcast).not.toHaveBeenCalled();
   });
 
   it('returns pending confirmation when confirmation polling hits an RPC deadline', async () => {

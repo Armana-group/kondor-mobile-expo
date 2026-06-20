@@ -283,22 +283,26 @@ export const SendScreen = () => {
 
             setIsSending(true);
             try {
-              // Use transferToken for all tokens (works with any contract)
-              const txId = await transferToken(
-                selectedToken.contractId,
-                recipient,
-                amount,
-                selectedToken.decimals
-              );
+              let pendingRecorded = false;
+              const recordPendingTransaction = ({
+                transactionId,
+                timestamp,
+              }: {
+                transactionId: string;
+                timestamp: number;
+              }) => {
+                if (!address || pendingRecorded) {
+                  return;
+                }
 
-              if (address) {
+                pendingRecorded = true;
                 useTransactionStore.getState().addPendingTransaction({
                   address,
                   networkMode: historyNetworkMode,
-                  chainTransactionId: txId,
+                  chainTransactionId: transactionId,
                   source: 'send',
                   transaction: {
-                    id: txId,
+                    id: transactionId,
                     type: 'send',
                     amount,
                     token: selectedToken.contractId,
@@ -307,12 +311,25 @@ export const SendScreen = () => {
                     tokenIcon: selectedToken.icon,
                     from: address,
                     to: recipient,
-                    timestamp: Date.now(),
+                    timestamp,
                     fee: '0',
                     payer: address,
                   },
                 });
-              }
+              };
+
+              // Use transferToken for all tokens (works with any contract)
+              const txId = await transferToken(
+                selectedToken.contractId,
+                recipient,
+                amount,
+                selectedToken.decimals,
+                {
+                  onBroadcastAccepted: recordPendingTransaction,
+                }
+              );
+
+              recordPendingTransaction({ transactionId: txId, timestamp: Date.now() });
 
               // Refresh balances
               const newBalance = await getBalance(address);

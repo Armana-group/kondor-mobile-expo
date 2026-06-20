@@ -1,6 +1,6 @@
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
-import { Text, TextInput, TouchableOpacity } from 'react-native';
+import { Alert, Text, TextInput, TouchableOpacity } from 'react-native';
 
 jest.mock('@expo/vector-icons', () => ({
   Ionicons: 'Ionicons',
@@ -13,6 +13,7 @@ const mockInitializeTokens = jest.fn(async () => undefined);
 const mockTransferToken = jest.fn();
 const mockGetMana = jest.fn();
 const mockGetBalance = jest.fn();
+const mockAddPendingTransaction = jest.fn();
 const mockRouteParams: { token?: { contractId: string; symbol: string } } = {};
 
 const mockAddress = '1BoatSLRHtKNngkdXEeobR76b53LETtpyT';
@@ -93,6 +94,14 @@ jest.mock('../../stores/koinosStore', () => ({
   }),
 }));
 
+jest.mock('../../stores/transactionStore', () => ({
+  useTransactionStore: {
+    getState: () => ({
+      addPendingTransaction: mockAddPendingTransaction,
+    }),
+  },
+}));
+
 jest.mock('../../stores/tokenStore', () => ({
   getScopedTokens: ({
     hasHydrated,
@@ -171,6 +180,8 @@ function findSendButton(renderer: TestRenderer.ReactTestRenderer): TestRenderer.
 }
 
 describe('SendScreen balance scoping', () => {
+  const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockNetworkState = {
@@ -194,6 +205,17 @@ describe('SendScreen balance scoping', () => {
       cacheKey: `mainnet:${mockAddress}`,
     };
     delete mockRouteParams.token;
+    mockGetMana.mockResolvedValue({
+      available: '1000000',
+      max: '1000000',
+      reserved: '0',
+      availablePercentage: 100,
+    });
+    mockGetBalance.mockResolvedValue('98.00000000');
+  });
+
+  afterAll(() => {
+    alertSpy.mockRestore();
   });
 
   it('suppresses stale token balances and disables sending while the active scope is loading', async () => {
@@ -243,5 +265,110 @@ describe('SendScreen balance scoping', () => {
     });
 
     expect(mockInitializeTokens).toHaveBeenCalledWith(mockAddress);
+  });
+
+  it('adds a pending transaction as soon as broadcast is accepted, before transfer confirmation resolves', async () => {
+    mockTokenState = {
+      tokens: [
+        {
+          contractId: 'mainnet-koin-contract',
+          symbol: 'KOIN',
+          name: 'Koinos',
+          decimals: 8,
+          icon: '',
+          balance: '12.34000000',
+          isLoading: false,
+        },
+      ],
+      isLoading: false,
+      isInitialized: true,
+      cacheKey: `harbinger:${mockAddress}`,
+    };
+
+    let resolveTransfer: ((value: string) => void) | null = null;
+    mockTransferToken.mockImplementation(
+      async (
+        _contractId: string,
+        _to: string,
+        _amount: string,
+        _decimals: number,
+        options?: {
+          onBroadcastAccepted?: (details: { transactionId: string; timestamp: number }) => void;
+        }
+      ) => {
+        options?.onBroadcastAccepted?.({
+          transactionId: '0xsend-accepted',
+          timestamp: 123456,
+        });
+
+        return new Promise<string>((resolve) => {
+          resolveTransfer = resolve;
+        });
+      }
+    );
+
+    const { SendScreen } = require('../SendScreen');
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<SendScreen />);
+    });
+
+    const [recipientInput, amountInput] = renderer!.root.findAllByType(TextInput);
+
+    await act(async () => {
+      recipientInput.props.onChangeText(recipientAddress);
+      amountInput.props.onChangeText('1');
+    });
+
+    await act(async () => {
+      findSendButton(renderer!).props.onPress();
+    });
+
+    const confirmationButtons = alertSpy.mock.calls.at(-1)?.[2];
+    const confirmButton = confirmationButtons?.find((button) => button.text === 'Send');
+
+    expect(confirmButton?.onPress).toEqual(expect.any(Function));
+
+    await act(async () => {
+      void confirmButton?.onPress?.();
+      await Promise.resolve();
+    });
+
+    expect(mockTransferToken).toHaveBeenCalledWith(
+      'mainnet-koin-contract',
+      recipientAddress,
+      '1',
+      8,
+      expect.objectContaining({
+        onBroadcastAccepted: expect.any(Function),
+      })
+    );
+    expect(mockAddPendingTransaction).toHaveBeenCalledWith({
+      address: mockAddress,
+      networkMode: 'harbinger',
+      chainTransactionId: '0xsend-accepted',
+      source: 'send',
+      transaction: {
+        id: '0xsend-accepted',
+        type: 'send',
+        amount: '1',
+        token: 'mainnet-koin-contract',
+        tokenSymbol: 'KOIN',
+        tokenDecimals: 8,
+        tokenIcon: '',
+        from: mockAddress,
+        to: recipientAddress,
+        timestamp: 123456,
+        fee: '0',
+        payer: mockAddress,
+      },
+    });
+    expect(mockGoBack).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveTransfer?.('0xsend-accepted');
+      await Promise.resolve();
+    });
   });
 });

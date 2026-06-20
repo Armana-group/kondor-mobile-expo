@@ -254,10 +254,6 @@ export async function executeSwapTransaction(
   } catch (error) {
     throw normalizeSwapExecutionError(error);
   }
-  params.onBroadcast?.({
-    transactionId: receipt.id,
-    timestamp: Date.now(),
-  });
   const broadcastRpcError = getReceiptRpcError(receipt);
   if (broadcastRpcError && isInsufficientRcError(broadcastRpcError)) {
     throw new Error(INSUFFICIENT_SWAP_MANA_MESSAGE);
@@ -266,6 +262,10 @@ export async function executeSwapTransaction(
     onStatus?.('confirming');
     return pendingConfirmationResult(receipt, broadcastRpcError);
   }
+  params.onBroadcast?.({
+    transactionId: receipt.id,
+    timestamp: Date.now(),
+  });
 
   onStatus?.('confirming');
   let confirmation: Awaited<ReturnType<Transaction['wait']>>;
