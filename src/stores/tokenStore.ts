@@ -110,6 +110,14 @@ interface TokenScopeLoadingParams {
   isLoading: boolean;
 }
 
+interface PersistedTokenState {
+  tokens?: Token[];
+  allTokens?: Token[];
+  lastFetch?: number;
+  isInitialized?: boolean;
+  cacheKey?: string | null;
+}
+
 export function getExpectedTokenCacheKey(networkMode: NetworkMode, address: string): string {
   return `${networkMode}:${address}`;
 }
@@ -214,6 +222,22 @@ export function buildTokensForNetwork(
 
 export function getVisibleTokens(tokens: Token[]): Token[] {
   return tokens.filter((token) => !token.isHidden);
+}
+
+function getCanonicalTokens(tokens: Token[], allTokens: Token[]): Token[] {
+  return allTokens.length > 0 ? allTokens : tokens;
+}
+
+function getPersistedCanonicalTokens(persistedState: PersistedTokenState | null | undefined): Token[] {
+  if (Array.isArray(persistedState?.allTokens) && persistedState.allTokens.length > 0) {
+    return persistedState.allTokens;
+  }
+
+  if (Array.isArray(persistedState?.tokens)) {
+    return persistedState.tokens;
+  }
+
+  return [];
 }
 
 function toCustomToken(customToken: CustomTokenDefinition, existingToken?: Token): Token {
@@ -400,9 +424,10 @@ export const useTokenStore = create<TokenState>()(
       error: null,
 
       initialize: async (address: string) => {
-        const { cacheKey, lastFetch, isInitialized } = get();
+        const { cacheKey, lastFetch, isInitialized, tokens, allTokens } = get();
         const scope = getTokenScope(address);
         const now = Date.now();
+        const canonicalTokens = getCanonicalTokens(tokens, allTokens);
 
         if (cacheKey !== scope.cacheKey) {
           set({
@@ -412,6 +437,13 @@ export const useTokenStore = create<TokenState>()(
             lastFetch: 0,
             cacheKey: scope.cacheKey,
             error: null,
+          });
+        }
+
+        if (cacheKey === scope.cacheKey && allTokens.length === 0 && canonicalTokens.length > 0) {
+          set({
+            tokens: canonicalTokens,
+            allTokens: canonicalTokens,
           });
         }
 
@@ -467,7 +499,8 @@ export const useTokenStore = create<TokenState>()(
 
       refreshBalances: async (address: string) => {
         const scope = getTokenScope(address);
-        const { allTokens, cacheKey } = get();
+        const { tokens, allTokens, cacheKey } = get();
+        const canonicalTokens = getCanonicalTokens(tokens, allTokens);
 
         if (cacheKey !== scope.cacheKey) {
           set({
@@ -481,27 +514,34 @@ export const useTokenStore = create<TokenState>()(
           return;
         }
 
-        if (allTokens.length === 0) {
+        if (allTokens.length === 0 && canonicalTokens.length > 0) {
+          set({
+            tokens: canonicalTokens,
+            allTokens: canonicalTokens,
+          });
+        }
+
+        if (canonicalTokens.length === 0) {
           log.debug(' No tokens to refresh');
           return;
         }
 
-        log.debug(' Refreshing balances for', allTokens.length, 'tokens');
+        log.debug(' Refreshing balances for', canonicalTokens.length, 'tokens');
 
         const provider = new Provider(scope.network.rpcNodes);
 
         // Mark all tokens as loading
         set({
-          allTokens: allTokens.map((token) => ({ ...token, isLoading: true })),
-          tokens: allTokens.map((token) => ({ ...token, isLoading: true })),
+          allTokens: canonicalTokens.map((token) => ({ ...token, isLoading: true })),
+          tokens: canonicalTokens.map((token) => ({ ...token, isLoading: true })),
         });
 
         // Fetch balances in parallel (batch of 5 to avoid rate limiting)
         const batchSize = 5;
-        const updatedTokens = [...allTokens];
+        const updatedTokens = [...canonicalTokens];
 
-        for (let i = 0; i < allTokens.length; i += batchSize) {
-          const batch = allTokens.slice(i, i + batchSize);
+        for (let i = 0; i < canonicalTokens.length; i += batchSize) {
+          const batch = canonicalTokens.slice(i, i + batchSize);
 
           await Promise.all(
             batch.map(async (token, batchIndex) => {
@@ -643,11 +683,15 @@ export const useTokenStore = create<TokenState>()(
       },
 
       getTokenByContractId: (contractId: string) => {
-        return get().allTokens.find((token) => token.contractId === contractId);
+        const state = get();
+        return getCanonicalTokens(state.tokens, state.allTokens)
+          .find((token) => token.contractId === contractId);
       },
 
       getTokenBySymbol: (symbol: string) => {
-        return get().allTokens.find((token) => token.symbol.toLowerCase() === symbol.toLowerCase());
+        const state = get();
+        return getCanonicalTokens(state.tokens, state.allTokens)
+          .find((token) => token.symbol.toLowerCase() === symbol.toLowerCase());
       },
 
       reset: () => {
@@ -667,10 +711,23 @@ export const useTokenStore = create<TokenState>()(
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
         tokens: state.tokens,
+        allTokens: state.allTokens,
         lastFetch: state.lastFetch,
         isInitialized: state.isInitialized,
         cacheKey: state.cacheKey,
       }),
+      merge: (persistedState, currentState) => {
+        const persisted = (persistedState as PersistedTokenState | null) ?? null;
+        const canonicalTokens = getPersistedCanonicalTokens(persisted);
+        const visibleTokens = Array.isArray(persisted?.tokens) ? persisted.tokens : canonicalTokens;
+
+        return {
+          ...currentState,
+          ...(persisted as object | undefined),
+          tokens: visibleTokens,
+          allTokens: canonicalTokens,
+        };
+      },
     }
   )
 );

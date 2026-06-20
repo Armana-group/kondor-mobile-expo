@@ -66,7 +66,7 @@ let mockTokenState = {
     },
   ] as MockToken[],
   isLoading: false,
-  cacheKey: `mainnet:${mockAddress}`,
+  cacheKey: `mainnet:${mockAddress}` as string | null,
 };
 
 jest.mock('@react-navigation/native', () => ({
@@ -211,6 +211,20 @@ describe('HomeScreen network initialization', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
+    mockRefreshBalances.mockImplementation(async () => undefined);
+    mockInitializeTokens.mockImplementation(async () => undefined);
+    mockResetTokens.mockImplementation(() => undefined);
+    mockInitializeKoinos.mockImplementation(async () => undefined);
+    mockResetKoinos.mockImplementation(() => undefined);
+    mockGetBalance.mockImplementation(async () => '42.00000000');
+    mockGetMana.mockImplementation(async () => ({
+      current: '0',
+      reserved: '0',
+      available: '0',
+      max: '0',
+      percentage: 0,
+      availablePercentage: 50,
+    }));
     mockGetPortfolioValue.mockResolvedValue({
       totalUsd: null,
       pricedTokenCount: 0,
@@ -486,7 +500,7 @@ describe('HomeScreen network initialization', () => {
     expect(renderedText).not.toContain('$0.00');
   });
 
-  it('prices only visible tokens once after a settled refresh', async () => {
+  it('keeps the headline KOIN balance even when KOIN is hidden from the token list', async () => {
     mockNetworkState = {
       mode: 'mainnet',
       hasHydrated: true,
@@ -494,32 +508,109 @@ describe('HomeScreen network initialization', () => {
     mockTokenState = {
       tokens: [
         {
-          contractId: 'visible-koin',
+          contractId: 'hidden-koin',
           symbol: 'KOIN',
           name: 'Koinos',
           decimals: 8,
           icon: '',
           balance: '12.34000000',
           isLoading: false,
+          isHidden: true,
         },
         {
-          contractId: 'hidden-vhp',
+          contractId: 'visible-vhp',
           symbol: 'VHP',
           name: 'Virtual Hash Power',
           decimals: 8,
           icon: '',
           balance: '8.00000000',
           isLoading: false,
-          isHidden: true,
         },
       ],
       isLoading: false,
       cacheKey: `mainnet:${mockAddress}`,
     };
+
+    const { HomeScreen } = require('../HomeScreen');
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<HomeScreen />);
+    });
+    await flushEffects();
+
+    const renderedText = collectRenderedText(renderer!);
+    expect(renderedText).toEqual(
+      expect.arrayContaining(['12.34 KOIN', 'Virtual Hash Power'])
+    );
+    expect(renderedText).not.toContain('Koinos');
+  });
+
+  it('prices only once after the real initialization refresh settles', async () => {
+    mockNetworkState = {
+      mode: 'mainnet',
+      hasHydrated: true,
+    };
+    mockTokenState = {
+      tokens: [
+        {
+          contractId: 'stale-koin',
+          symbol: 'KOIN',
+          name: 'Koinos',
+          decimals: 8,
+          icon: '',
+          balance: '1.00000000',
+          isLoading: false,
+        },
+      ],
+      isLoading: false,
+      cacheKey: `mainnet:${mockAddress}`,
+    };
+    mockResetTokens.mockImplementation(() => {
+      mockTokenState = {
+        tokens: [],
+        isLoading: false,
+        cacheKey: null,
+      };
+    });
+    mockInitializeTokens.mockImplementation(async () => {
+      mockTokenState = {
+        tokens: [
+          {
+            contractId: 'fresh-koin',
+            symbol: 'KOIN',
+            name: 'Koinos',
+            decimals: 8,
+            icon: '',
+            balance: '0',
+            isLoading: true,
+          },
+        ],
+        isLoading: true,
+        cacheKey: `mainnet:${mockAddress}`,
+      };
+    });
+    mockRefreshBalances.mockImplementation(async () => {
+      mockTokenState = {
+        tokens: [
+          {
+            contractId: 'fresh-koin',
+            symbol: 'KOIN',
+            name: 'Koinos',
+            decimals: 8,
+            icon: '',
+            balance: '12.34000000',
+            isLoading: false,
+          },
+        ],
+        isLoading: false,
+        cacheKey: `mainnet:${mockAddress}`,
+      };
+    });
     mockGetPortfolioValue.mockResolvedValue({
       totalUsd: 3.14,
       pricedTokenCount: 1,
-      pricesByContractId: { 'visible-koin': 0.2544 },
+      pricesByContractId: { 'fresh-koin': 0.2544 },
       unavailableContractIds: [],
     });
 
@@ -532,11 +623,16 @@ describe('HomeScreen network initialization', () => {
     await flushEffects();
     await flushEffects();
 
+    expect(mockInitializeTokens).toHaveBeenCalledTimes(1);
+    expect(mockRefreshBalances).toHaveBeenCalledTimes(1);
     expect(mockGetPortfolioValue).toHaveBeenCalledTimes(1);
     expect(mockGetPortfolioValue).toHaveBeenCalledWith(
       expect.objectContaining({
         tokens: [
-          expect.objectContaining({ contractId: 'visible-koin' }),
+          expect.objectContaining({
+            contractId: 'fresh-koin',
+            balance: '12.34000000',
+          }),
         ],
       })
     );

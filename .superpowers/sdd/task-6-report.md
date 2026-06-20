@@ -196,3 +196,47 @@ npm test -- --runInBand
 ```
 
 - Result: passed, 35 suites / 269 tests.
+
+## Review Fix Report 2
+
+### Findings addressed
+
+- Rehydrated `allTokens` from canonical persisted token state and added cached-fast-path reconstruction so warm starts no longer skip balance refreshes or leave Manage Tokens with an empty canonical set.
+- Switched the Home headline KOIN balance to the canonical scoped token set, so hiding KOIN from the token list no longer zeroes the headline balance.
+- Gated Home portfolio pricing behind a completed refresh cycle for the active scope, which prevents stale persisted tokens from being priced during initialization and keeps pricing to one call per settled refresh.
+- Added regression coverage for the warm-start canonical-token reconstruction, hidden-KOIN headline balance, and real initialization pricing path.
+
+### Verification
+
+1. Focused regressions:
+
+```bash
+npm test -- src/stores/__tests__/customTokenStore.test.ts src/stores/__tests__/tokenStore.test.ts src/lib/__tests__/tokenPrices.test.ts src/screens/__tests__/HomeScreen.test.tsx --runInBand
+```
+
+- Result: passed, 4 suites / 19 tests.
+
+2. Typecheck:
+
+```bash
+npx tsc --noEmit
+```
+
+- Result: passed.
+
+3. Full suite:
+
+```bash
+npm test -- --runInBand
+```
+
+- Result: passed, 35 suites / 271 tests.
+
+4. React Doctor:
+
+```bash
+npx -y react-doctor@latest . --verbose --diff
+```
+
+- Result: exited non-zero with existing repo-wide diagnostics.
+- Task-adjacent note: React Doctor flags the Home screen's refresh/pricing state flow for follow-up, but the Task 6 verification contract is satisfied and no Jest/TypeScript regressions remain.

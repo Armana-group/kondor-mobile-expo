@@ -12,6 +12,15 @@ import {
   type Token,
 } from '../tokenStore';
 
+const ADDRESS = '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa';
+
+async function loadTokenStoreModule() {
+  jest.resetModules();
+  const mod = require('../tokenStore');
+  await mod.useTokenStore.persist.rehydrate();
+  return mod;
+}
+
 const mainnetList = [
   {
     chainId: 24,
@@ -32,6 +41,10 @@ const mainnetList = [
 ];
 
 describe('tokenStore network token helpers', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('uses the mainnet token list URL on mainnet', () => {
     expect(getTokenListUrlForNetwork(MAINNET)).toMatch(/mainnet\.json$/);
   });
@@ -95,5 +108,61 @@ describe('tokenStore network token helpers', () => {
     expect(getVisibleTokens(managedTokens).map((token) => token.contractId)).toEqual([
       KOINOS_TOKEN_CONTRACTS.VHP,
     ]);
+  });
+
+  it('reconstructs canonical allTokens before the cached warm-start fast path', async () => {
+    const persistedTokens: Token[] = [
+      {
+        contractId: MAINNET.koinContract,
+        symbol: 'KOIN',
+        name: 'Koinos',
+        decimals: 8,
+        icon: '',
+        balance: '12.34000000',
+        isLoading: false,
+        isHidden: true,
+      },
+      {
+        contractId: '1AlphaCustomToken',
+        symbol: 'ALPHA',
+        name: 'Alpha Token',
+        decimals: 8,
+        icon: '',
+        balance: '5.00000000',
+        isLoading: false,
+        isCustom: true,
+      },
+    ];
+
+    const { useTokenStore } = await loadTokenStoreModule();
+    const refreshSnapshots: Token[][] = [];
+
+    useTokenStore.setState({
+      tokens: persistedTokens,
+      allTokens: [],
+      lastFetch: Date.now(),
+      isInitialized: true,
+      cacheKey: `mainnet:${ADDRESS}`,
+    });
+
+    useTokenStore.setState({
+      refreshBalances: async () => {
+        refreshSnapshots.push(
+          useTokenStore.getState().allTokens.map((token: Token) => ({ ...token }))
+        );
+      },
+    });
+
+    expect(useTokenStore.getState().allTokens).toEqual([]);
+
+    await useTokenStore.getState().initialize(ADDRESS);
+
+    expect(refreshSnapshots).toEqual([persistedTokens]);
+    expect(useTokenStore.getState().getTokenByContractId('1AlphaCustomToken')).toEqual(
+      expect.objectContaining({
+        contractId: '1AlphaCustomToken',
+        isCustom: true,
+      })
+    );
   });
 });

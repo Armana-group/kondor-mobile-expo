@@ -56,22 +56,28 @@ export const HomeScreen = () => {
   const [manaPercentage, setManaPercentage] = useState<number>(0);
   const [showAccountSwitcher, setShowAccountSwitcher] = useState(false);
   const [portfolioValueUsd, setPortfolioValueUsd] = useState<number | null>(null);
+  const [portfolioPricingCycle, setPortfolioPricingCycle] = useState<{
+    scope: string;
+    version: number;
+  } | null>(null);
   const initializedScopeRef = useRef<string | null>(null);
 
   // Get active account info
   const activeAccount = getActiveAccount();
   const initializationScope = hasHydrated && address ? `${networkMode}:${address}` : null;
-  const visibleTokens = useMemo(
-    () => getVisibleTokens(
-      getScopedTokens({
-        hasHydrated,
-        networkMode,
-        address,
-        cacheKey: tokenCacheKey,
-        tokens,
-      })
-    ),
+  const scopedTokens = useMemo(
+    () => getScopedTokens({
+      hasHydrated,
+      networkMode,
+      address,
+      cacheKey: tokenCacheKey,
+      tokens,
+    }),
     [address, hasHydrated, networkMode, tokenCacheKey, tokens]
+  );
+  const visibleTokens = useMemo(
+    () => getVisibleTokens(scopedTokens),
+    [scopedTokens]
   );
   const tokenScopeLoading = isTokenScopeLoading({
     hasHydrated,
@@ -91,6 +97,8 @@ export const HomeScreen = () => {
     const requestScope = `${networkMode}:${address}`;
     koinosLogger.debug('Fetching balances for address:', address);
     try {
+      setPortfolioPricingCycle(null);
+
       // Refresh token balances
       await refreshBalances(address);
 
@@ -115,6 +123,17 @@ export const HomeScreen = () => {
       } catch (manaError: any) {
         koinosLogger.error('Mana fetch error:', manaError);
       }
+
+      if (initializedScopeRef.current !== requestScope) {
+        koinosLogger.debug('Skipping stale portfolio refresh write for scope:', requestScope);
+        return;
+      }
+
+      setPortfolioPricingCycle((current) => (
+        current?.scope === requestScope
+          ? { scope: requestScope, version: current.version + 1 }
+          : { scope: requestScope, version: 1 }
+      ));
     } catch (error: any) {
       koinosLogger.error('Balance fetch error:', error);
     }
@@ -135,6 +154,8 @@ export const HomeScreen = () => {
       initializedScopeRef.current = initializationScope;
       setManaPercentage(0);
       updateBalance('0');
+      setPortfolioValueUsd(null);
+      setPortfolioPricingCycle(null);
       resetKoinos();
       resetTokens();
       await initialize();
@@ -150,6 +171,7 @@ export const HomeScreen = () => {
     if (!initializationScope) {
       initializedScopeRef.current = null;
       setPortfolioValueUsd(null);
+      setPortfolioPricingCycle(null);
       return;
     }
 
@@ -159,7 +181,13 @@ export const HomeScreen = () => {
   useEffect(() => {
     const activeProvider = useKoinosStore.getState().provider;
 
-    if (!initializationScope || !activeProvider || visibleTokens.length === 0) {
+    if (
+      !initializationScope ||
+      !activeProvider ||
+      !portfolioPricingCycle ||
+      portfolioPricingCycle.scope !== initializationScope ||
+      visibleTokens.length === 0
+    ) {
       setPortfolioValueUsd(null);
       return;
     }
@@ -191,7 +219,7 @@ export const HomeScreen = () => {
     return () => {
       cancelled = true;
     };
-  }, [initializationScope, networkMode, tokenScopeLoading, visibleTokens]);
+  }, [initializationScope, networkMode, portfolioPricingCycle, tokenScopeLoading, visibleTokens]);
 
   // Manual pull-to-refresh (with spinner)
   const handleManualRefresh = async () => {
@@ -207,7 +235,7 @@ export const HomeScreen = () => {
 
   // Calculate total portfolio value (for now just sum of balances, no USD)
   // Get KOIN balance for display
-  const koinToken = visibleTokens.find((t) => t.symbol === 'KOIN');
+  const koinToken = scopedTokens.find((t) => t.symbol === 'KOIN');
   const koinBalance = koinToken?.balance || '0';
 
   // Handle token press - navigate to token detail
