@@ -1,6 +1,7 @@
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
 import { Alert, Text, TextInput, TouchableOpacity } from 'react-native';
+import type { BackupHealth } from '../../lib/backupHealth';
 
 jest.mock('@expo/vector-icons', () => ({
   Ionicons: 'Ionicons',
@@ -41,6 +42,16 @@ let mockTokenState = {
   cacheKey: `mainnet:${mockAddress}`,
 };
 
+let mockBackupHealth: BackupHealth = {
+  status: 'verified',
+  provider: 'manual-file',
+  lastCreatedAt: '2026-06-20T00:00:00.000Z',
+  lastVerifiedAt: '2026-06-20T00:00:00.000Z',
+  walletFingerprint: 'wallet-hash',
+  accountSetHash: 'account-hash',
+  failureReason: null,
+};
+
 jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({
     goBack: mockGoBack,
@@ -76,6 +87,7 @@ jest.mock('../../stores/walletStore', () => ({
     balance: '99.00000000',
     address: mockAddress,
     updateBalance: mockUpdateBalance,
+    backupHealth: mockBackupHealth,
   }),
 }));
 
@@ -204,6 +216,15 @@ describe('SendScreen balance scoping', () => {
       isInitialized: true,
       cacheKey: `mainnet:${mockAddress}`,
     };
+    mockBackupHealth = {
+      status: 'verified',
+      provider: 'manual-file',
+      lastCreatedAt: '2026-06-20T00:00:00.000Z',
+      lastVerifiedAt: '2026-06-20T00:00:00.000Z',
+      walletFingerprint: 'wallet-hash',
+      accountSetHash: 'account-hash',
+      failureReason: null,
+    };
     delete mockRouteParams.token;
     mockGetMana.mockResolvedValue({
       available: '1000000',
@@ -265,6 +286,26 @@ describe('SendScreen balance scoping', () => {
     });
 
     expect(mockInitializeTokens).toHaveBeenCalledWith(mockAddress);
+  });
+
+  it('shows a backup warning before sending from an unbacked wallet', async () => {
+    mockBackupHealth = {
+      status: 'none',
+      provider: null,
+      lastCreatedAt: null,
+      lastVerifiedAt: null,
+      walletFingerprint: null,
+      accountSetHash: null,
+      failureReason: null,
+    };
+    const { SendScreen } = require('../SendScreen');
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<SendScreen />);
+    });
+
+    expect(collectRenderedText(renderer!).join(' ')).toContain('Back up this wallet');
   });
 
   it('adds a pending transaction as soon as broadcast is accepted, before transfer confirmation resolves', async () => {

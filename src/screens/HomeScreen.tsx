@@ -16,6 +16,7 @@ import * as Clipboard from 'expo-clipboard';
 import { useNavigation } from '@react-navigation/native';
 import { Screen } from '../components/Screen';
 import { AccountSwitcher } from '../components/AccountSwitcher';
+import { BackupStatusNotice } from '../components/BackupStatusNotice';
 import { useWalletStore } from '../stores/walletStore';
 import { useKoinosStore } from '../stores/koinosStore';
 import {
@@ -41,7 +42,7 @@ const USD_FORMATTER = new Intl.NumberFormat('en-US', {
 
 export const HomeScreen = () => {
   const navigation = useNavigation<any>();
-  const { address, updateBalance, accounts, getActiveAccount } = useWalletStore();
+  const { address, updateBalance, accounts, getActiveAccount, backupHealth } = useWalletStore();
   const { getBalance, getMana, initialize, reset: resetKoinos } = useKoinosStore();
   const {
     tokens,
@@ -291,6 +292,10 @@ export const HomeScreen = () => {
     navigation.navigate('Receive');
   };
 
+  const handleBackupPress = () => {
+    navigation.navigate('Settings');
+  };
+
   const getManaColor = () => {
     if (manaPercentage < 20) return colors.error;
     if (manaPercentage < 50) return colors.warning;
@@ -403,6 +408,8 @@ export const HomeScreen = () => {
             </View>
           </View>
         </View>
+
+        <BackupStatusNotice backupHealth={backupHealth} onPress={handleBackupPress} />
 
         {/* Action Buttons */}
         <View style={styles.actions}>

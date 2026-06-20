@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import QRCode from 'react-native-qrcode-svg';
 import { Screen } from '../components/Screen';
+import { BackupStatusNotice } from '../components/BackupStatusNotice';
 import { useWalletStore } from '../stores/walletStore';
 import { Token } from '../stores/tokenStore';
 import { HapticFeedback } from '../lib/haptics';
@@ -31,7 +32,7 @@ type ReceiveRouteParams = {
 export const ReceiveScreen = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<ReceiveRouteParams, 'Receive'>>();
-  const { address } = useWalletStore();
+  const { address, backupHealth } = useWalletStore();
 
   const token = route.params?.token;
 
@@ -54,6 +55,10 @@ export const ReceiveScreen = () => {
     } catch (error) {
       logger.error('Share error:', error);
     }
+  };
+
+  const handleBackupPress = () => {
+    navigation.navigate('Settings');
   };
 
   return (
@@ -89,6 +94,8 @@ export const ReceiveScreen = () => {
             <Text style={styles.tokenName}>{token.name}</Text>
           </View>
         )}
+
+        <BackupStatusNotice backupHealth={backupHealth} onPress={handleBackupPress} />
 
         {/* QR Code */}
         <View style={styles.qrContainer}>

@@ -1,5 +1,6 @@
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
+import type { BackupHealth } from '../../lib/backupHealth';
 
 jest.mock('@expo/vector-icons', () => ({
   Ionicons: 'Ionicons',
@@ -69,6 +70,16 @@ let mockTokenState = {
   cacheKey: `mainnet:${mockAddress}` as string | null,
 };
 
+let mockBackupHealth: BackupHealth = {
+  status: 'verified',
+  provider: 'manual-file',
+  lastCreatedAt: '2026-06-20T00:00:00.000Z',
+  lastVerifiedAt: '2026-06-20T00:00:00.000Z',
+  walletFingerprint: 'wallet-hash',
+  accountSetHash: 'account-hash',
+  failureReason: null,
+};
+
 jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({
     navigate: mockNavigate,
@@ -90,6 +101,7 @@ jest.mock('../../stores/walletStore', () => ({
     updateBalance: mockUpdateBalance,
     accounts: [{ id: 'account-1', name: 'Primary', isImported: false }],
     getActiveAccount: () => ({ id: 'account-1', name: 'Primary', isImported: false }),
+    backupHealth: mockBackupHealth,
   }),
 }));
 
@@ -250,6 +262,15 @@ describe('HomeScreen network initialization', () => {
       isLoading: false,
       cacheKey: `mainnet:${mockAddress}`,
     };
+    mockBackupHealth = {
+      status: 'verified',
+      provider: 'manual-file',
+      lastCreatedAt: '2026-06-20T00:00:00.000Z',
+      lastVerifiedAt: '2026-06-20T00:00:00.000Z',
+      walletFingerprint: 'wallet-hash',
+      accountSetHash: 'account-hash',
+      failureReason: null,
+    };
   });
 
   afterEach(() => {
@@ -311,6 +332,31 @@ describe('HomeScreen network initialization', () => {
     await act(async () => {
       jest.runOnlyPendingTimers();
     });
+  });
+
+  it('shows a backup warning for an unbacked wallet', async () => {
+    mockNetworkState = {
+      mode: 'mainnet',
+      hasHydrated: true,
+    };
+    mockBackupHealth = {
+      status: 'none',
+      provider: null,
+      lastCreatedAt: null,
+      lastVerifiedAt: null,
+      walletFingerprint: null,
+      accountSetHash: null,
+      failureReason: null,
+    };
+
+    const { HomeScreen } = require('../HomeScreen');
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<HomeScreen />);
+    });
+
+    expect(collectRenderedText(renderer!).join(' ')).toContain('Back up this wallet');
   });
 
   it('hides stale balance and token data synchronously when the active scope changes', async () => {

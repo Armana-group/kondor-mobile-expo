@@ -14,6 +14,7 @@ import {
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
+import { BackupStatusNotice } from '../components/BackupStatusNotice';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
 import { ContactPicker } from '../components/ContactPicker';
@@ -88,7 +89,7 @@ export const SendScreen = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<SendRouteParams, 'Send'>>();
   const { transfer, transferToken, getMana, getBalance } = useKoinosStore();
-  const { address, updateBalance } = useWalletStore();
+  const { address, updateBalance, backupHealth } = useWalletStore();
   const { getContactByAddress } = useContactStore();
   const {
     tokens,
@@ -435,6 +436,10 @@ export const SendScreen = () => {
     }
   };
 
+  const handleBackupPress = () => {
+    navigation.navigate('Settings');
+  };
+
   // Render token picker modal
   const renderTokenPicker = () => (
     <Modal
@@ -632,6 +637,11 @@ export const SendScreen = () => {
         </ScrollView>
 
         <View style={styles.footer}>
+          <BackupStatusNotice
+            backupHealth={backupHealth}
+            compact
+            onPress={handleBackupPress}
+          />
           {isSending ? (
             <View style={styles.sendingContainer}>
               <ActivityIndicator size="large" color={colors.purple} />
