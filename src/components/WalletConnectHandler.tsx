@@ -165,9 +165,15 @@ export const WalletConnectHandler: React.FC = () => {
 
       switch (method) {
         case KOINOS_METHODS.GetNonce:
-        case KOINOS_METHODS.GetNextNonce: {
+        {
           const address = (params as { address?: string })?.address || '';
           result = await provider.getNonce(address);
+          break;
+        }
+
+        case KOINOS_METHODS.GetNextNonce: {
+          const address = (params as { address?: string })?.address || '';
+          result = await provider.getNextNonce(address);
           break;
         }
 

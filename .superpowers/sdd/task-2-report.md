@@ -259,6 +259,72 @@ Test Suites: 3 passed, 3 total
 Tests:       7 passed, 7 total
 ```
 
+## Ninth fix section after final review
+
+### Findings addressed
+
+- HomeScreen now derives visible token rows and KOIN balance from the active `networkMode:address` cache scope, so a network flip hides prior-network balances immediately instead of waiting for reset effects.
+- `useTransactionHistory` now derives its public result from a settled scope key, so a new network scope returns empty/loading state until that scope's fetch completes or errors.
+- WalletConnect now routes `koinos_getNextNonce` to `provider.getNextNonce` instead of reusing `provider.getNonce`.
+
+### Additional regression coverage
+
+- Added `src/hooks/__tests__/useTransactionHistory.test.ts`
+- Extended `src/screens/__tests__/HomeScreen.test.tsx`
+- Extended `src/components/__tests__/WalletConnectHandler.test.tsx`
+
+### RED
+
+Command:
+
+```bash
+npm test -- src/screens/__tests__/HomeScreen.test.tsx src/hooks/__tests__/useTransactionHistory.test.ts src/components/__tests__/WalletConnectHandler.test.tsx --runInBand
+```
+
+Key failures before the fix:
+
+```text
+Expected value: "0.00 KOIN"
+Received array: [..., "12.34 KOIN", ...]
+
+Expected: "1WalletAddress"
+Number of calls: 0
+```
+
+### GREEN
+
+Focused regression suite:
+
+```bash
+npm test -- src/stores/__tests__/tokenStore.test.ts src/screens/__tests__/HomeScreen.test.tsx src/hooks/__tests__/useTransactionHistory.test.ts src/components/__tests__/WalletConnectHandler.test.tsx --runInBand
+```
+
+Result:
+
+```text
+PASS src/stores/__tests__/tokenStore.test.ts
+PASS src/screens/__tests__/HomeScreen.test.tsx
+PASS src/hooks/__tests__/useTransactionHistory.test.ts
+PASS src/components/__tests__/WalletConnectHandler.test.tsx
+
+Test Suites: 4 passed, 4 total
+Tests:       14 passed, 14 total
+```
+
+Required final verification:
+
+```bash
+npm test -- --runInBand
+npx tsc --noEmit
+```
+
+Result:
+
+```text
+PASS 27 test suites, 189 tests, 2 snapshots
+tsc exit code 0
+```
+
 Required final verification:
 
 ```bash

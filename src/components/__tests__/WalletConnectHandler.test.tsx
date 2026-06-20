@@ -7,6 +7,8 @@ const mockTestnetConfig = TESTNET;
 const mockProvider = jest.fn();
 const mockProviderCall = jest.fn();
 const mockProviderSendTransaction = jest.fn();
+const mockProviderGetNonce = jest.fn();
+const mockProviderGetNextNonce = jest.fn();
 const mockInitialize = jest.fn(async () => undefined);
 const mockApproveSession = jest.fn(async () => undefined);
 const mockRejectSession = jest.fn(async () => undefined);
@@ -51,6 +53,8 @@ jest.mock('../../stores/networkStore', () => ({
 jest.mock('../../stores/walletConnectStore', () => ({
   KOINOS_METHODS: {
     GetHeadInfo: 'koinos_getHeadInfo',
+    GetNonce: 'koinos_getNonce',
+    GetNextNonce: 'koinos_getNextNonce',
     JsonRpcCall: 'koinos_JsonRpcCall',
     SendTransaction: 'koinos_sendTransaction',
     SignAndSendTransaction: 'koinos_signAndSendTransaction',
@@ -113,6 +117,14 @@ jest.mock('koilib', () => {
       return mockProviderCall(method, params);
     }
 
+    async getNonce(address: string) {
+      return mockProviderGetNonce(address);
+    }
+
+    async getNextNonce(address: string) {
+      return mockProviderGetNextNonce(address);
+    }
+
     async sendTransaction(transaction: unknown, broadcast: boolean) {
       return mockProviderSendTransaction(transaction, broadcast);
     }
@@ -139,6 +151,8 @@ describe('WalletConnectHandler network reconciliation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockProviderCall.mockReset();
+    mockProviderGetNonce.mockReset();
+    mockProviderGetNextNonce.mockReset();
     mockIsSessionTopicApprovedForActiveNetwork.mockReset().mockReturnValue(true);
     mockGetSessionTopicValidationForActiveNetwork.mockReset().mockReturnValue({
       status: 'ready',
@@ -260,6 +274,40 @@ describe('WalletConnectHandler network reconciliation', () => {
     );
     expect(mockRespondToRequest).not.toHaveBeenCalled();
     expect(mockProviderSendTransaction).not.toHaveBeenCalled();
+  });
+
+  it('routes koinos_getNextNonce to provider.getNextNonce', async () => {
+    mockProviderGetNextNonce.mockResolvedValue({ nonce: '0x11' });
+    mockWalletConnectState = {
+      ...mockWalletConnectState,
+      pendingRequest: {
+        id: 31,
+        topic: 'next-nonce-topic',
+        method: 'koinos_getNextNonce',
+        params: {
+          address: '1WalletAddress',
+        },
+        peerMeta: {
+          name: 'Nonce dApp',
+          url: 'https://nonce.example.com',
+        },
+      },
+    };
+
+    const { WalletConnectHandler } = require('../WalletConnectHandler');
+
+    await act(async () => {
+      TestRenderer.create(<WalletConnectHandler />);
+    });
+    await flushEffects();
+
+    expect(mockProviderGetNextNonce).toHaveBeenCalledWith('1WalletAddress');
+    expect(mockProviderGetNonce).not.toHaveBeenCalled();
+    expect(mockRespondToRequest).toHaveBeenCalledWith(
+      31,
+      'next-nonce-topic',
+      { nonce: '0x11' }
+    );
   });
 
   it('rejects koinos_JsonRpcCall requests instead of executing passthrough RPC methods', async () => {

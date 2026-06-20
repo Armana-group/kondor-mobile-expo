@@ -18,7 +18,12 @@ import { Screen } from '../components/Screen';
 import { AccountSwitcher } from '../components/AccountSwitcher';
 import { useWalletStore } from '../stores/walletStore';
 import { useKoinosStore } from '../stores/koinosStore';
-import { useTokenStore, Token } from '../stores/tokenStore';
+import {
+  useTokenStore,
+  Token,
+  getScopedTokens,
+  isTokenScopeLoading,
+} from '../stores/tokenStore';
 import { useNetworkStore } from '../stores/networkStore';
 import { truncateAddress, formatKoinBalance } from '../lib/utils';
 import { HapticFeedback } from '../lib/haptics';
@@ -27,9 +32,16 @@ import colors from '../theme/colors';
 
 export const HomeScreen = () => {
   const navigation = useNavigation<any>();
-  const { address, balance, updateBalance, accounts, getActiveAccount } = useWalletStore();
+  const { address, updateBalance, accounts, getActiveAccount } = useWalletStore();
   const { getBalance, getMana, initialize, reset: resetKoinos } = useKoinosStore();
-  const { tokens, isLoading: tokensLoading, initialize: initializeTokens, refreshBalances, reset: resetTokens } = useTokenStore();
+  const {
+    tokens,
+    isLoading: tokensLoading,
+    cacheKey: tokenCacheKey,
+    initialize: initializeTokens,
+    refreshBalances,
+    reset: resetTokens,
+  } = useTokenStore();
   const networkMode = useNetworkStore((state) => state.mode);
   const hasHydrated = useNetworkStore((state) => state.hasHydrated);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -40,6 +52,20 @@ export const HomeScreen = () => {
   // Get active account info
   const activeAccount = getActiveAccount();
   const initializationScope = hasHydrated && address ? `${networkMode}:${address}` : null;
+  const visibleTokens = getScopedTokens({
+    hasHydrated,
+    networkMode,
+    address,
+    cacheKey: tokenCacheKey,
+    tokens,
+  });
+  const tokenScopeLoading = isTokenScopeLoading({
+    hasHydrated,
+    networkMode,
+    address,
+    cacheKey: tokenCacheKey,
+    isLoading: tokensLoading,
+  });
 
   // Core balance fetching logic (silent - no spinner)
   const fetchBalances = useCallback(async () => {
@@ -119,14 +145,9 @@ export const HomeScreen = () => {
   };
 
   // Calculate total portfolio value (for now just sum of balances, no USD)
-  const totalBalance = tokens.reduce((sum, token) => {
-    const bal = parseFloat(token.balance) || 0;
-    return sum + bal;
-  }, 0);
-
   // Get KOIN balance for display
-  const koinToken = tokens.find(t => t.symbol === 'KOIN');
-  const koinBalance = koinToken?.balance || balance || '0';
+  const koinToken = visibleTokens.find((t) => t.symbol === 'KOIN');
+  const koinBalance = koinToken?.balance || '0';
 
   // Handle token press - navigate to token detail
   const handleTokenPress = (token: Token) => {
@@ -306,15 +327,15 @@ export const HomeScreen = () => {
         <View style={styles.tokensSection}>
           <View style={styles.tokensSectionHeader}>
             <Text style={styles.sectionTitle}>Tokens</Text>
-            <Text style={styles.tokenCount}>{tokens.length}</Text>
+            <Text style={styles.tokenCount}>{visibleTokens.length}</Text>
           </View>
-          {tokens.length === 0 && tokensLoading ? (
+          {visibleTokens.length === 0 && tokenScopeLoading ? (
             <View style={styles.loadingContainer}>
               <Text style={styles.loadingText}>Loading tokens...</Text>
             </View>
           ) : (
             <FlatList
-              data={tokens}
+              data={visibleTokens}
               keyExtractor={(item) => item.contractId}
               renderItem={renderTokenItem}
               scrollEnabled={false}

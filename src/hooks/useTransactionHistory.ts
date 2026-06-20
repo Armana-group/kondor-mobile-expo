@@ -38,10 +38,47 @@ interface UseTransactionHistoryResult {
 
 const REFRESH_INTERVAL = 30000; // 30 seconds
 
+interface ScopedHistoryStateParams {
+  address: string | null | undefined;
+  historyScopeKey: string;
+  settledScopeKey: string | null;
+  transactions: ParsedTransaction[];
+  loading: boolean;
+  refreshing: boolean;
+  error: string | null;
+}
+
 function getCurrentHistoryScopeKey(): string {
   const currentAddress = useWalletStore.getState().address || '';
   const { mode, hasHydrated } = useNetworkStore.getState();
   return `${hasHydrated ? mode : 'mainnet'}:${currentAddress}`;
+}
+
+export function getScopedHistoryState({
+  address,
+  historyScopeKey,
+  settledScopeKey,
+  transactions,
+  loading,
+  refreshing,
+  error,
+}: ScopedHistoryStateParams): Pick<UseTransactionHistoryResult, 'transactions' | 'loading' | 'refreshing' | 'error'> {
+  if (!address) {
+    return {
+      transactions: [],
+      loading: false,
+      refreshing: false,
+      error: null,
+    };
+  }
+
+  const isSettledForActiveScope = settledScopeKey === historyScopeKey;
+  return {
+    transactions: isSettledForActiveScope ? transactions : [],
+    loading: isSettledForActiveScope ? loading : true,
+    refreshing: isSettledForActiveScope ? refreshing : false,
+    error: isSettledForActiveScope ? error : null,
+  };
 }
 
 /**
@@ -58,6 +95,7 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
   const [loading, setLoading] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [settledScopeKey, setSettledScopeKey] = useState<string | null>(null);
   const activeNetwork = getActiveNetworkConfig();
   const historyScopeKey = `${hasHydrated ? networkMode : 'mainnet'}:${address || ''}`;
 
@@ -129,12 +167,14 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
       if (getCurrentHistoryScopeKey() !== requestScopeKey) {
         return;
       }
+      setSettledScopeKey(requestScopeKey);
       setTransactions(parsedTransactions);
     } catch (err: any) {
       if (getCurrentHistoryScopeKey() !== requestScopeKey) {
         return;
       }
       txLogger.error('Fetch error:', err);
+      setSettledScopeKey(requestScopeKey);
       setError(err.message || 'Failed to fetch transaction history');
     } finally {
       if (getCurrentHistoryScopeKey() !== requestScopeKey) {
@@ -144,19 +184,6 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
       setRefreshing(false);
     }
   }, [activeNetwork.rest.history, activeNetwork.rest.transaction, address, getTokenByContractId, historyScopeKey]);
-
-  /**
-   * Calculate transaction statistics
-   */
-  const calculateStats = useCallback((): TransactionStats => {
-    const incoming = transactions.filter(tx => tx.type === 'receive').length;
-    const outgoing = transactions.filter(tx => tx.type === 'send' || tx.type === 'swap').length;
-    return {
-      incoming,
-      outgoing,
-      total: transactions.length
-    };
-  }, [transactions]);
 
   // Initial fetch
   useEffect(() => {
@@ -180,12 +207,29 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
     return () => clearInterval(interval);
   }, [address, fetchTransactions, historyScopeKey]);
 
-  return {
+  const scopedState = getScopedHistoryState({
+    address,
+    historyScopeKey,
+    settledScopeKey,
     transactions,
     loading,
-    error,
     refreshing,
-    stats: calculateStats(),
-    refetch: () => fetchTransactions(true)
+    error,
+  });
+  const stats: TransactionStats = {
+    incoming: scopedState.transactions.filter((tx) => tx.type === 'receive').length,
+    outgoing: scopedState.transactions.filter(
+      (tx) => tx.type === 'send' || tx.type === 'swap'
+    ).length,
+    total: scopedState.transactions.length,
+  };
+
+  return {
+    transactions: scopedState.transactions,
+    loading: scopedState.loading,
+    error: scopedState.error,
+    refreshing: scopedState.refreshing,
+    stats,
+    refetch: () => fetchTransactions(true),
   };
 };

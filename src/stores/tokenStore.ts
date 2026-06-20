@@ -9,7 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Provider, utils } from 'koilib';
 import * as protobuf from 'protobufjs/minimal';
 import { tokenLogger as log } from '../lib/logger';
-import { getActiveNetworkConfig } from './networkStore';
+import { getActiveNetworkConfig, type NetworkMode } from './networkStore';
 
 // Token metadata interface
 export interface Token {
@@ -89,13 +89,67 @@ const BLACKLISTED_CONTRACTS = new Set([
 const MAINNET_TOKEN_LIST_URL = 'https://raw.githubusercontent.com/koindx/token-list/main/src/tokens/mainnet.json';
 const TOKEN_LIST_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
+interface ScopedTokensParams {
+  hasHydrated: boolean;
+  networkMode: NetworkMode;
+  address: string | null | undefined;
+  cacheKey: string | null;
+  tokens: Token[];
+}
+
+interface TokenScopeLoadingParams {
+  hasHydrated: boolean;
+  networkMode: NetworkMode;
+  address: string | null | undefined;
+  cacheKey: string | null;
+  isLoading: boolean;
+}
+
+export function getExpectedTokenCacheKey(networkMode: NetworkMode, address: string): string {
+  return `${networkMode}:${address}`;
+}
+
+export function getScopedTokens({
+  hasHydrated,
+  networkMode,
+  address,
+  cacheKey,
+  tokens,
+}: ScopedTokensParams): Token[] {
+  if (!hasHydrated || !address) {
+    return [];
+  }
+
+  const expectedCacheKey = getExpectedTokenCacheKey(networkMode, address);
+  return cacheKey === expectedCacheKey ? tokens : [];
+}
+
+export function isTokenScopeLoading({
+  hasHydrated,
+  networkMode,
+  address,
+  cacheKey,
+  isLoading,
+}: TokenScopeLoadingParams): boolean {
+  if (!address) {
+    return false;
+  }
+
+  if (!hasHydrated) {
+    return true;
+  }
+
+  const expectedCacheKey = getExpectedTokenCacheKey(networkMode, address);
+  return isLoading || cacheKey !== expectedCacheKey;
+}
+
 function getTokenScope(address: string): {
   cacheKey: string;
   network: ReturnType<typeof getActiveNetworkConfig>;
 } {
   const network = getActiveNetworkConfig();
   return {
-    cacheKey: `${network.isTestnet ? 'harbinger' : 'mainnet'}:${address}`,
+    cacheKey: getExpectedTokenCacheKey(network.isTestnet ? 'harbinger' : 'mainnet', address),
     network,
   };
 }
