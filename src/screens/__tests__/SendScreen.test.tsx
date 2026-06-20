@@ -9,6 +9,7 @@ jest.mock('@expo/vector-icons', () => ({
 const mockGoBack = jest.fn();
 const mockUpdateBalance = jest.fn();
 const mockRefreshSingleBalance = jest.fn(async () => undefined);
+const mockInitializeTokens = jest.fn(async () => undefined);
 const mockTransferToken = jest.fn();
 const mockGetMana = jest.fn();
 const mockGetBalance = jest.fn();
@@ -35,6 +36,7 @@ let mockTokenState = {
     },
   ],
   isLoading: false,
+  isInitialized: true,
   cacheKey: `mainnet:${mockAddress}`,
 };
 
@@ -136,6 +138,7 @@ jest.mock('../../stores/tokenStore', () => ({
   },
   useTokenStore: () => ({
     ...mockTokenState,
+    initialize: mockInitializeTokens,
     getTokenBySymbol: (symbol: string) =>
       mockTokenState.tokens.find((token) => token.symbol === symbol),
     refreshSingleBalance: mockRefreshSingleBalance,
@@ -187,6 +190,7 @@ describe('SendScreen balance scoping', () => {
         },
       ],
       isLoading: false,
+      isInitialized: true,
       cacheKey: `mainnet:${mockAddress}`,
     };
     delete mockRouteParams.token;
@@ -212,5 +216,32 @@ describe('SendScreen balance scoping', () => {
 
     const sendButton = findSendButton(renderer!);
     expect(sendButton.props.disabled).toBe(true);
+  });
+
+  it('initializes the active token scope on direct entry after a network change', async () => {
+    mockTokenState = {
+      tokens: [
+        {
+          contractId: 'mainnet-koin-contract',
+          symbol: 'KOIN',
+          name: 'Koinos',
+          decimals: 8,
+          icon: '',
+          balance: '12.34000000',
+          isLoading: false,
+        },
+      ],
+      isLoading: false,
+      isInitialized: true,
+      cacheKey: `mainnet:${mockAddress}`,
+    };
+
+    const { SendScreen } = require('../SendScreen');
+
+    await act(async () => {
+      TestRenderer.create(<SendScreen />);
+    });
+
+    expect(mockInitializeTokens).toHaveBeenCalledWith(mockAddress);
   });
 });

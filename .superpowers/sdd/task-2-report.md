@@ -815,3 +815,72 @@ tsc ok
 ### Remaining concerns
 
 - Generic WalletConnect JSON-RPC passthrough remains intentionally unavailable until there is a reviewed safe-policy design for which methods can be exposed and how approval flows should work for anything state-changing.
+
+---
+
+## Eleventh fix section after final Task 2 SendScreen review
+
+### Finding addressed
+
+- `SendScreen` now bootstraps the active token scope itself when the network store hydrates, when the wallet address becomes available, or when the active `networkMode` changes and the token store is still scoped to a previous network or otherwise uninitialized.
+- The screen still hides stale previous-network balances by continuing to derive `visibleTokens` and `tokenScopeLoading` from the active `networkMode:address` cache key while initialization is in flight.
+
+### Additional regression coverage
+
+- Extended `src/screens/__tests__/SendScreen.test.tsx`
+
+### RED
+
+Command:
+
+```bash
+npm test -- src/screens/__tests__/SendScreen.test.tsx --runInBand
+```
+
+Key failure before the fix:
+
+```text
+FAIL src/screens/__tests__/SendScreen.test.tsx
+  SendScreen balance scoping
+    ✕ initializes the active token scope on direct entry after a network change
+
+  Expected: "1BoatSLRHtKNngkdXEeobR76b53LETtpyT"
+  Number of calls: 0
+```
+
+### GREEN
+
+Focused SendScreen regression suite:
+
+```bash
+npm test -- src/screens/__tests__/SendScreen.test.tsx --runInBand
+```
+
+Result:
+
+```text
+PASS src/screens/__tests__/SendScreen.test.tsx
+
+Test Suites: 1 passed, 1 total
+Tests:       2 passed, 2 total
+```
+
+Required final verification:
+
+```bash
+npm test -- src/screens/__tests__/SendScreen.test.tsx --runInBand
+npm test -- --runInBand
+npx tsc --noEmit
+```
+
+Result:
+
+```text
+PASS src/screens/__tests__/SendScreen.test.tsx
+PASS 28 test suites, 192 tests, 2 snapshots
+tsc ok
+```
+
+### Remaining concerns
+
+- `SendScreen` now self-recovers token scope, but the token store still relies on screen-level bootstrap instead of owning cross-screen recovery centrally. That broader cleanup remains outside this Task 2 fix.

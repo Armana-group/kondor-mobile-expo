@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -92,7 +92,9 @@ export const SendScreen = () => {
   const {
     tokens,
     isLoading: tokensLoading,
+    isInitialized: tokensInitialized,
     cacheKey: tokenCacheKey,
+    initialize: initializeTokens,
     refreshSingleBalance,
   } = useTokenStore();
   const networkMode = useNetworkStore((state) => state.mode);
@@ -125,6 +127,7 @@ export const SendScreen = () => {
   const [showContactPicker, setShowContactPicker] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const requestedTokenScopeRef = useRef<string | null>(null);
   const [errors, setErrors] = useState<{
     recipient?: string;
     amount?: string;
@@ -136,6 +139,33 @@ export const SendScreen = () => {
       setSelectedTokenPreference(getTokenSelectionPreference(route.params.token));
     }
   }, [route.params?.token?.contractId, route.params?.token?.symbol]);
+
+  useEffect(() => {
+    if (!hasHydrated || !address) {
+      requestedTokenScopeRef.current = null;
+      return;
+    }
+
+    const expectedScope = `${networkMode}:${address}`;
+    const hasActiveScope = tokenCacheKey === expectedScope;
+
+    if (hasActiveScope && tokensInitialized) {
+      requestedTokenScopeRef.current = expectedScope;
+      return;
+    }
+
+    if (tokensLoading && requestedTokenScopeRef.current === expectedScope) {
+      return;
+    }
+
+    requestedTokenScopeRef.current = expectedScope;
+    void initializeTokens(address).catch((error) => {
+      if (requestedTokenScopeRef.current === expectedScope) {
+        requestedTokenScopeRef.current = null;
+      }
+      koinosLogger.error('Failed to initialize SendScreen token scope:', error);
+    });
+  }, [address, hasHydrated, initializeTokens, networkMode, tokenCacheKey, tokensInitialized, tokensLoading]);
 
   // Get token balance
   const tokenBalance = selectedToken?.balance || '0';
