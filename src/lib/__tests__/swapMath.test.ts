@@ -4,6 +4,7 @@ import {
   buildDirectRoute,
   calculateMinOutput,
   formatBaseUnits,
+  getSwapInputBalanceInvalidReason,
   parseDecimalAmount,
   resolveApproveContractId,
   toKoinDxIdentifier,
@@ -71,6 +72,14 @@ describe('swapMath', () => {
   it('fails closed when a non-zero input has zero minimum output', () => {
     expect(() => assertProtectedMinOutput('1', '0')).toThrow(/slippage protection/i);
     expect(() => assertProtectedMinOutput('0', '0')).not.toThrow();
+  });
+
+  it('rejects swap inputs above the token balance using base units', () => {
+    expect(getSwapInputBalanceInvalidReason('10.00000001', koin)).toBe(
+      'Amount exceeds available KOIN balance'
+    );
+    expect(getSwapInputBalanceInvalidReason('10', koin)).toBeNull();
+    expect(getSwapInputBalanceInvalidReason('9.99999999', koin)).toBeNull();
   });
 
   it('parses slippage percentages with decimal precision without float drift', () => {

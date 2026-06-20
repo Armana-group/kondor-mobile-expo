@@ -9,7 +9,11 @@ import {
   type SwapExecutionResult,
   type SwapExecutionStatus,
 } from '../lib/swapTransaction';
-import type { SwapToken } from '../lib/swapMath';
+import {
+  getSwapInputBalanceInvalidReason,
+  SwapError,
+  type SwapToken,
+} from '../lib/swapMath';
 
 declare const require: <T = unknown>(moduleName: string) => T;
 
@@ -54,6 +58,7 @@ export interface NativeSwapControllerDeps<TQuote extends NativeSwapQuote = Nativ
     quote: TQuote,
     context: NativeSwapExecuteContext<TQuote>
   ) => Promise<unknown>;
+  validateAmount?: (amount: string) => string | null;
   now?: () => number;
   debounceMs?: number;
   onStateChange?: (state: NativeSwapControllerState<TQuote>) => void;
@@ -129,6 +134,13 @@ function cloneState<TQuote extends NativeSwapQuote>(
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Swap failed';
+}
+
+function amountValidationReason<TQuote extends NativeSwapQuote>(
+  deps: NativeSwapControllerDeps<TQuote>,
+  amount: string
+): string | null {
+  return deps.validateAmount?.(amount.trim()) ?? null;
 }
 
 function quoteIsExpired(quote: NativeSwapQuote, now: number): boolean {
@@ -230,6 +242,17 @@ export function createNativeSwapController<TQuote extends NativeSwapQuote = Nati
       return;
     }
 
+    const invalidAmountReason = amountValidationReason(deps, state.amount);
+    if (invalidAmountReason) {
+      setState({
+        status: 'error',
+        quote: null,
+        error: invalidAmountReason,
+        isQuoteLoading: false,
+      });
+      return;
+    }
+
     const amount = state.amount;
     const slippage = state.slippage;
     setState({
@@ -276,6 +299,17 @@ export function createNativeSwapController<TQuote extends NativeSwapQuote = Nati
       return;
     }
 
+    const invalidAmountReason = amountValidationReason(deps, state.amount);
+    if (invalidAmountReason) {
+      setState({
+        status: 'error',
+        quote: null,
+        error: invalidAmountReason,
+        isQuoteLoading: false,
+      });
+      return;
+    }
+
     setState({
       status: 'quoting',
       quote: null,
@@ -310,6 +344,16 @@ export function createNativeSwapController<TQuote extends NativeSwapQuote = Nati
     },
     flushQuote,
     execute: async () => {
+      const invalidAmountReason = amountValidationReason(deps, state.amount);
+      if (invalidAmountReason) {
+        setState({
+          status: 'error',
+          error: invalidAmountReason,
+          isQuoteLoading: false,
+        });
+        throw new Error(invalidAmountReason);
+      }
+
       const quote = state.quote;
       const invalidReason = getNativeSwapQuoteInvalidReason({
         quote,
@@ -430,6 +474,21 @@ function createTemporarySigner(privateKey: string, provider: Provider): Signer {
   return signer;
 }
 
+function getSwapInputAmountInvalidReason(amount: string, inputToken: SwapToken | null): string | null {
+  if (!inputToken || !isPositiveAmount(amount)) {
+    return null;
+  }
+
+  try {
+    return getSwapInputBalanceInvalidReason(amount, inputToken);
+  } catch (error) {
+    if (error instanceof SwapError) {
+      return error.message;
+    }
+    throw error;
+  }
+}
+
 function mapExecutionStatus(status: SwapExecutionStatus): NativeSwapStatus {
   if (status === 'estimating_mana') {
     return 'building';
@@ -464,6 +523,10 @@ export function useNativeSwap(): UseNativeSwapResult {
       now: Date.now,
       debounceMs: QUOTE_DEBOUNCE_MS,
       onStateChange: (nextState) => listenerRef.current(nextState),
+      validateAmount: (amount) => {
+        const { inputToken } = latestRef.current;
+        return getSwapInputAmountInvalidReason(amount, inputToken);
+      },
       getSwapQuote: async ({ amount, slippage }) => {
         const provider = await ensureProvider();
         const { inputToken, outputToken, tokens } = latestRef.current;

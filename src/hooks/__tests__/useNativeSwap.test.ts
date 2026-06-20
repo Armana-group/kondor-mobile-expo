@@ -94,6 +94,25 @@ describe('createNativeSwapController', () => {
     expect(controller.getState().quote).toBe(quote);
   });
 
+  it('does not request quotes for amounts rejected by amount validation', async () => {
+    const getSwapQuote = jest.fn();
+    const controller = createNativeSwapController(createDeps({
+      getSwapQuote,
+      validateAmount: () => 'Amount exceeds available KOIN balance',
+    }));
+
+    await controller.setAmount('1000');
+    await controller.flushQuote();
+
+    expect(getSwapQuote).not.toHaveBeenCalled();
+    expect(controller.getState()).toMatchObject({
+      status: 'error',
+      quote: null,
+      error: 'Amount exceeds available KOIN balance',
+      isQuoteLoading: false,
+    });
+  });
+
   it('rejects execution when the quote is expired', async () => {
     const controller = createNativeSwapController(createDeps({
       getSwapQuote: jest.fn(async () => ({ amountOut: '0.45', expiresAt: 1 })),

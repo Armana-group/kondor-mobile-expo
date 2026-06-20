@@ -115,6 +115,20 @@ export function parseDecimalAmount(amount: string, decimals: number): string {
   return toBaseUnitsExact(amount, decimals, false);
 }
 
+export function getSwapInputBalanceInvalidReason(
+  amount: string,
+  token: Pick<SwapToken, 'balance' | 'decimals' | 'symbol'>
+): string | null {
+  const amountBaseUnits = BigInt(parseDecimalAmount(amount, token.decimals));
+  const balanceBaseUnits = BigInt(parseDecimalAmount(token.balance || '0', token.decimals));
+
+  if (amountBaseUnits > balanceBaseUnits) {
+    return `Amount exceeds available ${token.symbol} balance`;
+  }
+
+  return null;
+}
+
 export function formatBaseUnits(value: string, decimals: number): string {
   const trimmed = trimToken(value);
   if (!trimmed || !BASE_UNIT_RE.test(trimmed)) {
