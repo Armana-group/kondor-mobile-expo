@@ -10,7 +10,7 @@ import {
 
 const TEST_MNEMONIC =
   'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
-const TEST_BACKUP_SECRET = 'ABCD-EFGH-IJKM-NPQR-STVW-XYZ2-3456-789A';
+const TEST_BACKUP_SECRET = 'ABCD-EFGH-JKMN-PQRS-TVWX-YZ23-4567-89AB';
 const LEGACY_PIN = '123456';
 const LEGACY_V1_BACKUP: BackupData = {
   kind: 'kondor-wallet-backup',
@@ -136,6 +136,21 @@ async function buildSnapshot(): Promise<WalletBackupSnapshot> {
 }
 
 describe('walletBackup', () => {
+  it('rejects PIN-shaped secrets when encrypting backup secrets directly', async () => {
+    await expect(
+      encryptSecretWithBackupSecret('secret-value', LEGACY_PIN)
+    ).rejects.toThrow(/recovery key/i);
+  });
+
+  it('rejects PIN-shaped secrets when creating v2 backups', async () => {
+    await expect(
+      createWalletBackup(LEGACY_V1_BACKUP.wallet, LEGACY_PIN, {
+        appVersion: '1.0.0-test',
+        now: '2026-06-20T00:00:00.000Z',
+      })
+    ).rejects.toThrow(/recovery key/i);
+  });
+
   it('creates a v2 backup without plaintext secrets and verifies with the recovery key', async () => {
     const snapshot = await buildSnapshot();
 

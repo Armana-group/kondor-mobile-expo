@@ -1,5 +1,6 @@
 import * as Crypto from 'expo-crypto';
 import { validateMnemonic, createWalletFromMnemonic, createWalletFromPrivateKey } from './wallet';
+import { isValidBackupRecoveryKey } from './backupRecoveryKey';
 import type { Account } from '../stores/walletStore';
 
 const BACKUP_KIND = 'kondor-wallet-backup';
@@ -108,6 +109,12 @@ function getSubtleCrypto(): SubtleCrypto {
   return subtle;
 }
 
+function assertValidBackupRecoveryKey(backupSecret: string): void {
+  if (!isValidBackupRecoveryKey(backupSecret)) {
+    throw new Error('Backup recovery key is invalid');
+  }
+}
+
 async function deriveAesKey(
   backupSecret: string,
   salt: Uint8Array,
@@ -192,6 +199,8 @@ export async function encryptSecretWithBackupSecret(
   secret: string,
   backupSecret: string
 ): Promise<EncryptedSecret> {
+  assertValidBackupRecoveryKey(backupSecret);
+
   const subtle = getSubtleCrypto();
   const salt = normalizeBytes(await Crypto.getRandomBytesAsync(SALT_BYTES));
   const iv = normalizeBytes(await Crypto.getRandomBytesAsync(IV_BYTES));
@@ -278,6 +287,7 @@ export async function createWalletBackup(
   if (!walletSnapshot.accounts.length) {
     throw new Error('Cannot back up an empty wallet');
   }
+  assertValidBackupRecoveryKey(backupSecret);
 
   const createdAt = options.now ?? new Date().toISOString();
 
