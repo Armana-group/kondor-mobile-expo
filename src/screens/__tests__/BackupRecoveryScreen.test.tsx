@@ -7,6 +7,16 @@ const mockCreateBackupSnapshot = jest.fn();
 const mockRestoreFromBackup = jest.fn();
 const mockMarkBackupVerified = jest.fn();
 const mockGenerateBackupRecoveryKey = jest.fn(async () => 'ABCD-EFGH-IJKM-NPQR-STVW-XYZ2-3456-789A');
+const mockVerifyWalletBackup = jest.fn<Promise<boolean>, [unknown, string]>(async () => true);
+const mockGetDocumentAsync = jest.fn<
+  Promise<{ canceled: boolean; assets: Array<{ uri: string; name: string }> }>,
+  []
+>(async () => ({ canceled: true, assets: [] }));
+const mockReadAsStringAsync = jest.fn<Promise<string>, [string, unknown]>(async () => '{}');
+const mockNormalizeBackupRecoveryKey = (value: string) => {
+  const compact = value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return compact.match(/.{1,4}/g)?.join('-') ?? '';
+};
 const mockCreateWalletBackup = jest.fn<Promise<{
   kind: string;
   version: number;
@@ -51,7 +61,7 @@ jest.mock('@expo/vector-icons', () => ({
 }));
 
 jest.mock('expo-document-picker', () => ({
-  getDocumentAsync: jest.fn(async () => ({ canceled: true, assets: [] })),
+  getDocumentAsync: () => mockGetDocumentAsync(),
 }));
 
 jest.mock('../../components/Screen', () => ({
@@ -60,13 +70,14 @@ jest.mock('../../components/Screen', () => ({
 
 jest.mock('../../lib/backupRecoveryKey', () => ({
   generateBackupRecoveryKey: () => mockGenerateBackupRecoveryKey(),
-  normalizeBackupRecoveryKey: (value: string) => value.toUpperCase().replace(/\s+/g, '-'),
-  isValidBackupRecoveryKey: (value: string) => value.includes('ABCD-EFGH'),
+  normalizeBackupRecoveryKey: (value: string) => mockNormalizeBackupRecoveryKey(value),
+  isValidBackupRecoveryKey: (value: string) =>
+    mockNormalizeBackupRecoveryKey(value) === 'ABCD-EFGH-IJKM-NPQR-STVW-XYZ2-3456-789A',
 }));
 
 jest.mock('../../lib/walletBackup', () => ({
   createWalletBackup: (snapshot: unknown, backupSecret: unknown) => mockCreateWalletBackup(snapshot, backupSecret),
-  verifyWalletBackup: jest.fn(async () => true),
+  verifyWalletBackup: (backup: unknown, backupSecret: string) => mockVerifyWalletBackup(backup, backupSecret),
 }));
 
 jest.mock('../../stores/walletStore', () => ({
@@ -91,7 +102,7 @@ jest.mock('expo-file-system/legacy', () => ({
   EncodingType: { UTF8: 'utf8' },
   makeDirectoryAsync: jest.fn(async () => undefined),
   writeAsStringAsync: jest.fn(async () => undefined),
-  readAsStringAsync: jest.fn(async () => '{}'),
+  readAsStringAsync: (uri: string, options: unknown) => mockReadAsStringAsync(uri, options),
 }));
 
 jest.mock('expo-sharing', () => ({
@@ -135,6 +146,9 @@ describe('BackupRecoveryScreen', () => {
       nextDerivationIndex: 1,
       accounts: [],
     });
+    mockVerifyWalletBackup.mockResolvedValue(true);
+    mockGetDocumentAsync.mockResolvedValue({ canceled: true, assets: [] });
+    mockReadAsStringAsync.mockResolvedValue('{}');
   });
 
   afterAll(() => {
@@ -204,5 +218,98 @@ describe('BackupRecoveryScreen', () => {
       walletFingerprint: 'wallet-hash',
       accountSetHash: 'account-hash',
     });
+  });
+
+  it('normalizes recovery key input before verifying and restoring a v2 backup', async () => {
+    const backup = {
+      kind: 'kondor-wallet-backup',
+      version: 2,
+      walletFingerprint: 'wallet-hash',
+      accountSetHash: 'account-hash',
+    };
+    mockGetDocumentAsync.mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: 'file:///cache/backup.json', name: 'backup.json' }],
+    });
+    mockReadAsStringAsync.mockResolvedValue(JSON.stringify(backup));
+
+    const { BackupRecoveryScreen } = require('../BackupRecoveryScreen');
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(<BackupRecoveryScreen />);
+    });
+
+    await act(async () => {
+      findButton(renderer!, 'Import Backup File').props.onPress();
+    });
+
+    await act(async () => {
+      findInputByLabel(renderer!, 'Backup recovery key or legacy backup PIN')
+        .props.onChangeText('abcd efgh ijkm npqr stvw xyz2 3456 789a');
+    });
+
+    await act(async () => {
+      findButton(renderer!, 'Verify Backup').props.onPress();
+    });
+
+    expect(mockVerifyWalletBackup).toHaveBeenCalledWith(
+      backup,
+      'ABCD-EFGH-IJKM-NPQR-STVW-XYZ2-3456-789A'
+    );
+
+    await act(async () => {
+      findInputByLabel(renderer!, 'Current Wallet PIN').props.onChangeText('123456');
+    });
+
+    await act(async () => {
+      findButton(renderer!, 'Restore Backup').props.onPress();
+    });
+
+    const restoreAlert = alertSpy.mock.calls.find((call) => call[0] === 'Restore Wallet Backup');
+    const restoreButton = restoreAlert?.[2]?.find((button: { text?: string }) => button.text === 'Restore');
+    await act(async () => {
+      await restoreButton?.onPress?.();
+    });
+
+    expect(mockRestoreFromBackup).toHaveBeenCalledWith(
+      backup,
+      'ABCD-EFGH-IJKM-NPQR-STVW-XYZ2-3456-789A',
+      '123456'
+    );
+  });
+
+  it('passes legacy backup PIN input through unchanged for v1 backups', async () => {
+    const backup = {
+      kind: 'kondor-wallet-backup',
+      version: 1,
+    };
+    mockGetDocumentAsync.mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: 'file:///cache/legacy-backup.json', name: 'legacy-backup.json' }],
+    });
+    mockReadAsStringAsync.mockResolvedValue(JSON.stringify(backup));
+
+    const { BackupRecoveryScreen } = require('../BackupRecoveryScreen');
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(<BackupRecoveryScreen />);
+    });
+
+    await act(async () => {
+      findButton(renderer!, 'Import Backup File').props.onPress();
+    });
+
+    await act(async () => {
+      findInputByLabel(renderer!, 'Backup recovery key or legacy backup PIN')
+        .props.onChangeText('123456');
+    });
+
+    await act(async () => {
+      findButton(renderer!, 'Verify Backup').props.onPress();
+    });
+
+    expect(mockVerifyWalletBackup).toHaveBeenCalledWith(backup, '123456');
   });
 });

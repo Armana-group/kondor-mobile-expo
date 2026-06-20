@@ -33,6 +33,15 @@ import colors from '../theme/colors';
 
 const BACKUP_DIRECTORY_NAME = 'backups';
 
+function getRestoreBackupSecret(backup: BackupData, value: string): string {
+  const trimmedValue = value.trim();
+  if (backup.version === 2 && isValidBackupRecoveryKey(trimmedValue)) {
+    return normalizeBackupRecoveryKey(trimmedValue);
+  }
+
+  return trimmedValue;
+}
+
 export const BackupRecoveryScreen = () => {
   const navigation = useNavigation<any>();
   const {
@@ -178,9 +187,10 @@ export const BackupRecoveryScreen = () => {
     setIsVerifyingBackup(true);
 
     try {
-      const isValid = await verifyWalletBackup(importedBackup, restorePin.trim());
+      const backupSecret = getRestoreBackupSecret(importedBackup, restorePin);
+      const isValid = await verifyWalletBackup(importedBackup, backupSecret);
       if (!isValid) {
-        throw new Error('Backup verification failed. Check the PIN and backup file.');
+        throw new Error('Backup verification failed. Check the backup recovery key or legacy backup PIN and backup file.');
       }
 
       setIsImportedBackupVerified(true);
@@ -217,7 +227,11 @@ export const BackupRecoveryScreen = () => {
           onPress: async () => {
             setIsRestoringBackup(true);
             try {
-              await restoreFromBackup(importedBackup, restorePin.trim(), currentPin.trim());
+              await restoreFromBackup(
+                importedBackup,
+                getRestoreBackupSecret(importedBackup, restorePin),
+                currentPin.trim()
+              );
               setImportedBackup(null);
               setImportedFileName(null);
               setRestorePin('');
