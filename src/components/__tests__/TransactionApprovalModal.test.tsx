@@ -32,10 +32,9 @@ let mockWalletState = {
 const mockProvider = jest.fn();
 const mockSignTransaction = jest.fn(async (_tx?: unknown) => undefined);
 const mockPrepare = jest.fn(async function (this: any) {
-  this.transaction.header = {
-    ...(this.transaction.header ?? {}),
-    nonce: this.transaction.header?.nonce ?? '0x01',
-  };
+  const header = this.transaction.header ?? {};
+  header.nonce = header.nonce ?? '0x01';
+  this.transaction.header = header;
 });
 const mockEstimateSend = jest.fn(async () => ({
   rc_used: '1000',
@@ -458,6 +457,93 @@ describe('TransactionApprovalModal', () => {
           }),
         }),
       })
+    );
+  });
+
+  it('does not mutate the original request transaction after a successful approve', async () => {
+    const onApprove = jest.fn();
+    const request = {
+      signerAddress: OWNER,
+      transaction: {
+        operations: [],
+        header: {},
+      },
+    };
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TransactionApprovalModal
+          visible
+          request={request}
+          appName="Test dApp"
+          appOrigin="https://example.com"
+          isSend={false}
+          onApprove={onApprove}
+          onReject={jest.fn()}
+          onClose={jest.fn()}
+        />
+      );
+    });
+    activeRenderer = renderer!;
+    await flushEffects();
+
+    await act(async () => {
+      findButton(renderer!, 'Sign')?.props.onPress();
+    });
+    await flushEffects();
+
+    expect(onApprove).toHaveBeenCalled();
+    expect(request.transaction).toEqual({
+      operations: [],
+      header: {},
+    });
+  });
+
+  it('does not mutate the original request transaction when dry-run estimation fails', async () => {
+    const onApprove = jest.fn();
+    const onReject = jest.fn();
+    const request = {
+      signerAddress: OWNER,
+      transaction: {
+        operations: [],
+        header: {},
+      },
+    };
+
+    mockEstimateSend.mockRejectedValueOnce(new Error('Dry-run exploded'));
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TransactionApprovalModal
+          visible
+          request={request}
+          appName="Test dApp"
+          appOrigin="https://example.com"
+          isSend={false}
+          onApprove={onApprove}
+          onReject={onReject}
+          onClose={jest.fn()}
+        />
+      );
+    });
+    activeRenderer = renderer!;
+    await flushEffects();
+
+    await act(async () => {
+      findButton(renderer!, 'Sign')?.props.onPress();
+    });
+    await flushEffects();
+
+    expect(onApprove).not.toHaveBeenCalled();
+    expect(onReject).not.toHaveBeenCalled();
+    expect(request.transaction).toEqual({
+      operations: [],
+      header: {},
+    });
+    expect(getTextContent(renderer!)).toContain(
+      'Transaction simulation failed: Dry-run exploded'
     );
   });
 });

@@ -17,7 +17,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Signer, Transaction, Provider, TransactionJson } from 'koilib';
+import { Signer, Transaction, Provider, TransactionJson, type OperationJson } from 'koilib';
 import * as SecureStore from 'expo-secure-store';
 import colors from '../theme/colors';
 import { useWalletStore } from '../stores/walletStore';
@@ -79,6 +79,47 @@ function normalizeOrigin(origin: string): string {
   } catch {
     return origin;
   }
+}
+
+function cloneOperation(operation: OperationJson): OperationJson {
+  if (operation.call_contract) {
+    return {
+      ...operation,
+      call_contract: { ...operation.call_contract },
+    };
+  }
+
+  if (operation.upload_contract) {
+    return {
+      ...operation,
+      upload_contract: { ...operation.upload_contract },
+    };
+  }
+
+  if (operation.set_system_call) {
+    return {
+      ...operation,
+      set_system_call: { ...operation.set_system_call },
+    };
+  }
+
+  if (operation.set_system_contract) {
+    return {
+      ...operation,
+      set_system_contract: { ...operation.set_system_contract },
+    };
+  }
+
+  return { ...operation };
+}
+
+function cloneTransaction(transaction: TransactionJson): TransactionJson {
+  return {
+    ...transaction,
+    header: transaction.header ? { ...transaction.header } : undefined,
+    operations: transaction.operations?.map(cloneOperation),
+    signatures: transaction.signatures ? [...transaction.signatures] : undefined,
+  };
 }
 
 export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> = ({
@@ -213,7 +254,7 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
       }
 
       // Prepare transaction
-      let tx = { ...request.transaction };
+      const tx = cloneTransaction(request.transaction);
 
       // Use free mana sharer to pay for transaction mana
       const freeManaSharer = activeNetwork.freeManaSharer;
@@ -237,7 +278,7 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
       const estimateTx = new Transaction({ signer, provider });
 
       // Copy transaction but clear id and signatures (they'll be recalculated)
-      const txForEstimation = { ...tx };
+      const txForEstimation = cloneTransaction(tx);
       delete txForEstimation.id;
       delete txForEstimation.signatures;
       estimateTx.transaction = txForEstimation;
@@ -306,7 +347,7 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
       const txObj = new Transaction({ signer, provider });
 
       // Copy transaction but clear id and signatures (they'll be recalculated after signing)
-      const txForSigning = { ...tx };
+      const txForSigning = cloneTransaction(tx);
       delete txForSigning.id;
       delete txForSigning.signatures;
       txObj.transaction = txForSigning;
