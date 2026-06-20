@@ -57,6 +57,7 @@ type DAppWebViewRouteParams = {
 // Pending request for transaction signing
 interface PendingSignRequest {
   id: string;
+  origin: string;
   request: TransactionRequest;
   isSend: boolean;
 }
@@ -152,6 +153,7 @@ export const DAppWebViewScreen = () => {
   // Provider for blockchain queries
   const providerRef = useRef<Provider | null>(null);
   const currentOriginRef = useRef<string | null>(null);
+  const pendingTransactionRequestRef = useRef<PendingSignRequest | null>(null);
   const pendingConnectionRequestRef = useRef<PendingConnectionRequest | null>(null);
   const pendingMessageSigningRequestRef = useRef<PendingMessageSigningRequest | null>(null);
   const currentOriginSecurity = inspectDAppOrigin(getOriginFromUrl(currentUrl));
@@ -376,7 +378,14 @@ export const DAppWebViewScreen = () => {
         abis,
       };
 
-      setPendingRequest({ id, request, isSend });
+      const pendingApproval = {
+        id,
+        origin: getOriginFromUrl(currentUrl || app.url),
+        request,
+        isSend,
+      };
+      pendingTransactionRequestRef.current = pendingApproval;
+      setPendingRequest(pendingApproval);
       setShowApprovalModal(true);
 
       // Return a promise that will be resolved when modal completes
@@ -391,9 +400,25 @@ export const DAppWebViewScreen = () => {
 
   // Handle transaction approval
   const handleApproveTransaction = useCallback((result: SigningResult) => {
+    const livePendingRequest = pendingTransactionRequestRef.current;
+    if (!pendingRequest || !livePendingRequest || livePendingRequest.id !== pendingRequest.id) {
+      return;
+    }
+
+    if (currentOriginRef.current !== pendingRequest.origin) {
+      sendResponse({
+        type: 'kondor-response',
+        id: pendingRequest.id,
+        error: 'Navigation changed before transaction was approved',
+      });
+      pendingTransactionRequestRef.current = null;
+      setShowApprovalModal(false);
+      setPendingRequest(null);
+      return;
+    }
+
     if (pendingRequest) {
       browserLogger.debug('Transaction approved:', pendingRequest.id);
-
       // Send the result back to the dApp
       if (pendingRequest.isSend) {
         sendResponse({
@@ -412,6 +437,7 @@ export const DAppWebViewScreen = () => {
         });
       }
     }
+    pendingTransactionRequestRef.current = null;
     setShowApprovalModal(false);
     setPendingRequest(null);
   }, [pendingRequest, sendResponse]);
@@ -426,6 +452,7 @@ export const DAppWebViewScreen = () => {
         error,
       });
     }
+    pendingTransactionRequestRef.current = null;
     setShowApprovalModal(false);
     setPendingRequest(null);
   }, [pendingRequest, sendResponse]);
@@ -676,7 +703,18 @@ export const DAppWebViewScreen = () => {
     const nextOrigin = getOriginFromUrl(navState.url);
     if (nextOrigin !== currentOriginRef.current) {
       const pendingRequestOnOrigin = pendingConnectionRequestRef.current;
+      const pendingTransactionOnOrigin = pendingTransactionRequestRef.current;
       const pendingSigningRequestOnOrigin = pendingMessageSigningRequestRef.current;
+      if (pendingTransactionOnOrigin && pendingTransactionOnOrigin.origin !== nextOrigin) {
+        sendResponse({
+          type: 'kondor-response',
+          id: pendingTransactionOnOrigin.id,
+          error: 'Navigation changed before transaction was approved',
+        });
+        pendingTransactionRequestRef.current = null;
+        setShowApprovalModal(false);
+        setPendingRequest(null);
+      }
       if (pendingRequestOnOrigin && pendingRequestOnOrigin.origin !== nextOrigin) {
         sendResponse({
           type: 'kondor-response',
@@ -902,7 +940,7 @@ export const DAppWebViewScreen = () => {
         visible={showApprovalModal}
         request={pendingRequest?.request || null}
         appName={app.name}
-        appOrigin={app.url}
+        appOrigin={pendingRequest?.origin || currentOriginRef.current || app.url}
         isSend={pendingRequest?.isSend || false}
         onApprove={handleApproveTransaction}
         onReject={handleRejectTransaction}

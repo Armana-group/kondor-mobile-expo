@@ -31,6 +31,18 @@ import { WALLETCONNECT_JSONRPC_UNSUPPORTED_ERROR } from '../lib/koinosRpcPolicy'
 import { wcLogger, sanitizeErrorForUser } from '../lib/logger';
 import { getActiveNetworkConfig, useNetworkStore } from '../stores/networkStore';
 
+function normalizeWalletConnectOrigin(value?: string): string {
+  if (!value) {
+    return '';
+  }
+
+  try {
+    return new URL(value).origin;
+  } catch {
+    return value;
+  }
+}
+
 export const WalletConnectHandler: React.FC = () => {
   const { address, isWalletCreated } = useWalletStore();
   const networkMode = useNetworkStore((state) => state.mode);
@@ -54,6 +66,8 @@ export const WalletConnectHandler: React.FC = () => {
 
   // State for transaction approval
   const [transactionApproval, setTransactionApproval] = useState<{
+    appName: string;
+    appOrigin: string;
     request: TransactionRequest;
     current: WCTransactionRequest;
   } | null>(null);
@@ -135,6 +149,8 @@ export const WalletConnectHandler: React.FC = () => {
       transaction: pendingTransaction.transaction,
     };
     setTransactionApproval({
+      appName: pendingTransaction.peerMeta.name || 'Unknown App',
+      appOrigin: normalizeWalletConnectOrigin(pendingTransaction.peerMeta.url),
       request: txReq,
       current: pendingTransaction,
     });
@@ -417,7 +433,7 @@ export const WalletConnectHandler: React.FC = () => {
         Alert.alert('Error', sanitizeErrorForUser(error, 'Failed to send response'));
       }
     },
-    [clearPendingSigningRequest, signingApproval, respondToRequest]
+    [clearPendingSigningRequest, respondToRequest]
   );
 
   const handleRejectSigningRequest = useCallback(
@@ -454,8 +470,8 @@ export const WalletConnectHandler: React.FC = () => {
       <TransactionApprovalModal
         visible={!!transactionApproval}
         request={transactionApproval?.request || null}
-        appName={transactionApproval?.current.peerMeta.name || 'Unknown App'}
-        appOrigin={transactionApproval?.current.peerMeta.url || ''}
+        appName={transactionApproval?.appName || 'Unknown App'}
+        appOrigin={transactionApproval?.appOrigin || ''}
         isSend={transactionApproval?.current.method === KOINOS_METHODS.SignAndSendTransaction}
         onApprove={handleApproveTransaction}
         onReject={handleRejectTransaction}

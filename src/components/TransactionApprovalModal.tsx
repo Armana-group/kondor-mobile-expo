@@ -6,7 +6,7 @@
  * biometric authentication before signing.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -24,7 +24,8 @@ import { useWalletStore } from '../stores/walletStore';
 import { requireBiometricAuth } from '../lib/biometrics';
 import { HapticFeedback } from '../lib/haptics';
 import { txLogger } from '../lib/logger';
-import { getActiveNetworkConfig } from '../stores/networkStore';
+import { getActiveNetworkConfig, useNetworkStore } from '../stores/networkStore';
+import { inspectDAppOrigin } from '../lib/dapp/originSecurity';
 import {
   type DecodedOperation,
   decodeKnownOperation,
@@ -72,6 +73,14 @@ function getSimplifiedDomain(origin: string): string {
   }
 }
 
+function normalizeOrigin(origin: string): string {
+  try {
+    return new URL(origin).origin;
+  } catch {
+    return origin;
+  }
+}
+
 export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> = ({
   visible,
   request,
@@ -90,9 +99,22 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const { getActiveAccount, activeAccountId } = useWalletStore();
+  useNetworkStore((state) => state.mode);
+  useNetworkStore((state) => state.hasHydrated);
   const activeAccount = getActiveAccount();
+  const activeNetwork = getActiveNetworkConfig();
+  const normalizedOrigin = normalizeOrigin(appOrigin);
+  const originSecurity = useMemo(
+    () =>
+      inspectDAppOrigin(normalizedOrigin, {
+        highRiskRequest: isSend ? 'transaction broadcast' : 'transaction signing',
+      }),
+    [isSend, normalizedOrigin]
+  );
+  const blockedSwapMessage =
+    'KoinDX swaps from dApps are not supported on mobile. Use the Swap tab in Kondor Mobile instead.';
 
-  const simplifiedDomain = getSimplifiedDomain(appOrigin);
+  const simplifiedDomain = getSimplifiedDomain(normalizedOrigin);
 
   // Decode operations when request changes
   useEffect(() => {
@@ -107,6 +129,12 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
     setError(null);
     setSigning(false);
   }, [request]);
+
+  const rejectPendingRequest = useCallback((message: string) => {
+    setError(message);
+    setSigning(false);
+    onReject(message);
+  }, [onReject]);
 
   // Toggle operation expansion
   const toggleOperation = useCallback((index: number) => {
@@ -128,16 +156,28 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
       return;
     }
 
+    if (request.signerAddress !== activeAccount.address) {
+      rejectPendingRequest('Transaction signer does not match the active wallet account.');
+      return;
+    }
+
+    if (
+      request.transaction.header?.chain_id &&
+      request.transaction.header.chain_id !== activeNetwork.chainId
+    ) {
+      rejectPendingRequest('Transaction network does not match the active wallet network.');
+      return;
+    }
+
+    if (hasKoinDxSwapOperation(request.transaction.operations)) {
+      rejectPendingRequest(blockedSwapMessage);
+      return;
+    }
+
     setSigning(true);
     setError(null);
 
     try {
-      if (hasKoinDxSwapOperation(request.transaction.operations)) {
-        setSigning(false);
-        setError('KoinDX swaps from dApps are not supported here. Use the native Swap tab.');
-        return;
-      }
-
       // Require biometric authentication
       const authenticated = await requireBiometricAuth(
         isSend ? 'send this transaction' : 'sign this transaction'
@@ -162,7 +202,6 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
       }
 
       // Create provider and signer
-      const activeNetwork = getActiveNetworkConfig();
       const provider = new Provider(activeNetwork.rpcNodes);
 
       let signer: Signer;
@@ -307,7 +346,18 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
       setSigning(false);
       HapticFeedback.error();
     }
-  }, [request, activeAccount, activeAccountId, isSend, onApprove]);
+  }, [
+    request,
+    activeAccount,
+    activeAccountId,
+    activeNetwork.chainId,
+    activeNetwork.freeManaSharer,
+    activeNetwork.rpcNodes,
+    isSend,
+    onApprove,
+    rejectPendingRequest,
+    blockedSwapMessage,
+  ]);
 
   // Handle rejection
   const handleReject = useCallback(() => {
@@ -347,9 +397,9 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
             <Text style={styles.headerLabel}>
               Your wallet is interacting with:
             </Text>
-            <Text style={styles.appNameLarge}>{simplifiedDomain}</Text>
+            <Text style={styles.appNameLarge}>{appName || simplifiedDomain}</Text>
             <Text style={styles.appOrigin} numberOfLines={1}>
-              {appOrigin}
+              {originSecurity.displayOrigin}
             </Text>
           </View>
         </View>
@@ -365,6 +415,33 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
             style={styles.scrollContent}
             contentContainerStyle={styles.scrollContentContainer}
           >
+            <View style={styles.noticeCard}>
+              <Ionicons
+                name={originSecurity.level === 'trusted' ? 'shield-checkmark' : 'warning'}
+                size={18}
+                color={originSecurity.level === 'trusted' ? colors.success : colors.warning}
+              />
+              <View style={styles.noticeCopy}>
+                <Text style={styles.noticeTitle}>Origin and network review</Text>
+                <Text style={styles.noticeText}>
+                  {hasKoinDxSwapOperation(request?.transaction.operations)
+                    ? blockedSwapMessage
+                    : 'Review the site origin and network before approving this transaction.'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.summaryGrid}>
+              <View style={styles.summaryCard}>
+                <Text style={styles.summaryLabel}>Site Origin</Text>
+                <Text style={styles.summaryValue}>{originSecurity.displayOrigin}</Text>
+              </View>
+              <View style={styles.summaryCard}>
+                <Text style={styles.summaryLabel}>Active Network</Text>
+                <Text style={styles.summaryValue}>{activeNetwork.name}</Text>
+              </View>
+            </View>
+
             {/* Operations List */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>
@@ -577,6 +654,50 @@ const styles = StyleSheet.create({
   },
   scrollContentContainer: {
     padding: 16,
+  },
+  noticeCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    gap: 12,
+  },
+  noticeCopy: {
+    flex: 1,
+  },
+  noticeTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: 4,
+  },
+  noticeText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  summaryGrid: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  summaryCard: {
+    flex: 1,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 14,
+  },
+  summaryLabel: {
+    fontSize: 12,
+    color: colors.textTertiary,
+    marginBottom: 6,
+  },
+  summaryValue: {
+    fontSize: 14,
+    color: colors.textPrimary,
+    fontWeight: '500',
   },
   section: {
     marginBottom: 16,
