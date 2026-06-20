@@ -3,9 +3,11 @@ jest.mock(
   () => require('@react-native-async-storage/async-storage/jest/async-storage-mock')
 );
 
-import { MAINNET, TESTNET } from '../../lib/constants';
+import { KOINOS_TOKEN_CONTRACTS, MAINNET, TESTNET } from '../../lib/constants';
 import {
   buildTokensForNetwork,
+  buildManagedTokens,
+  getVisibleTokens,
   getTokenListUrlForNetwork,
   type Token,
 } from '../tokenStore';
@@ -50,5 +52,48 @@ describe('tokenStore network token helpers', () => {
     ]);
     expect(tokens.some((token) => token.contractId === '19GYjDBVXU7keLbYvMLazsGQn3GTWHjHkK')).toBe(false);
     expect(tokens.some((token) => token.symbol === 'ALPHA')).toBe(false);
+  });
+
+  it('keeps hidden system tokens in the managed token set while filtering them from visible UI lists', () => {
+    const systemTokens: Token[] = [
+      {
+        contractId: MAINNET.koinContract,
+        symbol: 'KOIN',
+        name: 'Koinos',
+        decimals: 8,
+        icon: '',
+        balance: '1',
+        isLoading: false,
+      },
+      {
+        contractId: KOINOS_TOKEN_CONTRACTS.VHP,
+        symbol: 'VHP',
+        name: 'Virtual Hash Power',
+        decimals: 8,
+        icon: '',
+        balance: '2',
+        isLoading: false,
+      },
+    ];
+
+    const managedTokens = buildManagedTokens({
+      systemTokens,
+      customTokens: [],
+      hiddenSystemTokenIds: [MAINNET.koinContract],
+    });
+
+    expect(managedTokens).toEqual([
+      expect.objectContaining({
+        contractId: MAINNET.koinContract,
+        isHidden: true,
+      }),
+      expect.objectContaining({
+        contractId: KOINOS_TOKEN_CONTRACTS.VHP,
+        isHidden: false,
+      }),
+    ]);
+    expect(getVisibleTokens(managedTokens).map((token) => token.contractId)).toEqual([
+      KOINOS_TOKEN_CONTRACTS.VHP,
+    ]);
   });
 });

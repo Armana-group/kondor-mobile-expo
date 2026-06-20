@@ -42,6 +42,17 @@ let mockNetworkState = {
   hasHydrated: false,
 };
 
+type MockToken = {
+  contractId: string;
+  symbol: string;
+  name: string;
+  decimals: number;
+  icon: string;
+  balance: string;
+  isLoading: boolean;
+  isHidden?: boolean;
+};
+
 let mockTokenState = {
   tokens: [
     {
@@ -53,7 +64,7 @@ let mockTokenState = {
       balance: '0',
       isLoading: false,
     },
-  ],
+  ] as MockToken[],
   isLoading: false,
   cacheKey: `mainnet:${mockAddress}`,
 };
@@ -149,6 +160,9 @@ jest.mock('../../stores/tokenStore', () => {
     return isLoading || cacheKey !== `${networkMode}:${address}`;
   };
 
+  const getVisibleTokens = (tokens: Array<{ isHidden?: boolean }>) =>
+    tokens.filter((token) => !token.isHidden);
+
   const useTokenStore = () => ({
     ...mockTokenState,
     initialize: mockInitializeTokens,
@@ -162,6 +176,7 @@ jest.mock('../../stores/tokenStore', () => {
 
   return {
     getScopedTokens,
+    getVisibleTokens,
     isTokenScopeLoading,
     useTokenStore,
   };
@@ -469,5 +484,62 @@ describe('HomeScreen network initialization', () => {
 
     const renderedText = collectRenderedText(renderer!).join(' ');
     expect(renderedText).not.toContain('$0.00');
+  });
+
+  it('prices only visible tokens once after a settled refresh', async () => {
+    mockNetworkState = {
+      mode: 'mainnet',
+      hasHydrated: true,
+    };
+    mockTokenState = {
+      tokens: [
+        {
+          contractId: 'visible-koin',
+          symbol: 'KOIN',
+          name: 'Koinos',
+          decimals: 8,
+          icon: '',
+          balance: '12.34000000',
+          isLoading: false,
+        },
+        {
+          contractId: 'hidden-vhp',
+          symbol: 'VHP',
+          name: 'Virtual Hash Power',
+          decimals: 8,
+          icon: '',
+          balance: '8.00000000',
+          isLoading: false,
+          isHidden: true,
+        },
+      ],
+      isLoading: false,
+      cacheKey: `mainnet:${mockAddress}`,
+    };
+    mockGetPortfolioValue.mockResolvedValue({
+      totalUsd: 3.14,
+      pricedTokenCount: 1,
+      pricesByContractId: { 'visible-koin': 0.2544 },
+      unavailableContractIds: [],
+    });
+
+    const { HomeScreen } = require('../HomeScreen');
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<HomeScreen />);
+    });
+    await flushEffects();
+    await flushEffects();
+
+    expect(mockGetPortfolioValue).toHaveBeenCalledTimes(1);
+    expect(mockGetPortfolioValue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tokens: [
+          expect.objectContaining({ contractId: 'visible-koin' }),
+        ],
+      })
+    );
+    expect(collectRenderedText(renderer!).join(' ')).toContain('$3.14');
   });
 });

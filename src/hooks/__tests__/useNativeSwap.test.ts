@@ -10,7 +10,7 @@ import {
   getScopedSwapTokens,
   type NativeSwapControllerDeps,
 } from '../useNativeSwap';
-import { MAINNET, TESTNET } from '../../lib/constants';
+import { KOINOS_TOKEN_CONTRACTS, MAINNET, TESTNET } from '../../lib/constants';
 
 function createDeps(
   overrides: Partial<NativeSwapControllerDeps> = {}
@@ -117,6 +117,23 @@ describe('getScopedSwapTokens', () => {
       cacheKey: 'harbinger:1WalletAddress',
       tokens: [mainnetToken],
     })).toEqual([mainnetToken]);
+  });
+
+  it('keeps hidden active-scope tokens available for swap selection', () => {
+    const hiddenToken = {
+      ...mainnetToken,
+      contractId: KOINOS_TOKEN_CONTRACTS.VHP,
+      symbol: 'VHP',
+      isHidden: true,
+    };
+
+    expect(getScopedSwapTokens({
+      hasHydrated: true,
+      networkMode: 'mainnet',
+      address: '1WalletAddress',
+      cacheKey: 'mainnet:1WalletAddress',
+      tokens: [mainnetToken, hiddenToken],
+    })).toEqual([mainnetToken, hiddenToken]);
   });
 });
 

@@ -212,7 +212,7 @@ export function buildTokensForNetwork(
   return Array.from(tokenMap.values());
 }
 
-function getVisibleTokens(tokens: Token[]): Token[] {
+export function getVisibleTokens(tokens: Token[]): Token[] {
   return tokens.filter((token) => !token.isHidden);
 }
 
@@ -446,7 +446,7 @@ export const useTokenStore = create<TokenState>()(
           }
 
           set({
-            tokens: getVisibleTokens(allTokens),
+            tokens: allTokens,
             allTokens,
             isInitialized: true,
             lastFetch: now,
@@ -493,7 +493,7 @@ export const useTokenStore = create<TokenState>()(
         // Mark all tokens as loading
         set({
           allTokens: allTokens.map((token) => ({ ...token, isLoading: true })),
-          tokens: getVisibleTokens(allTokens.map((token) => ({ ...token, isLoading: true }))),
+          tokens: allTokens.map((token) => ({ ...token, isLoading: true })),
         });
 
         // Fetch balances in parallel (batch of 5 to avoid rate limiting)
@@ -537,7 +537,7 @@ export const useTokenStore = create<TokenState>()(
           }
           set({
             allTokens: [...updatedTokens],
-            tokens: getVisibleTokens(updatedTokens),
+            tokens: [...updatedTokens],
           });
         }
 
@@ -567,7 +567,7 @@ export const useTokenStore = create<TokenState>()(
         updatedTokens[tokenIndex] = { ...token, isLoading: true };
         set({
           allTokens: updatedTokens,
-          tokens: getVisibleTokens(updatedTokens),
+          tokens: updatedTokens,
         });
 
         try {
@@ -589,7 +589,7 @@ export const useTokenStore = create<TokenState>()(
           }
           set({
             allTokens: updatedTokens,
-            tokens: getVisibleTokens(updatedTokens),
+            tokens: updatedTokens,
           });
         } catch (error: any) {
           log.error(`Error refreshing ${token.symbol}:`, error);
@@ -603,7 +603,7 @@ export const useTokenStore = create<TokenState>()(
           }
           set({
             allTokens: updatedTokens,
-            tokens: getVisibleTokens(updatedTokens),
+            tokens: updatedTokens,
           });
         }
       },
@@ -634,7 +634,7 @@ export const useTokenStore = create<TokenState>()(
 
         set({
           allTokens: nextAllTokens,
-          tokens: getVisibleTokens(nextAllTokens),
+          tokens: nextAllTokens,
         });
 
         if (address) {

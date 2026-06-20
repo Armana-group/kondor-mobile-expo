@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -21,6 +21,7 @@ import { useKoinosStore } from '../stores/koinosStore';
 import {
   useTokenStore,
   Token,
+  getVisibleTokens,
   getScopedTokens,
   isTokenScopeLoading,
 } from '../stores/tokenStore';
@@ -40,7 +41,7 @@ const USD_FORMATTER = new Intl.NumberFormat('en-US', {
 export const HomeScreen = () => {
   const navigation = useNavigation<any>();
   const { address, updateBalance, accounts, getActiveAccount } = useWalletStore();
-  const { provider, getBalance, getMana, initialize, reset: resetKoinos } = useKoinosStore();
+  const { getBalance, getMana, initialize, reset: resetKoinos } = useKoinosStore();
   const {
     tokens,
     isLoading: tokensLoading,
@@ -60,13 +61,18 @@ export const HomeScreen = () => {
   // Get active account info
   const activeAccount = getActiveAccount();
   const initializationScope = hasHydrated && address ? `${networkMode}:${address}` : null;
-  const visibleTokens = getScopedTokens({
-    hasHydrated,
-    networkMode,
-    address,
-    cacheKey: tokenCacheKey,
-    tokens,
-  });
+  const visibleTokens = useMemo(
+    () => getVisibleTokens(
+      getScopedTokens({
+        hasHydrated,
+        networkMode,
+        address,
+        cacheKey: tokenCacheKey,
+        tokens,
+      })
+    ),
+    [address, hasHydrated, networkMode, tokenCacheKey, tokens]
+  );
   const tokenScopeLoading = isTokenScopeLoading({
     hasHydrated,
     networkMode,
@@ -74,49 +80,6 @@ export const HomeScreen = () => {
     cacheKey: tokenCacheKey,
     isLoading: tokensLoading,
   });
-
-  const refreshPortfolioValue = useCallback(async (requestScope: string) => {
-    const currentProvider = useKoinosStore.getState().provider;
-    const tokenState = useTokenStore.getState();
-
-    if (!currentProvider || !address || !hasHydrated) {
-      if (initializedScopeRef.current === requestScope) {
-        setPortfolioValueUsd(null);
-      }
-      return;
-    }
-
-    const scopedVisibleTokens = getScopedTokens({
-      hasHydrated: true,
-      networkMode,
-      address,
-      cacheKey: tokenState.cacheKey,
-      tokens: tokenState.tokens,
-    });
-
-    if (scopedVisibleTokens.length === 0) {
-      if (initializedScopeRef.current === requestScope) {
-        setPortfolioValueUsd(null);
-      }
-      return;
-    }
-
-    try {
-      const result = await tokenPriceService.getPortfolioValue({
-        provider: currentProvider,
-        networkMode,
-        tokens: scopedVisibleTokens,
-      });
-
-      if (initializedScopeRef.current === requestScope) {
-        setPortfolioValueUsd(result.totalUsd);
-      }
-    } catch (_error) {
-      if (initializedScopeRef.current === requestScope) {
-        setPortfolioValueUsd(null);
-      }
-    }
-  }, [address, hasHydrated, networkMode]);
 
   // Core balance fetching logic (silent - no spinner)
   const fetchBalances = useCallback(async () => {
@@ -152,12 +115,10 @@ export const HomeScreen = () => {
       } catch (manaError: any) {
         koinosLogger.error('Mana fetch error:', manaError);
       }
-
-      await refreshPortfolioValue(requestScope);
     } catch (error: any) {
       koinosLogger.error('Balance fetch error:', error);
     }
-  }, [address, hasHydrated, networkMode, refreshBalances, getBalance, updateBalance, getMana, refreshPortfolioValue]);
+  }, [address, hasHydrated, networkMode, refreshBalances, getBalance, updateBalance, getMana]);
 
   // Initialize on first load (silent)
   const initializeAndLoadBalance = useCallback(async () => {
@@ -196,15 +157,21 @@ export const HomeScreen = () => {
   }, [initializationScope, initializeAndLoadBalance]);
 
   useEffect(() => {
-    if (!initializationScope || !provider || visibleTokens.length === 0) {
+    const activeProvider = useKoinosStore.getState().provider;
+
+    if (!initializationScope || !activeProvider || visibleTokens.length === 0) {
       setPortfolioValueUsd(null);
+      return;
+    }
+
+    if (tokenScopeLoading || visibleTokens.some((token) => token.isLoading)) {
       return;
     }
 
     let cancelled = false;
 
     void tokenPriceService.getPortfolioValue({
-      provider,
+      provider: activeProvider,
       networkMode,
       tokens: visibleTokens,
     }).then((result) => {
@@ -224,7 +191,7 @@ export const HomeScreen = () => {
     return () => {
       cancelled = true;
     };
-  }, [initializationScope, networkMode, provider, visibleTokens]);
+  }, [initializationScope, networkMode, tokenScopeLoading, visibleTokens]);
 
   // Manual pull-to-refresh (with spinner)
   const handleManualRefresh = async () => {
