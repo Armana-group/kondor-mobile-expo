@@ -226,6 +226,16 @@ describe('walletStore backup restore hardening', () => {
     expect(JSON.stringify(snapshot)).not.toContain('old-private-key');
   });
 
+  it('rejects backup snapshots when the backup recovery key is missing', async () => {
+    const { useWalletStore } = await loadWalletStore();
+
+    useWalletStore.setState(EXISTING_STATE);
+
+    await expect(useWalletStore.getState().createBackupSnapshot('123456')).rejects.toThrow(
+      'Backup recovery key is required'
+    );
+  });
+
   it('marks backup health verified after a successful manual backup', async () => {
     const { useWalletStore } = await loadWalletStore();
 

@@ -77,7 +77,7 @@ interface WalletState {
   renameAccount: (accountId: string, name: string) => void;
   removeAccount: (accountId: string) => Promise<boolean>;
   getActiveAccount: () => Account | undefined;
-  createBackupSnapshot: (currentPin: string, backupSecret: string) => Promise<WalletBackupSnapshot>;
+  createBackupSnapshot: (currentPin: string, backupSecret?: string) => Promise<WalletBackupSnapshot>;
   restoreFromBackup: (backup: BackupData, backupPin: string, currentPin: string) => Promise<void>;
   setLastBackupAt: (timestamp: string | null) => void;
   markBackupVerified: (input: MarkBackupVerifiedInput) => void;
@@ -377,13 +377,13 @@ export const useWalletStore = create<WalletState>()(
         }
       },
 
-      createBackupSnapshot: async (currentPin: string, backupSecret: string) => {
+      createBackupSnapshot: async (currentPin: string, backupSecret?: string) => {
         const pinIsValid = await verifyPin(currentPin);
         if (!pinIsValid) {
           throw new Error('Incorrect PIN');
         }
 
-        if (!backupSecret.trim()) {
+        if (!backupSecret?.trim()) {
           throw new Error('Backup recovery key is required');
         }
 
