@@ -188,6 +188,22 @@ export const SettingsScreen = () => {
             </View>
           </View>
 
+          {/* Connected Sites */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>DApps</Text>
+
+            <TouchableOpacity
+              style={styles.settingItem}
+              onPress={() => navigation.navigate('ConnectedSites')}
+            >
+              <View style={styles.settingItemLeft}>
+                <Ionicons name="globe-outline" size={22} color={colors.purple} />
+                <Text style={styles.settingItemText}>Connected Sites</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+            </TouchableOpacity>
+          </View>
+
           {/* About Section */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>About</Text>

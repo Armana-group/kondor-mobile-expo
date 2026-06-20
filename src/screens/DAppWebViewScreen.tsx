@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback, useEffect } from 'react';
+import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,9 @@ import {
   SafeAreaView,
   Platform,
   Alert,
+  Modal,
+  Switch,
+  FlatList,
 } from 'react-native';
 import { WebView, WebViewNavigation, WebViewMessageEvent } from 'react-native-webview';
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
@@ -15,9 +18,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { Provider, Signer, Transaction, TransactionJson } from 'koilib';
 import * as SecureStore from 'expo-secure-store';
-import { DApp, isCuratedUrl } from '../constants/dapps';
+import { DApp } from '../constants/dapps';
 import colors from '../theme/colors';
-import { useWalletStore } from '../stores/walletStore';
+import { Account, useWalletStore } from '../stores/walletStore';
 import { browserLogger } from '../lib/logger';
 import {
   KONDOR_PROVIDER_SCRIPT,
@@ -37,6 +40,9 @@ import {
   handleWebViewProviderSendTransaction,
   handleWebViewProviderSubmitBlock,
 } from './dappWebViewProviderGuards';
+import { inspectDAppOrigin, type DAppOriginSecurity } from '../lib/dapp/originSecurity';
+import { createGrant, resolveConnection } from '../lib/dapp/permissions';
+import { getPermissionStoreSnapshot, useDAppPermissionStore } from '../stores/dappPermissionStore';
 
 type DAppWebViewRouteParams = {
   DAppWebView: {
@@ -51,6 +57,51 @@ interface PendingSignRequest {
   isSend: boolean;
 }
 
+interface PendingConnectionRequest {
+  id: string;
+  origin: string;
+  security: DAppOriginSecurity;
+}
+
+interface KondorConnectedAccount {
+  name: string;
+  address: string;
+  signers: Array<{ name: string; address: string }>;
+}
+
+function getOriginFromUrl(value: string): string {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return value || 'Unknown';
+  }
+}
+
+function getOriginWarningText(security: DAppOriginSecurity): string {
+  if (security.level === 'danger') {
+    return 'Suspicious site origin — do not connect unless you verified the domain.';
+  }
+  if (security.level === 'warning') {
+    return 'Unverified site — review requests carefully before approving.';
+  }
+  return 'Unknown site — connect only if you trust it.';
+}
+
+function truncateAddress(address: string): string {
+  if (address.length <= 18) {
+    return address;
+  }
+  return `${address.slice(0, 10)}...${address.slice(-6)}`;
+}
+
+function toConnectedAccount(account: Account): KondorConnectedAccount {
+  return {
+    name: account.name,
+    address: account.address,
+    signers: [],
+  };
+}
+
 export const DAppWebViewScreen = () => {
   const navigation = useNavigation();
   const route = useRoute<RouteProp<DAppWebViewRouteParams, 'DAppWebView'>>();
@@ -58,6 +109,8 @@ export const DAppWebViewScreen = () => {
   const networkMode = useNetworkStore((state) => state.mode);
   const hasHydrated = useNetworkStore((state) => state.hasHydrated);
   const activeNetwork = getActiveNetworkConfig();
+  const rpcNodesKey = activeNetwork.rpcNodes.join(',');
+  const rpcNodes = useMemo(() => [...activeNetwork.rpcNodes], [rpcNodesKey]);
 
   const webViewRef = useRef<WebView>(null);
   const [canGoBack, setCanGoBack] = useState(false);
@@ -66,21 +119,39 @@ export const DAppWebViewScreen = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
-  const [showOriginWarning, setShowOriginWarning] = useState(!app.isCurated);
+  const [showOriginWarning, setShowOriginWarning] = useState(
+    inspectDAppOrigin(getOriginFromUrl(app.url)).level !== 'trusted'
+  );
 
   // Transaction approval modal state
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [pendingRequest, setPendingRequest] = useState<PendingSignRequest | null>(null);
+  const [showConnectionModal, setShowConnectionModal] = useState(false);
+  const [pendingConnectionRequest, setPendingConnectionRequest] = useState<PendingConnectionRequest | null>(null);
+  const [selectedAddresses, setSelectedAddresses] = useState<string[]>([]);
+  const [rememberSite, setRememberSite] = useState(true);
 
   // Wallet state
   const { accounts, address, getActiveAccount, activeAccountId } = useWalletStore();
+  const permissionStoreHydrated = useDAppPermissionStore((state) => state.hasHydrated);
+  const upsertGrant = useDAppPermissionStore((state) => state.upsertGrant);
 
   // Provider for blockchain queries
-  const providerRef = useRef<Provider>(new Provider(activeNetwork.rpcNodes));
+  const providerRef = useRef<Provider | null>(null);
+  const currentOriginRef = useRef<string | null>(null);
+  const currentOriginSecurity = inspectDAppOrigin(getOriginFromUrl(currentUrl));
+
+  if (!providerRef.current) {
+    providerRef.current = new Provider(rpcNodes);
+  }
+
+  if (currentOriginRef.current === null) {
+    currentOriginRef.current = getOriginFromUrl(app.url);
+  }
 
   useEffect(() => {
-    providerRef.current = new Provider(activeNetwork.rpcNodes);
-  }, [activeNetwork.chainId, hasHydrated, networkMode]);
+    providerRef.current = new Provider(rpcNodes);
+  }, [hasHydrated, networkMode, rpcNodes]);
 
   // Send response back to WebView
   const sendResponse = useCallback((response: KondorResponse) => {
@@ -106,7 +177,7 @@ export const DAppWebViewScreen = () => {
 
   // Handle provider commands (no user approval needed)
   const handleProviderCommand = useCallback(async (command: string, args: Record<string, unknown>): Promise<unknown> => {
-    const provider = providerRef.current;
+    const provider = providerRef.current!;
 
     switch (command) {
       case 'provider:call':
@@ -177,7 +248,7 @@ export const DAppWebViewScreen = () => {
   // Handle signer:prepareTransaction command
   const handlePrepareTransaction = useCallback(async (args: Record<string, unknown>): Promise<TransactionJson> => {
     const { signerAddress, transaction } = args as { signerAddress: string; transaction: TransactionJson };
-    const provider = providerRef.current;
+    const provider = providerRef.current!;
 
     // Get private key to create signer for prepare
     let privateKey = await SecureStore.getItemAsync(`kondor_pk_${activeAccountId}`);
@@ -314,38 +385,118 @@ export const DAppWebViewScreen = () => {
     }
   }, [pendingRequest, handleRejectTransaction]);
 
-  // Handle getAccounts command
-  const handleGetAccounts = useCallback(async (): Promise<unknown> => {
-    // Ask user for permission to connect
-    return new Promise((resolve, reject) => {
-      Alert.alert(
-        'Connect Wallet',
-        `${app.name} wants to connect to your wallet and view your account address.`,
-        [
-          {
-            text: 'Deny',
-            style: 'cancel',
-            onPress: () => reject(new Error('User denied account access')),
-          },
-          {
-            text: 'Connect',
-            onPress: () => {
-              setIsConnected(true);
-              const activeAccount = getActiveAccount();
-              resolve([
-                {
-                  name: activeAccount?.name || 'Account 1',
-                  address: address,
-                  signers: [address], // In Koinos, the address can be a signer
-                },
-              ]);
-            },
-          },
-        ],
-        { cancelable: false }
+  const openConnectionApproval = useCallback((id: string, origin: string, security: DAppOriginSecurity) => {
+    const activeAccount = getActiveAccount();
+    const defaultSelection = activeAccount?.address
+      ? [activeAccount.address]
+      : address
+        ? [address]
+        : accounts[0]?.address
+          ? [accounts[0].address]
+          : [];
+
+    setSelectedAddresses(defaultSelection);
+    setRememberSite(true);
+    setPendingConnectionRequest({ id, origin, security });
+    setShowConnectionModal(true);
+  }, [accounts, address, getActiveAccount]);
+
+  const buildConnectedAccounts = useCallback((addresses: string[]): KondorConnectedAccount[] => {
+    return addresses
+      .map((selectedAddress) => accounts.find((account) => account.address === selectedAddress))
+      .filter((account): account is Account => Boolean(account))
+      .map(toConnectedAccount);
+  }, [accounts]);
+
+  const handleGetAccounts = useCallback(async (id: string): Promise<unknown> => {
+    if (!permissionStoreHydrated) {
+      await useDAppPermissionStore.persist.rehydrate();
+    }
+
+    const origin = getOriginFromUrl(currentUrl || app.url);
+    const security = inspectDAppOrigin(origin);
+
+    if (security.denyApproval) {
+      throw new Error(
+        security.signals[0]?.detail || 'This site cannot be approved because its origin looks unsafe.'
       );
+    }
+
+    const resolution = resolveConnection(
+      origin,
+      getPermissionStoreSnapshot(),
+      accounts.map((account) => account.address),
+      Date.now()
+    );
+
+    if (resolution.canAutoConnect) {
+      setIsConnected(true);
+      return buildConnectedAccounts(resolution.accounts);
+    }
+
+    openConnectionApproval(id, origin, security);
+
+    return new Promise(() => {
+      // The modal handlers send the actual response.
     });
-  }, [app.name, address, getActiveAccount]);
+  }, [accounts, app.url, buildConnectedAccounts, currentUrl, openConnectionApproval, permissionStoreHydrated]);
+
+  const handleApproveConnection = useCallback(() => {
+    if (!pendingConnectionRequest) {
+      return;
+    }
+
+    const selectedAccounts = buildConnectedAccounts(selectedAddresses);
+    if (selectedAccounts.length === 0) {
+      return;
+    }
+
+    try {
+      const grant = createGrant({
+        origin: pendingConnectionRequest.origin,
+        accounts: selectedAccounts.map((account) => account.address),
+        lifetime: rememberSite ? 'persistent' : 'session',
+        security: pendingConnectionRequest.security,
+        now: Date.now(),
+      });
+
+      if (grant) {
+        upsertGrant(grant);
+      }
+    } catch (grantError) {
+      browserLogger.warn('Failed to save dApp connection grant', grantError);
+    }
+
+    setIsConnected(true);
+    sendResponse({
+      type: 'kondor-response',
+      id: pendingConnectionRequest.id,
+      result: selectedAccounts,
+    });
+    setShowConnectionModal(false);
+    setPendingConnectionRequest(null);
+  }, [buildConnectedAccounts, pendingConnectionRequest, rememberSite, selectedAddresses, sendResponse, upsertGrant]);
+
+  const handleRejectConnection = useCallback((errorMessage = 'User denied account access') => {
+    if (pendingConnectionRequest) {
+      sendResponse({
+        type: 'kondor-response',
+        id: pendingConnectionRequest.id,
+        error: errorMessage,
+      });
+    }
+
+    setShowConnectionModal(false);
+    setPendingConnectionRequest(null);
+  }, [pendingConnectionRequest, sendResponse]);
+
+  const toggleSelectedAddress = useCallback((selectedAddress: string) => {
+    setSelectedAddresses((current) => (
+      current.includes(selectedAddress)
+        ? current.filter((addressEntry) => addressEntry !== selectedAddress)
+        : [...current, selectedAddress]
+    ));
+  }, []);
 
   // Handle messages from WebView
   const handleMessage = useCallback(async (event: WebViewMessageEvent) => {
@@ -366,7 +517,7 @@ export const DAppWebViewScreen = () => {
         let result: unknown;
 
         if (command === 'getAccounts') {
-          result = await handleGetAccounts();
+          result = await handleGetAccounts(id);
           sendResponse({ type: 'kondor-response', id, result });
         } else if (command === 'signer:prepareTransaction') {
           // prepareTransaction doesn't need approval, but needs signer access
@@ -398,11 +549,16 @@ export const DAppWebViewScreen = () => {
   }, [handleGetAccounts, handleProviderCommand, handleSignerCommand, sendResponse]);
 
   const handleNavigationStateChange = useCallback((navState: WebViewNavigation) => {
+    const nextOrigin = getOriginFromUrl(navState.url);
+    if (nextOrigin !== currentOriginRef.current) {
+      currentOriginRef.current = nextOrigin;
+      setIsConnected(false);
+    }
+
     setCanGoBack(navState.canGoBack);
     setCanGoForward(navState.canGoForward);
     setCurrentUrl(navState.url);
-    // Update origin warning based on current URL
-    setShowOriginWarning(!isCuratedUrl(navState.url));
+    setShowOriginWarning(inspectDAppOrigin(nextOrigin).level !== 'trusted');
   }, []);
 
   // Block HTTP navigations - only allow HTTPS
@@ -514,7 +670,7 @@ export const DAppWebViewScreen = () => {
         <View style={styles.warningBanner}>
           <Ionicons name="warning" size={14} color={colors.warning} />
           <Text style={styles.warningText}>
-            Unverified site — review transactions carefully
+            {getOriginWarningText(currentOriginSecurity)}
           </Text>
           <TouchableOpacity onPress={() => setShowOriginWarning(false)}>
             <Ionicons name="close" size={16} color={colors.warning} />
@@ -608,6 +764,107 @@ export const DAppWebViewScreen = () => {
         onReject={handleRejectTransaction}
         onClose={handleCloseApprovalModal}
       />
+
+      <Modal
+        visible={showConnectionModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => handleRejectConnection('User denied account access')}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.connectionModal}>
+            <View style={styles.connectionHeader}>
+              <Text style={styles.connectionTitle}>Connect with Kondor</Text>
+              <Text style={styles.connectionSubtitle}>
+                {pendingConnectionRequest?.security.displayOrigin || currentOriginSecurity.displayOrigin}
+              </Text>
+            </View>
+
+            <View style={styles.connectionNotice}>
+              <Ionicons
+                name={pendingConnectionRequest?.security.level === 'trusted' ? 'shield-checkmark' : 'warning'}
+                size={16}
+                color={
+                  pendingConnectionRequest?.security.level === 'trusted'
+                    ? colors.success
+                    : colors.warning
+                }
+              />
+              <Text style={styles.connectionNoticeText}>
+                {pendingConnectionRequest
+                  ? getOriginWarningText(pendingConnectionRequest.security)
+                  : 'Choose which accounts this site can view.'}
+              </Text>
+            </View>
+
+            <FlatList
+              style={styles.accountList}
+              data={accounts}
+              keyExtractor={(account) => account.id}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item: account }) => {
+                const selected = selectedAddresses.includes(account.address);
+
+                return (
+                  <TouchableOpacity
+                    style={[styles.accountRow, selected && styles.accountRowSelected]}
+                    onPress={() => toggleSelectedAddress(account.address)}
+                  >
+                    <View style={styles.accountCopy}>
+                      <Text style={styles.accountName}>{account.name}</Text>
+                      <Text style={styles.accountAddress}>{truncateAddress(account.address)}</Text>
+                    </View>
+                    <Ionicons
+                      name={selected ? 'checkbox' : 'square-outline'}
+                      size={22}
+                      color={selected ? colors.purple : colors.textTertiary}
+                    />
+                  </TouchableOpacity>
+                );
+              }}
+            />
+
+            <View style={styles.rememberRow}>
+              <View style={styles.rememberCopy}>
+                <Text style={styles.rememberTitle}>Remember this site</Text>
+                <Text style={styles.rememberText}>
+                  Keep account access connected until you disconnect it in Settings.
+                </Text>
+              </View>
+              <Switch
+                value={rememberSite}
+                onValueChange={setRememberSite}
+                trackColor={{ false: colors.border, true: colors.purpleLight }}
+                thumbColor={rememberSite ? colors.purple : colors.textPrimary}
+              />
+            </View>
+
+            <Text style={styles.connectionFootnote}>
+              Connecting only shares selected account addresses. Signing and transaction approvals always stay prompt-driven.
+            </Text>
+
+            <View style={styles.connectionActions}>
+              <TouchableOpacity
+                style={[styles.connectionButton, styles.connectionButtonSecondary]}
+                onPress={() => handleRejectConnection('User denied account access')}
+              >
+                <Text style={styles.connectionButtonSecondaryText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.connectionButton,
+                  styles.connectionButtonPrimary,
+                  selectedAddresses.length === 0 && styles.connectionButtonDisabled,
+                ]}
+                onPress={handleApproveConnection}
+                disabled={selectedAddresses.length === 0}
+              >
+                <Text style={styles.connectionButtonPrimaryText}>Connect</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -763,5 +1020,136 @@ const styles = StyleSheet.create({
   },
   navButtonDisabled: {
     opacity: 0.5,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'flex-end',
+  },
+  connectionModal: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+    gap: 16,
+    maxHeight: '82%',
+  },
+  connectionHeader: {
+    gap: 6,
+  },
+  connectionTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  connectionSubtitle: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  connectionNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: colors.card,
+    borderRadius: 8,
+    padding: 12,
+  },
+  connectionNoticeText: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  accountList: {
+    maxHeight: 220,
+  },
+  accountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginBottom: 10,
+  },
+  accountRowSelected: {
+    borderColor: colors.purple,
+    backgroundColor: colors.purpleLight,
+  },
+  accountCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  accountName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  accountAddress: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  rememberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    backgroundColor: colors.card,
+    borderRadius: 8,
+    padding: 14,
+  },
+  rememberCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  rememberTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  rememberText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  connectionFootnote: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  connectionActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  connectionButton: {
+    flex: 1,
+    borderRadius: 8,
+    alignItems: 'center',
+    paddingVertical: 14,
+  },
+  connectionButtonPrimary: {
+    backgroundColor: colors.purple,
+  },
+  connectionButtonSecondary: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  connectionButtonDisabled: {
+    opacity: 0.45,
+  },
+  connectionButtonPrimaryText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  connectionButtonSecondaryText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.textPrimary,
   },
 });
