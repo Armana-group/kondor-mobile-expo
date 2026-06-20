@@ -21,6 +21,8 @@ export interface SwapExecutionResult {
   transactionId: string;
   blockHeight?: number;
   receipt: TransactionReceipt;
+  confirmationPending?: boolean;
+  confirmationError?: string;
 }
 
 export interface SwapTransactionParams {
@@ -48,6 +50,44 @@ function getRevertReason(receipt: Partial<TransactionReceipt>): string {
   }
 
   return 'Unknown error';
+}
+
+function stringifyError(value: unknown): string {
+  if (value instanceof Error) {
+    return value.message;
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function getReceiptRpcError(receipt: Partial<TransactionReceipt>): unknown {
+  return (receipt as { rpc_error?: unknown }).rpc_error;
+}
+
+function isRpcDeadlineError(value: unknown): boolean {
+  return /context deadline exceeded|transaction not mined after/i.test(stringifyError(value));
+}
+
+function rpcDeadlineMessage(value: unknown): string {
+  return stringifyError(value);
+}
+
+function pendingConfirmationResult(
+  receipt: TransactionReceipt,
+  error: unknown
+): SwapExecutionResult {
+  return {
+    transactionId: receipt.id,
+    receipt,
+    confirmationPending: true,
+    confirmationError: rpcDeadlineMessage(error),
+  };
 }
 
 export async function buildSwapTransaction(params: SwapTransactionParams): Promise<Transaction> {
@@ -120,6 +160,12 @@ export async function executeSwapTransaction(
 
   onStatus?.('estimating_mana');
   const dryRunReceipt = await dryRunTx.send({ broadcast: false });
+  const dryRunRpcError = getReceiptRpcError(dryRunReceipt);
+  if (dryRunRpcError && isRpcDeadlineError(dryRunRpcError)) {
+    throw new Error(
+      `Koinos RPC timed out while simulating the swap. No transaction was submitted. Try again. ${rpcDeadlineMessage(dryRunRpcError)}`
+    );
+  }
   if (dryRunReceipt.reverted) {
     throw new Error(`Swap simulation failed: ${getRevertReason(dryRunReceipt)}`);
   }
@@ -141,9 +187,22 @@ export async function executeSwapTransaction(
 
   onStatus?.('broadcasting');
   const receipt = await tx.send({ broadcast: true });
+  const broadcastRpcError = getReceiptRpcError(receipt);
+  if (broadcastRpcError && isRpcDeadlineError(broadcastRpcError)) {
+    onStatus?.('confirming');
+    return pendingConfirmationResult(receipt, broadcastRpcError);
+  }
 
   onStatus?.('confirming');
-  const confirmation = await tx.wait();
+  let confirmation: Awaited<ReturnType<Transaction['wait']>>;
+  try {
+    confirmation = await tx.wait();
+  } catch (error) {
+    if (isRpcDeadlineError(error)) {
+      return pendingConfirmationResult(receipt, error);
+    }
+    throw error;
+  }
 
   onStatus?.('confirmed');
   return {

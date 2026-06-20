@@ -8,7 +8,19 @@ import {
 import type { SwapToken } from '../swapMath';
 import type { SwapQuote } from '../swapQuote';
 
-let mockDryRunReceipt: { id: string; rc_used?: string; reverted: boolean };
+let mockDryRunReceipt: {
+  id: string;
+  rc_used?: string;
+  reverted: boolean;
+  rpc_error?: unknown;
+};
+let mockBroadcastReceipt: {
+  id: string;
+  rc_used?: string;
+  reverted: boolean;
+  rpc_error?: unknown;
+};
+let mockWait: jest.Mock;
 
 jest.mock('koilib', () => {
   const actual = jest.requireActual('koilib');
@@ -25,10 +37,10 @@ jest.mock('koilib', () => {
       });
       this.send = jest.fn(async ({ broadcast } = { broadcast: true }) => (
         broadcast
-          ? { id: '0xsent', rc_used: '50000000', reverted: false }
+          ? mockBroadcastReceipt
           : mockDryRunReceipt
       ));
-      this.wait = jest.fn(async () => ({ blockNumber: 123 }));
+      this.wait = mockWait;
     }),
   };
 });
@@ -87,6 +99,12 @@ describe('swapTransaction', () => {
       rc_used: '50000000',
       reverted: false,
     };
+    mockBroadcastReceipt = {
+      id: '0xsent',
+      rc_used: '50000000',
+      reverted: false,
+    };
+    mockWait = jest.fn(async () => ({ blockNumber: 123 }));
   });
 
   it('builds approve before swap_tokens_in with wallet as payer', async () => {
@@ -195,5 +213,90 @@ describe('swapTransaction', () => {
 
     expect(Transaction).toHaveBeenCalledTimes(1);
     expect(signer.signTransaction).not.toHaveBeenCalled();
+  });
+
+  it('reports RPC timeout during dry-run without signing or broadcasting', async () => {
+    mockDryRunReceipt = {
+      id: '0xdryrun',
+      rc_used: '',
+      reverted: false,
+      rpc_error: {
+        error: 'An internal server error has occurred',
+        data: 'rpc failed, context deadline exceeded',
+      },
+    };
+
+    await expect(executeSwapTransaction({
+      provider: {} as Provider,
+      signer,
+      quote,
+      tokenIn: koin,
+      tokenOut: vhp,
+      allTokens: [koin, vhp],
+      maxRc: 1_000_000_000,
+      availableRc: 100_000_000,
+    })).rejects.toThrow(/Koinos RPC timed out while simulating the swap/i);
+
+    expect(Transaction).toHaveBeenCalledTimes(1);
+    expect(signer.signTransaction).not.toHaveBeenCalled();
+  });
+
+  it('returns pending confirmation when broadcast returns an RPC timeout receipt', async () => {
+    mockBroadcastReceipt = {
+      id: '0xsent',
+      rc_used: '',
+      reverted: false,
+      rpc_error: {
+        error: 'An internal server error has occurred',
+        data: 'rpc failed, context deadline exceeded',
+      },
+    };
+
+    const result = await executeSwapTransaction({
+      provider: {} as Provider,
+      signer,
+      quote,
+      tokenIn: koin,
+      tokenOut: vhp,
+      allTokens: [koin, vhp],
+      maxRc: 1_000_000_000,
+      availableRc: 100_000_000,
+    });
+
+    expect(result.transactionId).toBe('0xsent');
+    expect(result.confirmationPending).toBe(true);
+    expect(result.confirmationError).toContain('context deadline exceeded');
+    expect(mockWait).not.toHaveBeenCalled();
+  });
+
+  it('returns pending confirmation when confirmation polling hits an RPC deadline', async () => {
+    const statuses: SwapExecutionStatus[] = [];
+    mockWait.mockRejectedValueOnce(new Error(JSON.stringify({
+      error: 'An internal server error has occurred',
+      data: 'rpc failed, context deadline exceeded',
+    })));
+
+    const result = await executeSwapTransaction({
+      provider: {} as Provider,
+      signer,
+      quote,
+      tokenIn: koin,
+      tokenOut: vhp,
+      allTokens: [koin, vhp],
+      maxRc: 1_000_000_000,
+      availableRc: 100_000_000,
+      onStatus: (status) => statuses.push(status),
+    });
+
+    expect(result.transactionId).toBe('0xsent');
+    expect(result.confirmationPending).toBe(true);
+    expect(result.confirmationError).toContain('context deadline exceeded');
+    expect(statuses).toEqual([
+      'building',
+      'estimating_mana',
+      'signing',
+      'broadcasting',
+      'confirming',
+    ]);
   });
 });
