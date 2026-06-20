@@ -9,6 +9,7 @@ import { HapticFeedback } from '../lib/haptics';
 import { walletLogger as log } from '../lib/logger';
 import {
   BackupData,
+  RestoredWalletSnapshot,
   WalletBackupSnapshot,
   encryptSecretWithPin,
   restoreWalletBackup,
@@ -58,8 +59,90 @@ interface WalletState {
   removeAccount: (accountId: string) => Promise<boolean>;
   getActiveAccount: () => Account | undefined;
   createBackupSnapshot: (pin: string) => Promise<WalletBackupSnapshot>;
-  restoreFromBackup: (backup: BackupData, pin: string) => Promise<void>;
+  restoreFromBackup: (backup: BackupData, backupPin: string, currentPin: string) => Promise<void>;
   setLastBackupAt: (timestamp: string | null) => void;
+}
+
+interface StoredWalletSecrets {
+  mnemonic: string | null;
+  legacyPrivateKey: string | null;
+  importedPrivateKeys: Record<string, string>;
+}
+
+async function captureStoredWalletSecrets(accounts: Account[]): Promise<StoredWalletSecrets> {
+  const importedPrivateKeys: Record<string, string> = {};
+
+  for (const account of accounts) {
+    if (!account.isImported) {
+      continue;
+    }
+
+    const privateKey = await SecureStore.getItemAsync(`${PRIVATE_KEY_PREFIX}${account.id}`);
+    if (privateKey) {
+      importedPrivateKeys[account.id] = privateKey;
+    }
+  }
+
+  return {
+    mnemonic: await SecureStore.getItemAsync(MNEMONIC_KEY),
+    legacyPrivateKey: await SecureStore.getItemAsync(LEGACY_PRIVATE_KEY),
+    importedPrivateKeys,
+  };
+}
+
+async function writeStoredWalletSecrets(
+  secrets: StoredWalletSecrets,
+  targetAccounts: Account[],
+  previousAccounts: Account[]
+): Promise<void> {
+  if (secrets.mnemonic) {
+    await SecureStore.setItemAsync(MNEMONIC_KEY, secrets.mnemonic);
+  }
+
+  for (const account of targetAccounts) {
+    if (!account.isImported) {
+      continue;
+    }
+
+    const privateKey = secrets.importedPrivateKeys[account.id];
+    if (!privateKey) {
+      throw new Error(`Missing private key for restored imported account ${account.id}`);
+    }
+
+    await SecureStore.setItemAsync(`${PRIVATE_KEY_PREFIX}${account.id}`, privateKey);
+  }
+
+  if (!secrets.mnemonic) {
+    await SecureStore.deleteItemAsync(MNEMONIC_KEY);
+  }
+
+  if (secrets.legacyPrivateKey) {
+    await SecureStore.setItemAsync(LEGACY_PRIVATE_KEY, secrets.legacyPrivateKey);
+  } else {
+    await SecureStore.deleteItemAsync(LEGACY_PRIVATE_KEY);
+  }
+
+  const targetImportedIds = new Set(
+    targetAccounts.filter((account) => account.isImported).map((account) => account.id)
+  );
+
+  for (const account of previousAccounts) {
+    if (account.isImported && !targetImportedIds.has(account.id)) {
+      await SecureStore.deleteItemAsync(`${PRIVATE_KEY_PREFIX}${account.id}`);
+    }
+  }
+}
+
+function getRestoredActiveAccount(restored: RestoredWalletSnapshot): Account {
+  const activeAccount = restored.accounts.find(
+    (account) => account.id === restored.activeAccountId
+  );
+
+  if (!activeAccount) {
+    throw new Error('Backup restore did not include an active account');
+  }
+
+  return activeAccount;
 }
 
 // Generate a unique ID
@@ -300,24 +383,35 @@ export const useWalletStore = create<WalletState>()(
         };
       },
 
-      restoreFromBackup: async (backup: BackupData, pin: string) => {
-        const restored = await restoreWalletBackup(backup, pin);
-
-        await get().clearWallet();
-
-        if (restored.mnemonic) {
-          await SecureStore.setItemAsync(MNEMONIC_KEY, restored.mnemonic);
+      restoreFromBackup: async (backup: BackupData, backupPin: string, currentPin: string) => {
+        const currentPinIsValid = await verifyPin(currentPin);
+        if (!currentPinIsValid) {
+          throw new Error('Current PIN is incorrect');
         }
 
-        for (const [accountId, privateKey] of Object.entries(restored.importedPrivateKeys)) {
-          await SecureStore.setItemAsync(`${PRIVATE_KEY_PREFIX}${accountId}`, privateKey);
-        }
+        const currentState = get();
+        const restored = await restoreWalletBackup(backup, backupPin);
+        const activeAccount = getRestoredActiveAccount(restored);
+        const existingSecrets = await captureStoredWalletSecrets(currentState.accounts);
 
-        const activeAccount = restored.accounts.find(
-          (account) => account.id === restored.activeAccountId
-        );
-        if (!activeAccount) {
-          throw new Error('Backup restore did not include an active account');
+        try {
+          await writeStoredWalletSecrets(
+            {
+              mnemonic: restored.mnemonic,
+              legacyPrivateKey: null,
+              importedPrivateKeys: restored.importedPrivateKeys,
+            },
+            restored.accounts,
+            currentState.accounts
+          );
+        } catch (error) {
+          try {
+            await writeStoredWalletSecrets(existingSecrets, currentState.accounts, restored.accounts);
+          } catch (rollbackError) {
+            log.error('Failed to roll back backup restore:', rollbackError);
+          }
+
+          throw error;
         }
 
         set({

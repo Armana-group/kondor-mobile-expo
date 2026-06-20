@@ -46,6 +46,7 @@ export const BackupRecoveryScreen = () => {
 
   const [backupPin, setBackupPin] = useState('');
   const [restorePin, setRestorePin] = useState('');
+  const [currentPin, setCurrentPin] = useState('');
   const [isCreatingBackup, setIsCreatingBackup] = useState(false);
   const [isImportingBackup, setIsImportingBackup] = useState(false);
   const [isVerifyingBackup, setIsVerifyingBackup] = useState(false);
@@ -176,6 +177,11 @@ export const BackupRecoveryScreen = () => {
       return;
     }
 
+    if (!currentPin.trim()) {
+      Alert.alert('PIN Required', 'Enter your current PIN to authorize replacing this device wallet.');
+      return;
+    }
+
     Alert.alert(
       'Restore Wallet Backup',
       'Restoring will replace the current wallet accounts on this device. Your existing app PIN and lock settings will stay in place.',
@@ -187,10 +193,11 @@ export const BackupRecoveryScreen = () => {
           onPress: async () => {
             setIsRestoringBackup(true);
             try {
-              await restoreFromBackup(importedBackup, restorePin.trim());
+              await restoreFromBackup(importedBackup, restorePin.trim(), currentPin.trim());
               setImportedBackup(null);
               setImportedFileName(null);
               setRestorePin('');
+              setCurrentPin('');
               setIsImportedBackupVerified(false);
               await HapticFeedback.success();
               Alert.alert('Restore Complete', 'Wallet backup restored successfully.');
@@ -274,6 +281,15 @@ export const BackupRecoveryScreen = () => {
                 setRestorePin(value);
                 setIsImportedBackupVerified(false);
               }}
+              keyboardType="number-pad"
+              secureTextEntry
+              maxLength={6}
+              containerStyle={styles.input}
+            />
+            <Input
+              label="Current Wallet PIN"
+              value={currentPin}
+              onChangeText={setCurrentPin}
               keyboardType="number-pad"
               secureTextEntry
               maxLength={6}

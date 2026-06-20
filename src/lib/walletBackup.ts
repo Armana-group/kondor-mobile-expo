@@ -322,9 +322,18 @@ export async function restoreWalletBackup(
     }
   }
 
+  const accounts = backup.wallet.accounts.map(
+    ({ encryptedPrivateKey: _encryptedPrivateKey, ...account }) => account
+  );
+  const activeAccount = accounts.find((account) => account.id === backup.wallet.activeAccountId);
+
+  if (!activeAccount) {
+    throw new Error('Backup restore did not include an active account');
+  }
+
   return {
-    accounts: backup.wallet.accounts.map(({ encryptedPrivateKey: _encryptedPrivateKey, ...account }) => account),
-    activeAccountId: backup.wallet.activeAccountId,
+    accounts,
+    activeAccountId: activeAccount.id,
     nextDerivationIndex: backup.wallet.nextDerivationIndex,
     mnemonic,
     importedPrivateKeys,

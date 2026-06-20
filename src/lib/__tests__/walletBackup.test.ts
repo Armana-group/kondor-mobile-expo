@@ -114,6 +114,22 @@ describe('walletBackup', () => {
     await expect(verifyWalletBackup(brokenBackup, TEST_PIN)).resolves.toBe(false);
   });
 
+  it('rejects backups whose active account is missing from the restored accounts', async () => {
+    const snapshot = await buildSnapshot();
+    const backup = await createWalletBackup(snapshot, TEST_PIN);
+    const brokenBackup = {
+      ...backup,
+      wallet: {
+        ...backup.wallet,
+        activeAccountId: 'missing-account',
+      },
+    };
+
+    await expect(restoreWalletBackup(brokenBackup, TEST_PIN, { skipChecksum: true })).rejects.toThrow(
+      'Backup restore did not include an active account'
+    );
+  });
+
   it('restores the wallet snapshot shape for store persistence', async () => {
     const snapshot = await buildSnapshot();
     const backup = await createWalletBackup(snapshot, TEST_PIN);
