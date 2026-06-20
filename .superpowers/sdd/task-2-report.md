@@ -410,3 +410,90 @@ Tests:       9 passed, 9 total
 ### Remaining concerns
 
 - Harbinger swap remains intentionally unsupported for this parity pass. This fix only guarantees the swap hook refreshes provider state against the active network before it decides whether to quote or execute.
+
+---
+
+## Fifth fix pass after latest Task 2 review findings
+
+### Findings addressed
+
+- WalletConnect generic request handling now fails closed for `koinos_sendTransaction` and rejects it with manual-approval-required copy instead of broadcasting through `provider.sendTransaction(..., true)`.
+- Existing WalletConnect signing flows remain intact: `koinos_signTransaction` and `koinos_signAndSendTransaction` still go through the existing approval/auth path.
+- Native swap now owns active-scope token initialization inside `useNativeSwap`, so swap no longer depends on `HomeScreen` mounting to refresh the token universe after a network change.
+- Swap hides stale previous-network token lists until the active `network:address` token scope is initialized, and `SwapScreen` now renders from that scoped token list instead of the raw shared store.
+
+### Additional regression coverage
+
+- Extended `src/components/__tests__/WalletConnectHandler.test.tsx`
+- Extended `src/hooks/__tests__/useNativeSwap.provider.test.ts`
+- Extended `src/hooks/__tests__/useNativeSwap.test.ts`
+
+### RED
+
+Command:
+
+```bash
+npm test -- src/components/__tests__/WalletConnectHandler.test.tsx src/hooks/__tests__/useNativeSwap.provider.test.ts src/hooks/__tests__/useNativeSwap.test.ts --runInBand
+```
+
+Key failures before the fix:
+
+```text
+TypeError: ensureSwapTokenScopeForActiveNetwork is not a function
+TypeError: getScopedSwapTokens is not a function
+Expected: 27, "send-topic", StringMatching /manual approval|required/i
+Received: 27, "send-topic", "WalletConnect session no longer matches the active network"
+```
+
+The first RED run also exposed a sticky per-test WalletConnect validation mock in the new handler test; I reset that mock in `beforeEach` so the test exercised the broadcast path deterministically.
+
+### GREEN
+
+Focused regression suite:
+
+```bash
+npm test -- src/components/__tests__/WalletConnectHandler.test.tsx src/hooks/__tests__/useNativeSwap.provider.test.ts src/hooks/__tests__/useNativeSwap.test.ts --runInBand
+```
+
+Result:
+
+```text
+PASS src/hooks/__tests__/useNativeSwap.test.ts
+PASS src/components/__tests__/WalletConnectHandler.test.tsx
+PASS src/hooks/__tests__/useNativeSwap.provider.test.ts
+
+Test Suites: 3 passed, 3 total
+Tests:       20 passed, 20 total
+```
+
+Covering focused verification:
+
+```bash
+npm test -- src/components/__tests__/WalletConnectHandler.test.tsx src/stores/__tests__/walletConnectStore.test.ts src/hooks/__tests__/useNativeSwap.provider.test.ts src/hooks/__tests__/useNativeSwap.test.ts src/stores/__tests__/tokenStore.test.ts --runInBand
+```
+
+Result:
+
+```text
+Test Suites: 5 passed, 5 total
+Tests:       27 passed, 27 total
+```
+
+Required final verification:
+
+```bash
+npm test -- --runInBand
+npx tsc --noEmit
+```
+
+Result:
+
+```text
+PASS 25 test suites, 180 tests, 2 snapshots
+tsc exit code 0
+```
+
+### Remaining concerns
+
+- `koinos_sendTransaction` is intentionally unsupported until a dedicated approval flow exists. That is the fail-closed posture for this parity pass.
+- Harbinger swap remains intentionally unsupported; this fix only guarantees that swap token/provider state follows the active network and never falls back to stale mainnet token lists.

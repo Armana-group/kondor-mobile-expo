@@ -15,7 +15,7 @@ import { Screen } from '../components/Screen';
 import { Button } from '../components/Button';
 import { useNativeSwap } from '../hooks/useNativeSwap';
 import type { SwapQuote } from '../lib/swapQuote';
-import { useTokenStore, type Token } from '../stores/tokenStore';
+import type { Token } from '../stores/tokenStore';
 import type { SwapToken } from '../lib/swapMath';
 import colors from '../theme/colors';
 
@@ -443,6 +443,7 @@ const TokenPickerModal = ({
 
 export const SwapScreen = () => {
   const {
+    availableTokens,
     amount,
     setAmount,
     slippage,
@@ -460,7 +461,6 @@ export const SwapScreen = () => {
     refreshQuote,
     execute,
   } = useNativeSwap();
-  const { tokens } = useTokenStore();
   const [pickerSide, setPickerSide] = useState<SwapSide | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
@@ -497,9 +497,9 @@ export const SwapScreen = () => {
       if (routeToken === 'vhp') {
         return 'VHP';
       }
-      return tokens.find((token) => token.contractId === routeToken)?.symbol ?? routeToken;
+      return availableTokens.find((token) => token.contractId === routeToken)?.symbol ?? routeToken;
     }).join(' -> ');
-  }, [quote, tokens]);
+  }, [availableTokens, quote]);
 
   const isTransactionPending = status === 'building'
     || status === 'signing'
@@ -716,7 +716,7 @@ export const SwapScreen = () => {
 
       <TokenPickerModal
         side={pickerSide}
-        tokens={tokens}
+        tokens={availableTokens}
         selectedToken={selectedPickerToken}
         onClose={closeTokenPicker}
         onSelect={handleTokenSelect}

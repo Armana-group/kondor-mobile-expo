@@ -15,6 +15,7 @@ import {
   type SwapToken,
 } from '../lib/swapMath';
 import { getActiveNetworkConfig, type NetworkConfig, useNetworkStore } from '../stores/networkStore';
+import type { Token } from '../stores/tokenStore';
 
 declare const require: <T = unknown>(moduleName: string) => T;
 
@@ -86,6 +87,7 @@ export interface NativeSwapController<TQuote extends NativeSwapQuote = NativeSwa
 }
 
 export interface UseNativeSwapResult {
+  availableTokens: Token[];
   amount: string;
   setAmount: (amount: string) => Promise<void>;
   slippage: number;
@@ -121,6 +123,14 @@ const REQUIRED_QUOTE_ERROR = 'Swap quote is required before execution';
 const EXPIRED_QUOTE_ERROR = 'Swap quote has expired';
 const STALE_QUOTE_ERROR = 'Swap quote is stale; refresh the quote before swapping';
 const ZERO_MIN_OUTPUT_ERROR = 'Swap quote has invalid zero minimum output';
+
+interface ScopedSwapTokensParams {
+  hasHydrated: boolean;
+  networkMode: 'mainnet' | 'harbinger';
+  address: string | null | undefined;
+  cacheKey: string | null;
+  tokens: Token[];
+}
 
 export function getSwapUnavailableMessage(
   network: Pick<NetworkConfig, 'isTestnet' | 'name'>
@@ -450,6 +460,28 @@ function getSelectedToken(tokens: SwapToken[], tokenId: string | null): SwapToke
   return tokens.find((token) => token.contractId === tokenId) ?? null;
 }
 
+function getTokenScopeKeyForNetwork(
+  network: Pick<NetworkConfig, 'isTestnet'>,
+  address: string
+): string {
+  return `${network.isTestnet ? 'harbinger' : 'mainnet'}:${address}`;
+}
+
+export function getScopedSwapTokens({
+  hasHydrated,
+  networkMode,
+  address,
+  cacheKey,
+  tokens,
+}: ScopedSwapTokensParams): Token[] {
+  if (!hasHydrated || !address) {
+    return [];
+  }
+
+  const expectedCacheKey = `${networkMode}:${address}`;
+  return cacheKey === expectedCacheKey ? tokens : [];
+}
+
 function getKoinosStoreModule(): KoinosStoreModule {
   return require<KoinosStoreModule>('../stores/koinosStore');
 }
@@ -474,6 +506,23 @@ export async function ensureProviderForActiveNetwork(): Promise<Provider> {
     throw new Error('Provider not initialized');
   }
   return provider;
+}
+
+export async function ensureSwapTokenScopeForActiveNetwork(
+  address: string | null | undefined
+): Promise<void> {
+  if (!address) {
+    return;
+  }
+
+  const tokenStore = getTokenStoreModule().useTokenStore.getState();
+  const expectedCacheKey = getTokenScopeKeyForNetwork(getActiveNetworkConfig(), address);
+
+  if (tokenStore.cacheKey === expectedCacheKey && tokenStore.isInitialized) {
+    return;
+  }
+
+  await tokenStore.initialize(address);
 }
 
 function createTemporarySigner(privateKey: string, provider: Provider): Signer {
@@ -629,7 +678,16 @@ export function useNativeSwap(): UseNativeSwapResult {
   );
   listenerRef.current = (nextState) => setControllerState(nextState);
 
-  const tokens = tokenState.tokens;
+  const tokens = useMemo(
+    () => getScopedSwapTokens({
+      hasHydrated,
+      networkMode,
+      address: walletState.address,
+      cacheKey: tokenState.cacheKey,
+      tokens: tokenState.tokens,
+    }),
+    [hasHydrated, networkMode, tokenState.cacheKey, tokenState.tokens, walletState.address]
+  );
   const defaultInputToken = useMemo(() => getDefaultInputToken(tokens), [tokens]);
   const selectedInputToken = getSelectedToken(tokens, inputTokenId) ?? defaultInputToken;
   const defaultOutputToken = useMemo(
@@ -647,6 +705,14 @@ export function useNativeSwap(): UseNativeSwapResult {
     outputToken,
     tokens,
   };
+
+  useEffect(() => {
+    if (!hasHydrated || !walletState.address) {
+      return;
+    }
+
+    ensureSwapTokenScopeForActiveNetwork(walletState.address).catch(() => undefined);
+  }, [hasHydrated, networkMode, walletState.address]);
 
   useEffect(() => {
     if (!defaultInputToken) {
@@ -737,6 +803,7 @@ export function useNativeSwap(): UseNativeSwapResult {
   }, [inputToken, outputToken]);
 
   return {
+    availableTokens: tokens,
     amount: controllerState.amount,
     setAmount,
     slippage: controllerState.slippage,

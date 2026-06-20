@@ -5,6 +5,7 @@ import { MAINNET, TESTNET } from '../../lib/constants';
 const mockMainnetConfig = MAINNET;
 const mockTestnetConfig = TESTNET;
 const mockProvider = jest.fn();
+const mockProviderSendTransaction = jest.fn();
 const mockInitialize = jest.fn(async () => undefined);
 const mockApproveSession = jest.fn(async () => undefined);
 const mockRejectSession = jest.fn(async () => undefined);
@@ -49,12 +50,15 @@ jest.mock('../../stores/networkStore', () => ({
 jest.mock('../../stores/walletConnectStore', () => ({
   KOINOS_METHODS: {
     GetHeadInfo: 'koinos_getHeadInfo',
+    SendTransaction: 'koinos_sendTransaction',
     SignAndSendTransaction: 'koinos_signAndSendTransaction',
   },
   WALLETCONNECT_NETWORK_MISMATCH_ERROR:
     'WalletConnect session no longer matches the active network',
   WALLETCONNECT_NETWORK_NOT_READY_ERROR:
     'WalletConnect is waiting for the active network to finish loading',
+  WALLETCONNECT_SEND_TRANSACTION_UNSUPPORTED_ERROR:
+    'WalletConnect transaction broadcasting requires manual approval. Use koinos_signAndSendTransaction instead.',
   useWalletConnectStore: () => mockWalletConnectState,
 }));
 
@@ -102,6 +106,10 @@ jest.mock('koilib', () => {
     async getHeadInfo() {
       return { head_topology: { height: '1' } };
     }
+
+    async sendTransaction(transaction: unknown, broadcast: boolean) {
+      return mockProviderSendTransaction(transaction, broadcast);
+    }
   }
 
   class Transaction {}
@@ -124,6 +132,10 @@ function flushEffects() {
 describe('WalletConnectHandler network reconciliation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockIsSessionTopicApprovedForActiveNetwork.mockReset().mockReturnValue(true);
+    mockGetSessionTopicValidationForActiveNetwork.mockReset().mockReturnValue({
+      status: 'ready',
+    });
     lastTransactionApprovalModalProps = null;
     lastSessionApprovalModalProps = null;
     mockNetworkState = {
@@ -205,6 +217,42 @@ describe('WalletConnectHandler network reconciliation', () => {
     );
     expect(mockRespondToRequest).not.toHaveBeenCalled();
     expect(mockProvider).not.toHaveBeenCalled();
+  });
+
+  it('rejects koinos_sendTransaction requests instead of auto-broadcasting them', async () => {
+    mockProviderSendTransaction.mockResolvedValue({ receipt: 'should-not-broadcast' });
+    mockWalletConnectState = {
+      ...mockWalletConnectState,
+      pendingRequest: {
+        id: 27,
+        topic: 'send-topic',
+        method: 'koinos_sendTransaction',
+        params: {
+          transaction: {
+            operations: [],
+          },
+        },
+        peerMeta: {
+          name: 'Broadcast dApp',
+          url: 'https://broadcast.example.com',
+        },
+      },
+    };
+
+    const { WalletConnectHandler } = require('../WalletConnectHandler');
+
+    await act(async () => {
+      TestRenderer.create(<WalletConnectHandler />);
+    });
+    await flushEffects();
+
+    expect(mockRejectRequest).toHaveBeenCalledWith(
+      27,
+      'send-topic',
+      expect.stringMatching(/manual approval|required/i)
+    );
+    expect(mockRespondToRequest).not.toHaveBeenCalled();
+    expect(mockProviderSendTransaction).not.toHaveBeenCalled();
   });
 
   it('keeps transaction approval hidden until hydration completes and rejects stale topics before showing it', async () => {

@@ -39,6 +39,8 @@ export const WALLETCONNECT_NETWORK_MISMATCH_ERROR =
   'WalletConnect session no longer matches the active network';
 export const WALLETCONNECT_NETWORK_NOT_READY_ERROR =
   'WalletConnect is waiting for the active network to finish loading';
+export const WALLETCONNECT_SEND_TRANSACTION_UNSUPPORTED_ERROR =
+  'WalletConnect transaction broadcasting requires manual approval. Use koinos_signAndSendTransaction instead.';
 
 type WalletConnectTopicValidation =
   | { status: 'ready' }

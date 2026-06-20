@@ -13,6 +13,7 @@ import {
   useWalletConnectStore,
   KOINOS_METHODS,
   WCTransactionRequest,
+  WALLETCONNECT_SEND_TRANSACTION_UNSUPPORTED_ERROR,
 } from '../stores/walletConnectStore';
 import { WCSessionApprovalModal } from './WCSessionApprovalModal';
 import {
@@ -145,6 +146,11 @@ export const WalletConnectHandler: React.FC = () => {
       return;
     }
 
+    if (method === KOINOS_METHODS.SendTransaction) {
+      await rejectRequest(id, topic, WALLETCONNECT_SEND_TRANSACTION_UNSUPPORTED_ERROR);
+      return;
+    }
+
     const activeNetwork = getActiveNetworkConfig();
 
     try {
@@ -222,13 +228,6 @@ export const WalletConnectHandler: React.FC = () => {
         case KOINOS_METHODS.WaitForTransaction: {
           const waitParams = params as { transaction_id: string; timeout?: number };
           result = await provider.wait(waitParams.transaction_id, 'byBlock', waitParams.timeout);
-          break;
-        }
-
-        case KOINOS_METHODS.SendTransaction: {
-          // Just broadcast, don't sign
-          const sendParams = params as { transaction: TransactionJson };
-          result = await provider.sendTransaction(sendParams.transaction, true);
           break;
         }
 

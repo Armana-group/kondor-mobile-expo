@@ -7,6 +7,7 @@ import {
   createNativeSwapController,
   getSwapUnavailableMessage,
   getNativeSwapQuoteInvalidReason,
+  getScopedSwapTokens,
   type NativeSwapControllerDeps,
 } from '../useNativeSwap';
 import { MAINNET, TESTNET } from '../../lib/constants';
@@ -84,6 +85,38 @@ describe('getSwapUnavailableMessage', () => {
   it('fails closed on Harbinger', () => {
     expect(getSwapUnavailableMessage(TESTNET)).toMatch(/mainnet/i);
     expect(getSwapUnavailableMessage(TESTNET)).toMatch(/Harbinger/i);
+  });
+});
+
+describe('getScopedSwapTokens', () => {
+  const mainnetToken = {
+    contractId: MAINNET.koinContract,
+    symbol: 'KOIN',
+    name: 'Koinos',
+    decimals: 8,
+    icon: '',
+    balance: '1',
+    isLoading: false,
+  };
+
+  it('hides stale token lists until the active network scope is initialized', () => {
+    expect(getScopedSwapTokens({
+      hasHydrated: true,
+      networkMode: 'harbinger',
+      address: '1WalletAddress',
+      cacheKey: 'mainnet:1WalletAddress',
+      tokens: [mainnetToken],
+    })).toEqual([]);
+  });
+
+  it('keeps active-scope tokens available after initialization', () => {
+    expect(getScopedSwapTokens({
+      hasHydrated: true,
+      networkMode: 'harbinger',
+      address: '1WalletAddress',
+      cacheKey: 'harbinger:1WalletAddress',
+      tokens: [mainnetToken],
+    })).toEqual([mainnetToken]);
   });
 });
 

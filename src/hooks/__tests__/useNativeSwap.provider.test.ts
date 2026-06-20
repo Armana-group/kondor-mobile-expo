@@ -39,4 +39,41 @@ describe('ensureProviderForActiveNetwork', () => {
     await expect(ensureProviderForActiveNetwork()).resolves.toBe(provider);
     expect(initialize).toHaveBeenCalledTimes(1);
   });
+
+  it('initializes token state when the cached token scope is stale for the active network', async () => {
+    const initialize = jest.fn(async () => undefined);
+
+    jest.doMock('../../stores/koinosStore', () => ({
+      useKoinosStore: {
+        getState: () => ({
+          provider: { rpcNodes: ['https://harbinger.example.com'] },
+          isInitialized: true,
+          networkChainId: 'harbinger-chain',
+          initialize: jest.fn(async () => undefined),
+        }),
+      },
+    }));
+    jest.doMock('../../stores/tokenStore', () => ({
+      useTokenStore: {
+        getState: () => ({
+          cacheKey: 'mainnet:1WalletAddress',
+          isInitialized: true,
+          initialize,
+        }),
+      },
+    }));
+    jest.doMock('../../stores/networkStore', () => ({
+      getActiveNetworkConfig: () => ({
+        chainId: 'harbinger-chain',
+        isTestnet: true,
+        name: 'Harbinger',
+      }),
+      useNetworkStore: jest.fn(),
+    }));
+
+    const { ensureSwapTokenScopeForActiveNetwork } = require('../useNativeSwap');
+
+    await expect(ensureSwapTokenScopeForActiveNetwork('1WalletAddress')).resolves.toBeUndefined();
+    expect(initialize).toHaveBeenCalledWith('1WalletAddress');
+  });
 });
