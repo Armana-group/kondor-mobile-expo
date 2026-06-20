@@ -92,8 +92,10 @@ export const KOINOS_METHODS = {
   SubmitBlock: 'koinos_submitBlock',
 } as const;
 
-// All supported methods
-const SUPPORTED_METHODS = Object.values(KOINOS_METHODS);
+// Methods we can honestly advertise during session approval.
+const APPROVED_METHODS = Object.values(KOINOS_METHODS).filter(
+  (method) => method !== KOINOS_METHODS.SendTransaction
+);
 
 // Events (none for now, but required by WalletConnect)
 const SUPPORTED_EVENTS: string[] = [];
@@ -491,7 +493,7 @@ export const useWalletConnectStore = create<WalletConnectState>()(
             supportedNamespaces: {
               koinos: {
                 chains: [activeChainId],
-                methods: SUPPORTED_METHODS,
+                methods: APPROVED_METHODS,
                 events: SUPPORTED_EVENTS,
                 accounts: [`${activeChainId}:${address}`],
               },

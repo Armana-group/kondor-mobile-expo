@@ -497,3 +497,70 @@ tsc exit code 0
 
 - `koinos_sendTransaction` is intentionally unsupported until a dedicated approval flow exists. That is the fail-closed posture for this parity pass.
 - Harbinger swap remains intentionally unsupported; this fix only guarantees that swap token/provider state follows the active network and never falls back to stale mainnet token lists.
+
+---
+
+## Sixth fix pass after re-review
+
+### Finding addressed
+
+- WalletConnect approved namespaces no longer advertise `koinos_sendTransaction` until there is a real approval flow for broadcast requests.
+- Runtime rejection in `WalletConnectHandler` remains in place as defense in depth, so unexpected `koinos_sendTransaction` requests still fail closed.
+- Added focused approval coverage proving the approved namespace excludes `koinos_sendTransaction` while retaining the supported signing methods.
+
+### Additional regression coverage
+
+- Extended `src/stores/__tests__/walletConnectStore.test.ts`
+- Reused `src/components/__tests__/WalletConnectHandler.test.tsx` to keep the runtime rejection path covered
+
+### RED
+
+Command:
+
+```bash
+npm test -- src/stores/__tests__/walletConnectStore.test.ts --runInBand
+```
+
+Key failure before the fix:
+
+```text
+FAIL src/stores/__tests__/walletConnectStore.test.ts
+  walletConnectStore network reconciliation
+    ✕ approves sessions with the hydrated active-network namespace
+
+  expect(received).not.toContain(expected)
+  Expected value: not "koinos_sendTransaction"
+  Received array: ["koinos_signMessage", ..., "koinos_sendTransaction", ...]
+```
+
+### GREEN
+
+Focused WalletConnect verification:
+
+```bash
+npm test -- src/stores/__tests__/walletConnectStore.test.ts src/components/__tests__/WalletConnectHandler.test.tsx --runInBand
+```
+
+Result:
+
+```text
+PASS src/stores/__tests__/walletConnectStore.test.ts
+PASS src/components/__tests__/WalletConnectHandler.test.tsx
+
+Test Suites: 2 passed, 2 total
+Tests:       9 passed, 9 total
+```
+
+Required final verification:
+
+```bash
+npm test -- --runInBand
+npx tsc --noEmit
+```
+
+Result:
+
+```text
+PASS 25 test suites, 180 tests, 2 snapshots
+tsc exit code 0
+```

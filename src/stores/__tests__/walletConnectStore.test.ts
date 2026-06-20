@@ -197,7 +197,12 @@ describe('walletConnectStore network reconciliation', () => {
   });
 
   it('approves sessions with the hydrated active-network namespace', async () => {
-    const { KOINOS_CHAIN_IDS, useNetworkStore, useWalletConnectStore } = await loadStores();
+    const {
+      KOINOS_CHAIN_IDS,
+      KOINOS_METHODS,
+      useNetworkStore,
+      useWalletConnectStore,
+    } = await loadStores();
     const { buildApprovedNamespaces } = require('@walletconnect/utils');
 
     useNetworkStore.setState({ mode: 'harbinger', hasHydrated: true });
@@ -243,10 +248,17 @@ describe('walletConnectStore network reconciliation', () => {
           koinos: expect.objectContaining({
             chains: [KOINOS_CHAIN_IDS.Harbinger],
             accounts: [`${KOINOS_CHAIN_IDS.Harbinger}:1SessionAddress`],
+            methods: expect.arrayContaining([
+              KOINOS_METHODS.SignTransaction,
+              KOINOS_METHODS.SignAndSendTransaction,
+            ]),
           }),
         },
       })
     );
+    const approvedMethods = (buildApprovedNamespaces as jest.Mock).mock.calls[0][0]
+      .supportedNamespaces.koinos.methods;
+    expect(approvedMethods).not.toContain(KOINOS_METHODS.SendTransaction);
     expect(approveSession).toHaveBeenCalledWith({
       id: 77,
       namespaces: {
