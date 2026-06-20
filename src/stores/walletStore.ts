@@ -20,6 +20,17 @@ import { verifyPin } from '../services/auth';
 const MNEMONIC_KEY = 'kondor_wallet_mnemonic';
 const PRIVATE_KEY_PREFIX = 'kondor_pk_'; // For imported accounts: kondor_pk_{accountId}
 const LEGACY_PRIVATE_KEY = 'kondor_wallet_private_key'; // Legacy single-account key
+const MISSING_RECOVERY_PHRASE_MESSAGE =
+  'Recovery phrase is missing from secure storage. Re-import this wallet from the recovery phrase to restore secret access.';
+const MISSING_PRIVATE_KEY_MESSAGE =
+  'Private key is missing from secure storage. Re-import this account to restore secret access.';
+
+function isExpectedMissingSecretError(error: unknown): boolean {
+  return error instanceof Error && (
+    error.message === MISSING_RECOVERY_PHRASE_MESSAGE ||
+    error.message === MISSING_PRIVATE_KEY_MESSAGE
+  );
+}
 
 // Account interface
 export interface Account {
@@ -309,17 +320,25 @@ export const useWalletStore = create<WalletState>()(
           // If not found and it's an HD account, derive from mnemonic
           if (!privateKey && !activeAccount.isImported) {
             const mnemonic = await SecureStore.getItemAsync(MNEMONIC_KEY);
-            if (mnemonic) {
-              const wallet = createWalletFromMnemonic(mnemonic, activeAccount.derivationIndex);
-              privateKey = wallet.privateKey;
-              // Derived on-demand — not cached in SecureStore
+            if (!mnemonic) {
+              throw new Error(MISSING_RECOVERY_PHRASE_MESSAGE);
             }
+
+            const wallet = createWalletFromMnemonic(mnemonic, activeAccount.derivationIndex);
+            privateKey = wallet.privateKey;
+            // Derived on-demand — not cached in SecureStore
+          }
+
+          if (!privateKey && activeAccount.isImported) {
+            throw new Error(MISSING_PRIVATE_KEY_MESSAGE);
           }
 
           return privateKey;
         } catch (error) {
-          log.error('Failed to get private key:', error);
-          return null;
+          if (!isExpectedMissingSecretError(error)) {
+            log.error('Failed to get private key:', error);
+          }
+          throw error;
         }
       },
 
@@ -330,10 +349,17 @@ export const useWalletStore = create<WalletState>()(
             log.debug('Biometric authentication failed or was cancelled');
             return null;
           }
-          return await SecureStore.getItemAsync(MNEMONIC_KEY);
+          const mnemonic = await SecureStore.getItemAsync(MNEMONIC_KEY);
+          if (!mnemonic) {
+            throw new Error(MISSING_RECOVERY_PHRASE_MESSAGE);
+          }
+
+          return mnemonic;
         } catch (error) {
-          log.error('Failed to get mnemonic:', error);
-          return null;
+          if (!isExpectedMissingSecretError(error)) {
+            log.error('Failed to get mnemonic:', error);
+          }
+          throw error;
         }
       },
 
@@ -351,7 +377,7 @@ export const useWalletStore = create<WalletState>()(
         const mnemonic = await SecureStore.getItemAsync(MNEMONIC_KEY);
         const hasHdAccounts = accounts.some((account) => !account.isImported);
         if (hasHdAccounts && !mnemonic) {
-          throw new Error('HD wallet backup requires the recovery phrase');
+          throw new Error(MISSING_RECOVERY_PHRASE_MESSAGE);
         }
 
         const encryptedMnemonic = mnemonic

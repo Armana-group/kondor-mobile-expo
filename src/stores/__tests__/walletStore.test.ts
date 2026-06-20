@@ -8,6 +8,8 @@ const AsyncStorage = require('@react-native-async-storage/async-storage');
 const MNEMONIC_KEY = 'kondor_wallet_mnemonic';
 const PRIVATE_KEY_PREFIX = 'kondor_pk_';
 const LEGACY_PRIVATE_KEY = 'kondor_wallet_private_key';
+const MISSING_RECOVERY_PHRASE_MESSAGE =
+  'Recovery phrase is missing from secure storage. Re-import this wallet from the recovery phrase to restore secret access.';
 
 const EXISTING_STATE = {
   accounts: [
@@ -156,5 +158,33 @@ describe('walletStore backup restore hardening', () => {
     expect(secureStoreState.get(`${PRIVATE_KEY_PREFIX}old-imported`)).toBe('old-private-key');
     expect(secureStoreState.get(LEGACY_PRIVATE_KEY)).toBe('legacy-private-key');
     expect(secureStoreState.has(`${PRIVATE_KEY_PREFIX}new-imported`)).toBe(false);
+  });
+
+  it('throws an actionable error when the recovery phrase is missing', async () => {
+    const { useWalletStore } = await loadWalletStore();
+
+    await expect(useWalletStore.getState().getMnemonic()).rejects.toThrow(
+      MISSING_RECOVERY_PHRASE_MESSAGE
+    );
+  });
+
+  it('throws an actionable error when an HD account private key cannot be derived', async () => {
+    const { useWalletStore } = await loadWalletStore();
+
+    useWalletStore.setState(EXISTING_STATE);
+
+    await expect(useWalletStore.getState().getPrivateKey()).rejects.toThrow(
+      MISSING_RECOVERY_PHRASE_MESSAGE
+    );
+  });
+
+  it('uses the actionable recovery phrase error when HD accounts cannot be backed up', async () => {
+    const { useWalletStore } = await loadWalletStore();
+
+    useWalletStore.setState(EXISTING_STATE);
+
+    await expect(useWalletStore.getState().createBackupSnapshot('123456')).rejects.toThrow(
+      MISSING_RECOVERY_PHRASE_MESSAGE
+    );
   });
 });

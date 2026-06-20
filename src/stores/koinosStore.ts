@@ -2,12 +2,14 @@ import { create } from 'zustand';
 import { Provider, Signer, Contract, utils } from 'koilib';
 import * as SecureStore from 'expo-secure-store';
 import { DEFAULT_RC_LIMIT } from '../lib/constants';
+import { createWalletFromMnemonic } from '../lib/wallet';
 import {
   ManualTokenContract,
   type TransferBroadcastAcceptedDetails,
 } from '../lib/manualTokenContract';
 import { koinosLogger as log } from '../lib/logger';
 import { getActiveNetworkConfig } from './networkStore';
+import { useWalletStore } from './walletStore';
 
 interface TransferExecutionOptions {
   onBroadcastAccepted?: (details: TransferBroadcastAcceptedDetails) => void;
@@ -41,7 +43,6 @@ interface KoinosState {
  * The signer is not cached — it goes out of scope after use.
  */
 async function getTemporarySigner(provider: Provider): Promise<Signer> {
-  const { useWalletStore } = await import('./walletStore');
   const { activeAccountId } = useWalletStore.getState();
 
   let privateKey: string | null = null;
@@ -56,14 +57,12 @@ async function getTemporarySigner(provider: Provider): Promise<Signer> {
 
   // If still no key, try deriving from mnemonic
   if (!privateKey) {
-    const { useWalletStore: ws } = await import('./walletStore');
-    const state = ws.getState();
+    const state = useWalletStore.getState();
     const activeAccount = state.accounts.find(a => a.id === activeAccountId);
 
     if (activeAccount && !activeAccount.isImported) {
       const mnemonic = await SecureStore.getItemAsync('kondor_wallet_mnemonic');
       if (mnemonic) {
-        const { createWalletFromMnemonic } = await import('../lib/wallet');
         const wallet = createWalletFromMnemonic(mnemonic, activeAccount.derivationIndex);
         privateKey = wallet.privateKey;
       }
@@ -119,37 +118,6 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
 
       const network = getActiveNetworkConfig();
       const provider = new Provider(network.rpcNodes);
-
-      // Verify a private key exists (but don't cache the signer)
-      const { useWalletStore } = await import('./walletStore');
-      const { activeAccountId } = useWalletStore.getState();
-
-      let hasKey = false;
-      if (activeAccountId) {
-        hasKey = !!(await SecureStore.getItemAsync(`kondor_pk_${activeAccountId}`));
-      }
-      if (!hasKey) {
-        hasKey = !!(await SecureStore.getItemAsync('kondor_wallet_private_key'));
-      }
-      if (!hasKey) {
-        // Check if we can derive from mnemonic
-        const state = useWalletStore.getState();
-        const activeAccount = state.accounts.find(a => a.id === activeAccountId);
-        if (activeAccount && !activeAccount.isImported) {
-          hasKey = !!(await SecureStore.getItemAsync('kondor_wallet_mnemonic'));
-        }
-      }
-
-      if (!hasKey) {
-        log.error(' No private key found in secure storage');
-        set({
-          isLoading: false,
-          error: 'No wallet found. Please create or import a wallet first.'
-        });
-        return;
-      }
-
-      log.debug(' Private key found');
 
       set({
         provider,
