@@ -38,7 +38,12 @@ export interface KnownCollection {
 }
 
 export interface NFTServiceContract {
-  getTokensByOwner(args: { owner: string; limit: number }): Promise<string[]>;
+  getTokensByOwner(args: {
+    owner: string;
+    limit: number;
+    start?: string;
+    descending?: boolean;
+  }): Promise<string[]>;
   getUri(): Promise<string>;
 }
 
@@ -107,8 +112,13 @@ function createDefaultContract(collection: KnownCollection, provider: Provider):
   });
 
   return {
-    getTokensByOwner: async ({ owner, limit }) => {
-      const { result } = await contract.functions.getTokensByOwner({ owner, limit });
+    getTokensByOwner: async ({ owner, limit, start, descending }) => {
+      const { result } = await contract.functions.getTokensByOwner({
+        owner,
+        limit,
+        start,
+        descending,
+      });
       return (result?.token_ids ?? []) as string[];
     },
     getUri: async () => {
@@ -221,6 +231,51 @@ export function decodeTokenId(tokenId: string): string {
   return decoded;
 }
 
+async function fetchOwnedTokenIds(
+  contract: NFTServiceContract,
+  owner: string
+): Promise<string[]> {
+  const tokenIds: string[] = [];
+  const seenTokenIds = new Set<string>();
+  let start: string | undefined;
+
+  while (true) {
+    const page = await contract.getTokensByOwner({
+      owner,
+      start,
+      limit: MAX_TOKENS_PER_COLLECTION,
+    });
+
+    if (page.length === 0) {
+      break;
+    }
+
+    let newTokenCount = 0;
+    for (const tokenId of page) {
+      if (seenTokenIds.has(tokenId)) {
+        continue;
+      }
+
+      seenTokenIds.add(tokenId);
+      tokenIds.push(tokenId);
+      newTokenCount += 1;
+    }
+
+    if (page.length < MAX_TOKENS_PER_COLLECTION) {
+      break;
+    }
+
+    const nextStart = page[page.length - 1];
+    if (!nextStart || nextStart === start || newTokenCount === 0) {
+      break;
+    }
+
+    start = nextStart;
+  }
+
+  return tokenIds;
+}
+
 export function getNFTName(nft: NFT): string {
   return nft.name || nft.metadata?.name || `#${decodeTokenId(nft.token_id)}`;
 }
@@ -251,10 +306,7 @@ export async function fetchNFTsByOwner(
   const settledResults = await Promise.allSettled(
     collections.map(async (collection) => {
       const contract = createContract(collection, provider);
-      const tokenIds = await contract.getTokensByOwner({
-        owner: trimmedOwner,
-        limit: MAX_TOKENS_PER_COLLECTION,
-      });
+      const tokenIds = await fetchOwnedTokenIds(contract, trimmedOwner);
 
       if (tokenIds.length === 0) {
         return [] as NFT[];

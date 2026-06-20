@@ -19,23 +19,38 @@ const OWNER = '1A6T7vmfwyGx2LD11RREwtcoXrLxG6q2rz';
 
 interface MockCollectionState {
   tokens?: string[];
+  tokensByStart?: Record<string, string[]>;
   uri?: string;
 }
 
 interface MockContractCall {
   collectionAddress: string;
   owner: string;
+  limit: number;
+  start?: string;
 }
 
 function createMockContract(state: MockCollectionState, calls: MockContractCall[], collectionAddress: string): NFTServiceContract {
   return {
-    getTokensByOwner: jest.fn(async ({ owner }: { owner: string; limit: number }) => {
-      calls.push({ collectionAddress, owner });
-      if (!state.tokens) {
+    getTokensByOwner: jest.fn(async ({
+      owner,
+      limit,
+      start,
+    }: {
+      owner: string;
+      limit: number;
+      start?: string;
+    }) => {
+      calls.push({ collectionAddress, owner, limit, start });
+      if (!state.tokens && !state.tokensByStart) {
         throw new Error('collection does not support enumeration');
       }
 
-      return state.tokens;
+      if (state.tokensByStart) {
+        return state.tokensByStart[start ?? '__initial__'] ?? [];
+      }
+
+      return state.tokens ?? [];
     }),
     getUri: jest.fn(async () => state.uri ?? ''),
   };
@@ -137,7 +152,9 @@ describe('fetchNFTsByOwner', () => {
         ),
     });
 
-    expect(contractCalls).toEqual([{ collectionAddress: collection.address, owner: OWNER }]);
+    expect(contractCalls).toEqual([
+      { collectionAddress: collection.address, owner: OWNER, limit: 50, start: undefined },
+    ]);
     expect(result).toEqual([
       {
         id: `${collection.address}:0x3537`,
@@ -188,6 +205,44 @@ describe('fetchNFTsByOwner', () => {
       },
     ]);
     expect(getNFTName(result[0])).toBe('#57');
+  });
+
+  it('continues fetching collection pages beyond the first 50 owned NFTs', async () => {
+    const collection = KNOWN_COLLECTIONS[0];
+    const contractCalls: MockContractCall[] = [];
+    const firstPage = Array.from({ length: 50 }, (_, index) => `0x${(index + 1).toString(16).padStart(2, '0')}`);
+    const secondPage = ['0x33', '0x34'];
+
+    const result = await fetchNFTsByOwner(OWNER, 'mainnet', {
+      collections: [collection],
+      fetchJson: jest.fn(async () => {
+        throw new Error('metadata unavailable');
+      }),
+      createContract: () =>
+        createMockContract(
+          {
+            tokensByStart: {
+              __initial__: firstPage,
+              [firstPage[firstPage.length - 1]]: secondPage,
+            },
+            uri: 'https://metadata.example.com/nfts/',
+          },
+          contractCalls,
+          collection.address
+        ),
+    });
+
+    expect(contractCalls).toEqual([
+      { collectionAddress: collection.address, owner: OWNER, limit: 50, start: undefined },
+      {
+        collectionAddress: collection.address,
+        owner: OWNER,
+        limit: 50,
+        start: firstPage[firstPage.length - 1],
+      },
+    ]);
+    expect(result).toHaveLength(firstPage.length + secondPage.length);
+    expect(result.map((nft) => nft.token_id)).toEqual([...firstPage, ...secondPage]);
   });
 });
 

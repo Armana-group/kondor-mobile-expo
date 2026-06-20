@@ -130,3 +130,63 @@ Result:
 
 - React Doctor still reports branch-scope findings from earlier task work outside this task.
 - `CollectiblesScreen.tsx` still has two non-blocking React Doctor warnings: `react-native` `Image` preference and JSX element prop memoization preference.
+
+## Review Fix Addendum
+
+### Findings addressed
+
+1. Critical: `src/hooks/useNFTs.ts` now guards async writes with a per-request token plus `address:networkMode` scope key, so late mainnet/account responses are ignored after the user switches network or account.
+2. Important: `src/lib/nftService.ts` now follows the NFT contract paging API via `getTokensByOwner({ owner, start, limit })` and keeps reading past the first 50 owned NFTs instead of silently truncating collection results.
+
+### Regression coverage
+
+- Extended `src/lib/__tests__/nftService.test.ts` to prove multi-page owner reads continue past the first 50 token IDs.
+- Added `src/hooks/__tests__/useNFTs.test.tsx` to prove stale in-flight results are ignored after:
+  - switching from mainnet to Harbinger
+  - switching from one account to another
+
+### Verification
+
+1. Focused NFT service regression
+
+```bash
+npm test -- src/lib/__tests__/nftService.test.ts --runInBand
+```
+
+Result:
+- PASS
+- 1 suite passed
+- 12 tests passed
+
+2. Focused hook regression
+
+```bash
+npm test -- src/hooks/__tests__/useNFTs.test.tsx --runInBand
+```
+
+Result:
+- PASS
+- 1 suite passed
+- 2 tests passed
+
+3. Type check
+
+```bash
+npx tsc --noEmit
+```
+
+Result:
+- PASS
+- exited 0 with no TypeScript errors
+
+4. Full Jest suite
+
+```bash
+npm test -- --runInBand
+```
+
+Result:
+- PASS
+- 37 suites passed
+- 285 tests passed
+- 2 snapshots passed

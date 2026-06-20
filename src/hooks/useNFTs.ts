@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Provider } from 'koilib';
 import { getActiveNetworkConfig, useNetworkStore } from '../stores/networkStore';
 import { useWalletStore } from '../stores/walletStore';
@@ -44,43 +44,82 @@ export function useNFTs(): UseNFTsResult {
   const [collections, setCollections] = useState<NFTCollection[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const activeRequestRef = useRef({
+    token: 0,
+    key: '',
+  });
 
   const fetchNFTs = useCallback(async () => {
+    const requestKey = `${address ?? ''}:${networkMode}`;
+    const requestToken = activeRequestRef.current.token + 1;
+    activeRequestRef.current = {
+      token: requestToken,
+      key: requestKey,
+    };
+
+    const applyIfCurrent = (apply: () => void) => {
+      if (
+        activeRequestRef.current.token === requestToken &&
+        activeRequestRef.current.key === requestKey
+      ) {
+        apply();
+      }
+    };
+
     if (!hasHydrated || !address) {
-      setNfts([]);
-      setCollections([]);
-      setError(null);
-      setLoading(false);
+      applyIfCurrent(() => {
+        setNfts([]);
+        setCollections([]);
+        setError(null);
+        setLoading(false);
+      });
       return;
     }
 
     if (isTestnet) {
-      setNfts([]);
-      setCollections([]);
-      setError(null);
-      setLoading(false);
+      applyIfCurrent(() => {
+        setNfts([]);
+        setCollections([]);
+        setError(null);
+        setLoading(false);
+      });
       return;
     }
 
-    setLoading(true);
-    setError(null);
+    applyIfCurrent(() => {
+      setLoading(true);
+      setError(null);
+    });
 
     try {
       const provider = await ensureProviderForActiveNetwork();
       const fetchedNFTs = await fetchNFTsByOwner(address, networkMode, { provider });
-      setNfts(fetchedNFTs);
-      setCollections(groupNFTsByCollection(fetchedNFTs));
+      applyIfCurrent(() => {
+        setNfts(fetchedNFTs);
+        setCollections(groupNFTsByCollection(fetchedNFTs));
+      });
     } catch (fetchError) {
-      setNfts([]);
-      setCollections([]);
-      setError(fetchError instanceof Error ? fetchError.message : 'Failed to load NFTs');
+      applyIfCurrent(() => {
+        setNfts([]);
+        setCollections([]);
+        setError(fetchError instanceof Error ? fetchError.message : 'Failed to load NFTs');
+      });
     } finally {
-      setLoading(false);
+      applyIfCurrent(() => {
+        setLoading(false);
+      });
     }
   }, [address, hasHydrated, isTestnet, networkMode]);
 
   useEffect(() => {
     void fetchNFTs();
+
+    return () => {
+      activeRequestRef.current = {
+        token: activeRequestRef.current.token + 1,
+        key: '__cancelled__',
+      };
+    };
   }, [fetchNFTs]);
 
   return {
