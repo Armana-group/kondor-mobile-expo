@@ -16,6 +16,7 @@ import { inspectDAppOrigin } from '../lib/dapp/originSecurity';
 import {
   normalizeBytesInput,
   normalizeHashBytes,
+  normalizeMessageForSigning,
   signHashWithAuthenticatedAccount,
   signMessageWithAuthenticatedAccount,
 } from '../lib/dapp/messageSigning';
@@ -53,12 +54,16 @@ function bytesToHex(bytes: Uint8Array): string {
 }
 
 function formatMessagePreview(message: unknown, showRawData: boolean): string {
-  if (typeof message === 'string') {
-    return message || '(empty message)';
-  }
-
   try {
-    const bytes = normalizeBytesInput(message);
+    const normalized = normalizeMessageForSigning(message);
+
+    if (typeof normalized === 'string') {
+      return normalized || '(empty message)';
+    }
+
+    const bytes = normalized instanceof Uint8Array
+      ? normalized
+      : normalizeBytesInput(normalized);
     const base64url = utils.encodeBase64url(bytes);
     return showRawData ? bytesToHex(bytes) : truncateMiddle(base64url, 24, 18);
   } catch {

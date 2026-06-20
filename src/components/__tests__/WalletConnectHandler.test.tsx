@@ -470,6 +470,67 @@ describe('WalletConnectHandler network reconciliation', () => {
     expect(mockClearPendingSigningRequest).toHaveBeenCalled();
   });
 
+  it('revalidates deferred signing requests after hydration completes', async () => {
+    mockNetworkState = {
+      mode: 'harbinger',
+      hasHydrated: false,
+    };
+    mockGetSessionTopicValidationForActiveNetwork.mockReturnValueOnce({
+      status: 'defer',
+      message: 'WalletConnect is waiting for the active network to finish loading',
+    });
+    mockGetSessionTopicValidationForActiveNetwork.mockReturnValue({
+      status: 'ready',
+    });
+    mockWalletConnectState = {
+      ...mockWalletConnectState,
+      pendingSigningRequest: {
+        id: 42,
+        topic: 'deferred-sign-topic',
+        method: 'koinos_signMessage',
+        signerAddress: '1WalletAddress',
+        message: 'hello after hydration',
+        peerMeta: {
+          name: 'Deferred Signer dApp',
+          url: 'https://deferred-sign.example.com',
+        },
+      },
+    };
+
+    const { WalletConnectHandler } = require('../WalletConnectHandler');
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<WalletConnectHandler />);
+    });
+    await flushEffects();
+
+    expect(lastMessageSigningModalProps?.visible).toBe(false);
+    expect(mockRejectRequest).not.toHaveBeenCalled();
+
+    mockNetworkState = {
+      mode: 'harbinger',
+      hasHydrated: true,
+    };
+
+    await act(async () => {
+      renderer!.update(<WalletConnectHandler />);
+    });
+    await flushEffects();
+
+    expect(lastMessageSigningModalProps).toEqual(
+      expect.objectContaining({
+        visible: true,
+        request: expect.objectContaining({
+          signerAddress: '1WalletAddress',
+          kind: 'message',
+          message: 'hello after hydration',
+        }),
+      })
+    );
+    expect(mockRejectRequest).not.toHaveBeenCalled();
+  });
+
   it('keeps session approval hidden until hydration completes even when a proposal is pending', async () => {
     mockNetworkState = {
       mode: 'harbinger',

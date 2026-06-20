@@ -179,6 +179,8 @@ export const WalletConnectHandler: React.FC = () => {
     });
   }, [
     getSessionTopicValidationForActiveNetwork,
+    hasHydrated,
+    networkMode,
     pendingSigningRequest,
     rejectRequest,
   ]);
