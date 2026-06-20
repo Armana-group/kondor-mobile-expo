@@ -32,6 +32,8 @@ import { useWalletStore } from '../stores/walletStore';
 import colors from '../theme/colors';
 
 const BACKUP_DIRECTORY_NAME = 'backups';
+const VERIFY_BACKUP_ERROR_MESSAGE =
+  'Check the backup recovery key or legacy backup PIN and backup file, then try again.';
 
 function getRestoreBackupSecret(backup: BackupData, value: string): string {
   const trimmedValue = value.trim();
@@ -40,6 +42,61 @@ function getRestoreBackupSecret(backup: BackupData, value: string): string {
   }
 
   return trimmedValue;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : '';
+}
+
+function isCurrentPinError(error: unknown): boolean {
+  const message = getErrorMessage(error);
+  return message === 'Incorrect PIN' || message === 'Current PIN is incorrect';
+}
+
+function getCreateBackupErrorMessage(error: unknown): string {
+  if (isCurrentPinError(error)) {
+    return 'Current PIN is incorrect.';
+  }
+
+  if (getErrorMessage(error) === 'Backup recovery key is required') {
+    return 'Backup recovery key is required.';
+  }
+
+  return sanitizeErrorForUser(
+    error,
+    'Unable to create wallet backup. Check your current PIN and backup recovery key, then try again.'
+  );
+}
+
+function getImportBackupErrorMessage(error: unknown): string {
+  if (error instanceof SyntaxError) {
+    return 'Select a valid Kondor backup JSON file and try again.';
+  }
+
+  return sanitizeErrorForUser(
+    error,
+    'Unable to import wallet backup. Select a valid Kondor backup JSON file and try again.'
+  );
+}
+
+function getVerifyBackupErrorMessage(error: unknown): string {
+  const message = getErrorMessage(error);
+  if (message.startsWith('Backup verification failed')) {
+    return VERIFY_BACKUP_ERROR_MESSAGE;
+  }
+
+  return sanitizeErrorForUser(error, VERIFY_BACKUP_ERROR_MESSAGE);
+}
+
+function getRestoreBackupErrorMessage(error: unknown): string {
+  if (isCurrentPinError(error)) {
+    return 'Current PIN is incorrect.';
+  }
+
+  return sanitizeErrorForUser(
+    error,
+    'Unable to restore wallet backup. Check your current PIN, backup recovery key or legacy backup PIN, and backup file, then try again.'
+  );
 }
 
 export const BackupRecoveryScreen = () => {
@@ -134,7 +191,7 @@ export const BackupRecoveryScreen = () => {
       await HapticFeedback.success();
     } catch (error: any) {
       await HapticFeedback.error();
-      Alert.alert('Backup Failed', sanitizeErrorForUser(error, 'Unable to create wallet backup'));
+      Alert.alert('Backup Failed', getCreateBackupErrorMessage(error));
     } finally {
       setIsCreatingBackup(false);
     }
@@ -167,7 +224,7 @@ export const BackupRecoveryScreen = () => {
       await HapticFeedback.selection();
     } catch (error: any) {
       await HapticFeedback.error();
-      Alert.alert('Import Failed', sanitizeErrorForUser(error, 'Unable to import wallet backup'));
+      Alert.alert('Import Failed', getImportBackupErrorMessage(error));
     } finally {
       setIsImportingBackup(false);
     }
@@ -190,7 +247,7 @@ export const BackupRecoveryScreen = () => {
       const backupSecret = getRestoreBackupSecret(importedBackup, restorePin);
       const isValid = await verifyWalletBackup(importedBackup, backupSecret);
       if (!isValid) {
-        throw new Error('Backup verification failed. Check the backup recovery key or legacy backup PIN and backup file.');
+        throw new Error('Backup verification failed');
       }
 
       setIsImportedBackupVerified(true);
@@ -199,7 +256,7 @@ export const BackupRecoveryScreen = () => {
     } catch (error: any) {
       setIsImportedBackupVerified(false);
       await HapticFeedback.error();
-      Alert.alert('Verification Failed', sanitizeErrorForUser(error, 'Unable to verify wallet backup'));
+      Alert.alert('Verification Failed', getVerifyBackupErrorMessage(error));
     } finally {
       setIsVerifyingBackup(false);
     }
@@ -242,7 +299,7 @@ export const BackupRecoveryScreen = () => {
               navigation.goBack();
             } catch (error: any) {
               await HapticFeedback.error();
-              Alert.alert('Restore Failed', sanitizeErrorForUser(error, 'Unable to restore wallet backup'));
+              Alert.alert('Restore Failed', getRestoreBackupErrorMessage(error));
             } finally {
               setIsRestoringBackup(false);
             }

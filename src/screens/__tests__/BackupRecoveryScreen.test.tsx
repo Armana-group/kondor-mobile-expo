@@ -118,6 +118,10 @@ jest.mock('../../lib/haptics', () => ({
   },
 }));
 
+jest.mock('../../lib/logger', () => ({
+  sanitizeErrorForUser: (_error: unknown, fallback: string) => fallback,
+}));
+
 function findButton(renderer: TestRenderer.ReactTestRenderer, label: string) {
   const node = renderer.root
     .findAllByType(TouchableOpacity)
@@ -311,5 +315,147 @@ describe('BackupRecoveryScreen', () => {
     });
 
     expect(mockVerifyWalletBackup).toHaveBeenCalledWith(backup, '123456');
+  });
+
+  it('shows an actionable production error when the current PIN cannot create a backup', async () => {
+    mockCreateBackupSnapshot.mockRejectedValueOnce(new Error('Incorrect PIN'));
+
+    const { BackupRecoveryScreen } = require('../BackupRecoveryScreen');
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(<BackupRecoveryScreen />);
+    });
+
+    await act(async () => {
+      findButton(renderer!, 'Generate Recovery Key').props.onPress();
+    });
+
+    await act(async () => {
+      findInputByLabel(renderer!, 'Current wallet PIN').props.onChangeText('000000');
+      findInputByLabel(renderer!, 'Confirm backup recovery key')
+        .props.onChangeText('ABCD-EFGH-IJKM-NPQR-STVW-XYZ2-3456-789A');
+    });
+
+    await act(async () => {
+      findButton(renderer!, 'Create Manual Backup').props.onPress();
+    });
+
+    expect(alertSpy).toHaveBeenCalledWith('Backup Failed', 'Current PIN is incorrect.');
+  });
+
+  it('shows an actionable production error when an imported backup file is invalid', async () => {
+    mockGetDocumentAsync.mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: 'file:///cache/backup.json', name: 'backup.json' }],
+    });
+    mockReadAsStringAsync.mockResolvedValue('{not json');
+
+    const { BackupRecoveryScreen } = require('../BackupRecoveryScreen');
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(<BackupRecoveryScreen />);
+    });
+
+    await act(async () => {
+      findButton(renderer!, 'Import Backup File').props.onPress();
+    });
+
+    expect(alertSpy).toHaveBeenCalledWith(
+      'Import Failed',
+      'Select a valid Kondor backup JSON file and try again.'
+    );
+  });
+
+  it('shows an actionable production error when backup verification fails', async () => {
+    const backup = {
+      kind: 'kondor-wallet-backup',
+      version: 2,
+      walletFingerprint: 'wallet-hash',
+      accountSetHash: 'account-hash',
+    };
+    mockGetDocumentAsync.mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: 'file:///cache/backup.json', name: 'backup.json' }],
+    });
+    mockReadAsStringAsync.mockResolvedValue(JSON.stringify(backup));
+    mockVerifyWalletBackup.mockResolvedValueOnce(false);
+
+    const { BackupRecoveryScreen } = require('../BackupRecoveryScreen');
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(<BackupRecoveryScreen />);
+    });
+
+    await act(async () => {
+      findButton(renderer!, 'Import Backup File').props.onPress();
+    });
+
+    await act(async () => {
+      findInputByLabel(renderer!, 'Backup recovery key or legacy backup PIN')
+        .props.onChangeText('ABCD-EFGH-IJKM-NPQR-STVW-XYZ2-3456-789A');
+    });
+
+    await act(async () => {
+      findButton(renderer!, 'Verify Backup').props.onPress();
+    });
+
+    expect(alertSpy).toHaveBeenCalledWith(
+      'Verification Failed',
+      'Check the backup recovery key or legacy backup PIN and backup file, then try again.'
+    );
+  });
+
+  it('shows an actionable production error when restore authorization fails', async () => {
+    const backup = {
+      kind: 'kondor-wallet-backup',
+      version: 2,
+      walletFingerprint: 'wallet-hash',
+      accountSetHash: 'account-hash',
+    };
+    mockGetDocumentAsync.mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: 'file:///cache/backup.json', name: 'backup.json' }],
+    });
+    mockReadAsStringAsync.mockResolvedValue(JSON.stringify(backup));
+    mockRestoreFromBackup.mockRejectedValueOnce(new Error('Current PIN is incorrect'));
+
+    const { BackupRecoveryScreen } = require('../BackupRecoveryScreen');
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(<BackupRecoveryScreen />);
+    });
+
+    await act(async () => {
+      findButton(renderer!, 'Import Backup File').props.onPress();
+    });
+
+    await act(async () => {
+      findInputByLabel(renderer!, 'Backup recovery key or legacy backup PIN')
+        .props.onChangeText('ABCD-EFGH-IJKM-NPQR-STVW-XYZ2-3456-789A');
+    });
+
+    await act(async () => {
+      findButton(renderer!, 'Verify Backup').props.onPress();
+    });
+
+    await act(async () => {
+      findInputByLabel(renderer!, 'Current Wallet PIN').props.onChangeText('000000');
+    });
+
+    await act(async () => {
+      findButton(renderer!, 'Restore Backup').props.onPress();
+    });
+
+    const restoreAlert = alertSpy.mock.calls.find((call) => call[0] === 'Restore Wallet Backup');
+    const restoreButton = restoreAlert?.[2]?.find((button: { text?: string }) => button.text === 'Restore');
+    await act(async () => {
+      await restoreButton?.onPress?.();
+    });
+
+    expect(alertSpy).toHaveBeenCalledWith('Restore Failed', 'Current PIN is incorrect.');
   });
 });
