@@ -18,14 +18,13 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Signer, Transaction, Provider, TransactionJson, type OperationJson } from 'koilib';
-import * as SecureStore from 'expo-secure-store';
 import colors from '../theme/colors';
 import { useWalletStore } from '../stores/walletStore';
-import { requireBiometricAuth } from '../lib/biometrics';
 import { HapticFeedback } from '../lib/haptics';
 import { txLogger } from '../lib/logger';
 import { getActiveNetworkConfig, useNetworkStore } from '../stores/networkStore';
 import { inspectDAppOrigin } from '../lib/dapp/originSecurity';
+import { withAuthenticatedAccountSigner } from '../lib/dapp/messageSigning';
 import {
   type DecodedOperation,
   decodeKnownOperation,
@@ -139,7 +138,7 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
   const [expandedOps, setExpandedOps] = useState<Set<number>>(new Set([0])); // First op expanded by default
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const { getActiveAccount, activeAccountId } = useWalletStore();
+  const { getActiveAccount } = useWalletStore();
   useNetworkStore((state) => state.mode);
   useNetworkStore((state) => state.hasHydrated);
   const activeAccount = getActiveAccount();
@@ -219,166 +218,144 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
     setError(null);
 
     try {
-      // Require biometric authentication
-      const authenticated = await requireBiometricAuth(
-        isSend ? 'send this transaction' : 'sign this transaction'
-      );
-
-      if (!authenticated) {
-        setSigning(false);
-        setError('Authentication required');
-        return;
-      }
-
-      HapticFeedback.success();
-
-      // Get private key from secure storage
-      let privateKey = await SecureStore.getItemAsync(`kondor_pk_${activeAccountId}`);
-      if (!privateKey) {
-        privateKey = await SecureStore.getItemAsync('kondor_wallet_private_key');
-      }
-
-      if (!privateKey) {
-        throw new Error('Private key not found');
-      }
-
-      // Create provider and signer
       const provider = new Provider(activeNetwork.rpcNodes);
+      await withAuthenticatedAccountSigner(
+        {
+          signerAddress: request.signerAddress,
+          provider,
+          authOperation: isSend ? 'send this transaction' : 'sign this transaction',
+        },
+        async ({ signer }) => {
+          HapticFeedback.success();
 
-      let signer: Signer;
-      if (privateKey.length === 64) {
-        signer = new Signer({ privateKey, provider });
-      } else {
-        signer = Signer.fromWif(privateKey);
-        signer.provider = provider;
-      }
+          // Prepare transaction
+          const tx = cloneTransaction(request.transaction);
 
-      // Prepare transaction
-      const tx = cloneTransaction(request.transaction);
+          // Use free mana sharer to pay for transaction mana
+          const freeManaSharer = activeNetwork.freeManaSharer;
+          txLogger.debug('Using free mana sharer:', freeManaSharer);
 
-      // Use free mana sharer to pay for transaction mana
-      const freeManaSharer = activeNetwork.freeManaSharer;
-      txLogger.debug('Using free mana sharer:', freeManaSharer);
+          // Ensure header exists with free mana sharer as payer
+          if (!tx.header) {
+            tx.header = {
+              payer: freeManaSharer,
+              payee: request.signerAddress
+            };
+          }
 
-      // Ensure header exists with free mana sharer as payer
-      if (!tx.header) {
-        tx.header = {
-          payer: freeManaSharer,
-          payee: request.signerAddress
-        };
-      }
+          // Override payer to use free mana sharer
+          tx.header.payer = freeManaSharer;
+          tx.header.payee = request.signerAddress;
+          tx.header.chain_id = activeNetwork.chainId;
 
-      // Override payer to use free mana sharer
-      tx.header.payer = freeManaSharer;
-      tx.header.payee = request.signerAddress;
-      tx.header.chain_id = activeNetwork.chainId;
+          // Create Transaction object for dry-run estimation
+          // We ALWAYS estimate rc_limit via dry-run because dApps may send incorrect values
+          const estimateTx = new Transaction({ signer, provider });
 
-      // Create Transaction object for dry-run estimation
-      // We ALWAYS estimate rc_limit via dry-run because dApps may send incorrect values
-      const estimateTx = new Transaction({ signer, provider });
+          // Copy transaction but clear id and signatures (they'll be recalculated)
+          const txForEstimation = cloneTransaction(tx);
+          delete txForEstimation.id;
+          delete txForEstimation.signatures;
+          estimateTx.transaction = txForEstimation;
 
-      // Copy transaction but clear id and signatures (they'll be recalculated)
-      const txForEstimation = cloneTransaction(tx);
-      delete txForEstimation.id;
-      delete txForEstimation.signatures;
-      estimateTx.transaction = txForEstimation;
+          // Set rc_limit for estimation - free mana sharer has a max of 100 mana per tx
+          // 100 mana = 10,000,000,000 (10^10) in smallest units
+          const MAX_FREE_MANA = 10000000000;
+          let estimationLimit = MAX_FREE_MANA;
+          txLogger.debug('Using free mana sharer with max', MAX_FREE_MANA, 'RC (100 mana)');
 
-      // Set rc_limit for estimation - free mana sharer has a max of 100 mana per tx
-      // 100 mana = 10,000,000,000 (10^10) in smallest units
-      const MAX_FREE_MANA = 10000000000;
-      let estimationLimit = MAX_FREE_MANA;
-      txLogger.debug('Using free mana sharer with max', MAX_FREE_MANA, 'RC (100 mana)');
+          // Prepare the estimation transaction
+          if (!estimateTx.transaction.header) {
+            estimateTx.transaction.header = {};
+          }
+          estimateTx.transaction.header.rc_limit = String(estimationLimit);
 
-      // Prepare the estimation transaction
-      if (!estimateTx.transaction.header) {
-        estimateTx.transaction.header = {};
-      }
-      estimateTx.transaction.header.rc_limit = String(estimationLimit);
+          // Fill in nonce if missing
+          if (!estimateTx.transaction.header.nonce) {
+            await estimateTx.prepare();
+          }
 
-      // Fill in nonce if missing
-      if (!estimateTx.transaction.header.nonce) {
-        await estimateTx.prepare();
-      }
+          // Dry-run to get actual RC usage
+          txLogger.debug('Performing dry-run estimation...');
+          let dryRunReceipt;
+          try {
+            dryRunReceipt = await estimateTx.send({ broadcast: false });
+            txLogger.debug('Dry-run receipt:', dryRunReceipt);
+          } catch (dryRunError: any) {
+            txLogger.error('Dry-run failed:', dryRunError);
+            // If dry-run fails, the transaction would fail anyway - show meaningful error
+            const errorMsg = dryRunError.message || 'Transaction would fail';
+            throw new Error(`Transaction simulation failed: ${errorMsg}`);
+          }
 
-      // Dry-run to get actual RC usage
-      txLogger.debug('Performing dry-run estimation...');
-      let dryRunReceipt;
-      try {
-        dryRunReceipt = await estimateTx.send({ broadcast: false });
-        txLogger.debug('Dry-run receipt:', dryRunReceipt);
-      } catch (dryRunError: any) {
-        txLogger.error('Dry-run failed:', dryRunError);
-        // If dry-run fails, the transaction would fail anyway - show meaningful error
-        const errorMsg = dryRunError.message || 'Transaction would fail';
-        throw new Error(`Transaction simulation failed: ${errorMsg}`);
-      }
+          // Check if dry-run reverted
+          if (dryRunReceipt.reverted) {
+            const revertReason =
+              dryRunReceipt.logs?.join('; ') ||
+              (dryRunReceipt as { error_message?: string }).error_message ||
+              'Unknown error';
+            txLogger.error('Dry-run reverted:', revertReason);
+            throw new Error(`Transaction would revert: ${revertReason}`);
+          }
 
-      // Check if dry-run reverted
-      if (dryRunReceipt.reverted) {
-        const revertReason =
-          dryRunReceipt.logs?.join('; ') ||
-          (dryRunReceipt as { error_message?: string }).error_message ||
-          'Unknown error';
-        txLogger.error('Dry-run reverted:', revertReason);
-        throw new Error(`Transaction would revert: ${revertReason}`);
-      }
+          // Calculate rc_limit with 10% buffer (Kondor pattern)
+          const rcUsed = Number(dryRunReceipt.rc_used || 0);
+          let rcLimit = Math.floor(1.1 * rcUsed);
+          txLogger.debug('RC used:', rcUsed, '-> RC limit with 10% buffer:', rcLimit);
 
-      // Calculate rc_limit with 10% buffer (Kondor pattern)
-      const rcUsed = Number(dryRunReceipt.rc_used || 0);
-      let rcLimit = Math.floor(1.1 * rcUsed);
-      txLogger.debug('RC used:', rcUsed, '-> RC limit with 10% buffer:', rcLimit);
+          // Ensure we have a reasonable rc_limit
+          if (rcLimit <= 0) {
+            txLogger.warn('RC limit is 0, using fallback');
+            throw new Error('Could not estimate transaction cost');
+          }
 
-      // Ensure we have a reasonable rc_limit
-      if (rcLimit <= 0) {
-        txLogger.warn('RC limit is 0, using fallback');
-        throw new Error('Could not estimate transaction cost');
-      }
+          // Cap to free mana sharer's max (100 mana)
+          if (rcLimit > MAX_FREE_MANA) {
+            txLogger.warn('Transaction needs', rcLimit, 'RC but free mana max is', MAX_FREE_MANA);
+            // For now, cap it - transaction might fail if it actually needs more
+            // TODO: Fall back to user's own mana if transaction needs more than 100 mana
+            rcLimit = MAX_FREE_MANA;
+            txLogger.debug('Capped rc_limit to', MAX_FREE_MANA);
+          }
 
-      // Cap to free mana sharer's max (100 mana)
-      if (rcLimit > MAX_FREE_MANA) {
-        txLogger.warn('Transaction needs', rcLimit, 'RC but free mana max is', MAX_FREE_MANA);
-        // For now, cap it - transaction might fail if it actually needs more
-        // TODO: Fall back to user's own mana if transaction needs more than 100 mana
-        rcLimit = MAX_FREE_MANA;
-        txLogger.debug('Capped rc_limit to', MAX_FREE_MANA);
-      }
+          // Now create the actual transaction with proper rc_limit
+          const txObj = new Transaction({ signer, provider });
 
-      // Now create the actual transaction with proper rc_limit
-      const txObj = new Transaction({ signer, provider });
+          // Copy transaction but clear id and signatures (they'll be recalculated after signing)
+          const txForSigning = cloneTransaction(tx);
+          delete txForSigning.id;
+          delete txForSigning.signatures;
+          txObj.transaction = txForSigning;
 
-      // Copy transaction but clear id and signatures (they'll be recalculated after signing)
-      const txForSigning = cloneTransaction(tx);
-      delete txForSigning.id;
-      delete txForSigning.signatures;
-      txObj.transaction = txForSigning;
+          // Set the estimated rc_limit (override whatever the dApp sent)
+          if (!txObj.transaction.header) {
+            txObj.transaction.header = {};
+          }
+          txObj.transaction.header.rc_limit = String(rcLimit);
 
-      // Set the estimated rc_limit (override whatever the dApp sent)
-      if (!txObj.transaction.header) {
-        txObj.transaction.header = {};
-      }
-      txObj.transaction.header.rc_limit = String(rcLimit);
+          // Always prepare to calculate transaction ID and fill missing fields
+          txLogger.debug('Preparing transaction...');
+          await txObj.prepare();
+          txLogger.debug('Transaction prepared, ID:', txObj.transaction.id);
 
-      // Always prepare to calculate transaction ID and fill missing fields
-      txLogger.debug('Preparing transaction...');
-      await txObj.prepare();
-      txLogger.debug('Transaction prepared, ID:', txObj.transaction.id);
+          // Sign the transaction
+          await signer.signTransaction(txObj.transaction);
 
-      // Sign the transaction
-      await signer.signTransaction(txObj.transaction);
-
-      if (isSend) {
-        // Send the transaction
-        const receipt = await txObj.send({ broadcast: true });
-        onApprove({
-          transaction: txObj.transaction,
-          receipt,
-        });
-      } else {
-        // Just return the signed transaction
-        onApprove({
-          transaction: txObj.transaction,
-        });
-      }
+          if (isSend) {
+            // Send the transaction
+            const receipt = await txObj.send({ broadcast: true });
+            onApprove({
+              transaction: txObj.transaction,
+              receipt,
+            });
+          } else {
+            // Just return the signed transaction
+            onApprove({
+              transaction: txObj.transaction,
+            });
+          }
+        }
+      );
 
       HapticFeedback.success();
     } catch (err: any) {
@@ -390,7 +367,6 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
   }, [
     request,
     activeAccount,
-    activeAccountId,
     activeNetwork.chainId,
     activeNetwork.freeManaSharer,
     activeNetwork.rpcNodes,

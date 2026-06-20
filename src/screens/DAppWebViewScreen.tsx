@@ -16,8 +16,7 @@ import { WebView, WebViewNavigation, WebViewMessageEvent } from 'react-native-we
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { Provider, Signer, Transaction, TransactionJson } from 'koilib';
-import * as SecureStore from 'expo-secure-store';
+import { Provider, Transaction, TransactionJson } from 'koilib';
 import { DApp } from '../constants/dapps';
 import colors from '../theme/colors';
 import { Account, useWalletStore } from '../stores/walletStore';
@@ -152,7 +151,7 @@ export const DAppWebViewScreen = () => {
   const [rememberSite, setRememberSite] = useState(true);
 
   // Wallet state
-  const { accounts, address, getActiveAccount, activeAccountId } = useWalletStore();
+  const { accounts, address, getActiveAccount } = useWalletStore();
   const permissionStoreHydrated = useDAppPermissionStore((state) => state.hasHydrated);
   const upsertGrant = useDAppPermissionStore((state) => state.upsertGrant);
   const touchGrantLastUsed = useDAppPermissionStore((state) => state.touchGrantLastUsed);
@@ -285,24 +284,6 @@ export const DAppWebViewScreen = () => {
     const { signerAddress, transaction } = args as { signerAddress: string; transaction: TransactionJson };
     const provider = providerRef.current!;
 
-    // Get private key to create signer for prepare
-    let privateKey = await SecureStore.getItemAsync(`kondor_pk_${activeAccountId}`);
-    if (!privateKey) {
-      privateKey = await SecureStore.getItemAsync('kondor_wallet_private_key');
-    }
-
-    if (!privateKey) {
-      throw new Error('Private key not found');
-    }
-
-    let signer: Signer;
-    if (privateKey.length === 64) {
-      signer = new Signer({ privateKey, provider });
-    } else {
-      signer = Signer.fromWif(privateKey);
-      signer.provider = provider;
-    }
-
     // Prepare transaction
     let tx = { ...transaction };
 
@@ -316,12 +297,12 @@ export const DAppWebViewScreen = () => {
       tx.header.chain_id = activeNetwork.chainId;
     }
 
-    const txObj = new Transaction({ signer, provider });
+    const txObj = new Transaction({ provider });
     txObj.transaction = tx;
     await txObj.prepare();
 
     return txObj.transaction;
-  }, [activeAccountId, activeNetwork.chainId]);
+  }, [activeNetwork.chainId]);
 
   // Handle signer commands (require user approval)
   const handleSignerCommand = useCallback(async (

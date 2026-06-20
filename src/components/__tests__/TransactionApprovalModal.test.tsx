@@ -25,6 +25,7 @@ let mockWalletState = {
     id: 'account-1',
     name: 'Primary',
     address: '12vRwxu2nVG2697dM36KMNkmfecNdU8PpR',
+    derivationIndex: 0,
     isImported: false,
   }),
 };
@@ -43,11 +44,28 @@ const mockEstimateSend = jest.fn(async () => ({
 }));
 
 jest.mock('../../stores/walletStore', () => ({
-  useWalletStore: () => mockWalletState,
+  useWalletStore: Object.assign(
+    () => mockWalletState,
+    {
+      getState: () => ({
+        accounts: [mockWalletState.getActiveAccount()],
+      }),
+    }
+  ),
 }));
 
 jest.mock('../../lib/biometrics', () => ({
   requireBiometricAuth: jest.fn(async () => true),
+}));
+
+const mockCreateWalletFromMnemonic = jest.fn((_mnemonic: string, _derivationIndex: number) => ({
+  address: OWNER,
+  privateKey: 'a'.repeat(64),
+}));
+
+jest.mock('../../lib/wallet', () => ({
+  createWalletFromMnemonic: (mnemonic: string, derivationIndex: number) =>
+    mockCreateWalletFromMnemonic(mnemonic, derivationIndex),
 }));
 
 jest.mock('../../lib/haptics', () => ({
@@ -84,6 +102,9 @@ jest.mock('koilib', () => {
     }
     static fromWif(privateKey: string) {
       return new Signer({ privateKey, provider: undefined as unknown as Provider });
+    }
+    getAddress() {
+      return OWNER;
     }
     async signTransaction(tx: unknown) {
       return mockSignTransaction(tx);
@@ -165,6 +186,7 @@ describe('TransactionApprovalModal', () => {
         id: 'account-1',
         name: 'Primary',
         address: OWNER,
+        derivationIndex: 0,
         isImported: false,
       }),
     };
@@ -454,6 +476,59 @@ describe('TransactionApprovalModal', () => {
             payer: '17mzHQmfp3qNWQpvJLvNgFXqoW4HoS7Xbj',
             payee: OWNER,
             chain_id: 'EiBncD4pKRIQWco_WRqo5Q-xnXR7JuO3PtZv983mKdKHSQ==',
+          }),
+        }),
+      })
+    );
+  });
+
+  it('derives the HD signer from the mnemonic when no stored private key exists', async () => {
+    const onApprove = jest.fn();
+    jest.spyOn(SecureStore, 'getItemAsync').mockImplementation(async (key: string) => {
+      if (key === 'kondor_pk_account-1' || key === 'kondor_wallet_private_key') {
+        return null;
+      }
+      if (key === 'kondor_wallet_mnemonic') {
+        return 'test mnemonic words';
+      }
+      return null;
+    });
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TransactionApprovalModal
+          visible
+          request={{
+            signerAddress: OWNER,
+            transaction: {
+              operations: [],
+              header: {},
+            },
+          }}
+          appName="HD dApp"
+          appOrigin="https://example.com"
+          isSend={false}
+          onApprove={onApprove}
+          onReject={jest.fn()}
+          onClose={jest.fn()}
+        />
+      );
+    });
+    activeRenderer = renderer!;
+    await flushEffects();
+
+    await act(async () => {
+      findButton(renderer!, 'Sign')?.props.onPress();
+    });
+    await flushEffects();
+
+    expect(mockCreateWalletFromMnemonic).toHaveBeenCalledWith('test mnemonic words', 0);
+    expect(onApprove).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transaction: expect.objectContaining({
+          header: expect.objectContaining({
+            payee: OWNER,
           }),
         }),
       })

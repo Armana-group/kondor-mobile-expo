@@ -1,6 +1,6 @@
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
-import { Text } from 'react-native';
+import { Switch, Text } from 'react-native';
 
 jest.mock('@expo/vector-icons', () => ({
   Ionicons: 'Ionicons',
@@ -92,5 +92,55 @@ describe('DAppMessageSigningModal preview', () => {
 
     const updatedTextValues = renderer!.root.findAllByType(Text).map(getTextContent);
     expect(updatedTextValues).toContain('hello world');
+  });
+
+  it('resets raw-data state when a new signing request replaces the current one', async () => {
+    const { DAppMessageSigningModal } = require('../DAppMessageSigningModal');
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <DAppMessageSigningModal
+          visible
+          request={{
+            signerAddress: '1SignerAddress',
+            kind: 'message',
+            message: '0102ff',
+          }}
+          appName="Signer dApp"
+          appOrigin="https://sign.example.com"
+          onApprove={jest.fn()}
+          onReject={jest.fn()}
+        />
+      );
+    });
+
+    const rawSwitch = renderer!.root.findByType(Switch);
+    await act(async () => {
+      rawSwitch.props.onValueChange(true);
+    });
+
+    expect(renderer!.root.findAllByType(Text).map(getTextContent)).toContain('0x0102ff');
+
+    await act(async () => {
+      renderer!.update(
+        <DAppMessageSigningModal
+          visible
+          request={{
+            signerAddress: '1SignerAddress',
+            kind: 'message',
+            message: '0a0b0c',
+          }}
+          appName="Signer dApp"
+          appOrigin="https://sign.example.com"
+          onApprove={jest.fn()}
+          onReject={jest.fn()}
+        />
+      );
+    });
+
+    const updatedTextValues = renderer!.root.findAllByType(Text).map(getTextContent);
+    expect(updatedTextValues).toContain('CgsM');
+    expect(updatedTextValues).not.toContain('0x0a0b0c');
   });
 });

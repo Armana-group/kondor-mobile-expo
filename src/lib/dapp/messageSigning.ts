@@ -181,9 +181,16 @@ interface AuthenticatedSigningParams {
   authOperation?: string;
 }
 
-export async function signMessageWithAuthenticatedAccount(
-  params: AuthenticatedSigningParams & { message: unknown }
-): Promise<string> {
+interface AuthenticatedSignerContext {
+  account: Account;
+  provider: Provider;
+  signer: Signer;
+}
+
+export async function withAuthenticatedAccountSigner<T>(
+  params: AuthenticatedSigningParams,
+  callback: (context: AuthenticatedSignerContext) => Promise<T>
+): Promise<T> {
   const account = getAccountByAddress(params.signerAddress);
   const provider = getSigningProvider(params.provider);
 
@@ -193,35 +200,44 @@ export async function signMessageWithAuthenticatedAccount(
   try {
     privateKey = await getAuthenticatedPrivateKeyForAccount(
       account,
-      params.authOperation ?? 'sign this message'
+      params.authOperation ?? 'sign with this account'
     );
     signer = createSigner(privateKey, provider);
-    const signature = await signer.signMessage(normalizeMessageForSigning(params.message));
-    return utils.encodeBase64url(signature);
+
+    if (signer.getAddress() !== params.signerAddress) {
+      throw new Error('Authenticated signer does not match the requested account.');
+    }
+
+    return await callback({
+      account,
+      provider,
+      signer,
+    });
   } finally {
     signer = null;
     privateKey = null;
   }
 }
 
+export async function signMessageWithAuthenticatedAccount(
+  params: AuthenticatedSigningParams & { message: unknown }
+): Promise<string> {
+  return withAuthenticatedAccountSigner(params, async ({ signer }) => {
+    const signature = await signer.signMessage(normalizeMessageForSigning(params.message));
+    return utils.encodeBase64url(signature);
+  });
+}
+
 export async function signHashWithAuthenticatedAccount(
   params: AuthenticatedSigningParams & { hash: unknown }
 ): Promise<Uint8Array> {
-  const account = getAccountByAddress(params.signerAddress);
-  const provider = getSigningProvider(params.provider);
-
-  let privateKey: string | null = null;
-  let signer: Signer | null = null;
-
-  try {
-    privateKey = await getAuthenticatedPrivateKeyForAccount(
-      account,
-      params.authOperation ?? 'sign this hash'
-    );
-    signer = createSigner(privateKey, provider);
+  return withAuthenticatedAccountSigner(
+    {
+      ...params,
+      authOperation: params.authOperation ?? 'sign this hash',
+    },
+    async ({ signer }) => {
     return await signer.signHash(normalizeHashBytes(params.hash));
-  } finally {
-    signer = null;
-    privateKey = null;
-  }
+    }
+  );
 }

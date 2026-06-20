@@ -365,7 +365,10 @@ describe('swapTransaction', () => {
     expect(result.confirmationPending).toBe(true);
     expect(result.confirmationError).toContain('context deadline exceeded');
     expect(mockWait).not.toHaveBeenCalled();
-    expect(onBroadcast).not.toHaveBeenCalled();
+    expect(onBroadcast).toHaveBeenCalledWith({
+      transactionId: '0xsent',
+      timestamp: expect.any(Number),
+    });
   });
 
   it('does not emit onBroadcast when the accepted receipt is reverted', async () => {

@@ -6,6 +6,20 @@ jest.mock('@expo/vector-icons', () => ({
   Ionicons: 'Ionicons',
 }));
 
+const mockSecureStoreGetItemAsync = jest.fn();
+const mockSignerFromWif = jest.fn();
+const mockSignerConstructor = jest.fn();
+const mockPrepareTransaction = jest.fn(async function (this: { transaction: Record<string, any> }) {
+  const header = this.transaction.header ?? {};
+  header.nonce = header.nonce ?? '0xprepared';
+  header.rc_limit = header.rc_limit ?? '100000000';
+  this.transaction.header = header;
+});
+
+jest.mock('expo-secure-store', () => ({
+  getItemAsync: (...args: unknown[]) => mockSecureStoreGetItemAsync(...args),
+}));
+
 const mockNavigation = {
   goBack: jest.fn(),
 };
@@ -81,13 +95,19 @@ jest.mock('koilib', () => ({
     constructor(_rpcNodes: string[]) {}
   },
   Signer: class Signer {
+    constructor() {
+      mockSignerConstructor();
+    }
     static fromWif(_privateKey: string) {
+      mockSignerFromWif();
       return new Signer();
     }
   },
   Transaction: class Transaction {
     transaction: Record<string, unknown> = {};
-    async prepare() {}
+    async prepare() {
+      return mockPrepareTransaction.call(this);
+    }
   },
 }));
 
@@ -339,6 +359,8 @@ describe('DAppWebViewScreen getAccounts grants', () => {
       mode: 'mainnet',
       hasHydrated: true,
     };
+    mockSecureStoreGetItemAsync.mockReset();
+    mockSecureStoreGetItemAsync.mockResolvedValue(null);
   });
 
   it('touches an existing auto-connect grant and returns accounts', async () => {
@@ -521,6 +543,40 @@ describe('DAppWebViewScreen getAccounts grants', () => {
         type: 'kondor-response',
         id: 'sign-message-1',
         result: 'signed-message-base64url',
+      },
+    ]);
+  });
+
+  it('prepares transactions without touching SecureStore or constructing signers', async () => {
+    await renderScreen();
+
+    await act(async () => {
+      await emitCommand('prepare-1', 'signer:prepareTransaction', {
+        signerAddress: mockAccount.address,
+        transaction: {
+          operations: [],
+          header: {},
+        },
+      });
+    });
+    await flushEffects();
+
+    expect(mockSecureStoreGetItemAsync).not.toHaveBeenCalled();
+    expect(mockSignerConstructor).not.toHaveBeenCalled();
+    expect(mockSignerFromWif).not.toHaveBeenCalled();
+    expect(parseInjectedResponses()).toEqual([
+      {
+        type: 'kondor-response',
+        id: 'prepare-1',
+        result: {
+          operations: [],
+          header: {
+            payer: mockAccount.address,
+            chain_id: 'mainnet',
+            nonce: '0xprepared',
+            rc_limit: '100000000',
+          },
+        },
       },
     ]);
   });

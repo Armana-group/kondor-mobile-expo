@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -38,6 +38,10 @@ interface DAppMessageSigningModalProps {
   onApprove: (signature: string | Uint8Array) => void;
   onReject: (error: string) => void;
 }
+
+type DAppMessageSigningModalVisibleProps = Omit<DAppMessageSigningModalProps, 'visible' | 'request'> & {
+  request: DAppMessageSigningRequest;
+};
 
 function truncateMiddle(value: string, start = 16, end = 12): string {
   if (value.length <= start + end + 3) {
@@ -81,8 +85,36 @@ function formatHashPreview(hash: unknown, showRawData: boolean): string {
   }
 }
 
-export const DAppMessageSigningModal: React.FC<DAppMessageSigningModalProps> = ({
-  visible,
+function serializeRequestValue(value: unknown): string {
+  if (typeof value === 'string') {
+    return `string:${value}`;
+  }
+
+  if (value instanceof Uint8Array) {
+    return `bytes:${bytesToHex(value)}`;
+  }
+
+  if (value instanceof ArrayBuffer) {
+    return `buffer:${bytesToHex(new Uint8Array(value))}`;
+  }
+
+  if (ArrayBuffer.isView(value)) {
+    return `view:${bytesToHex(new Uint8Array(value.buffer, value.byteOffset, value.byteLength))}`;
+  }
+
+  try {
+    return `json:${JSON.stringify(value)}`;
+  } catch {
+    return `other:${String(value)}`;
+  }
+}
+
+function getRequestResetKey(request: DAppMessageSigningRequest): string {
+  const payload = request.kind === 'hash' ? request.hash : request.message;
+  return `${request.kind}:${request.signerAddress}:${serializeRequestValue(payload)}`;
+}
+
+const DAppMessageSigningModalVisible: React.FC<DAppMessageSigningModalVisibleProps> = ({
   request,
   appName,
   appOrigin,
@@ -95,36 +127,23 @@ export const DAppMessageSigningModal: React.FC<DAppMessageSigningModalProps> = (
   const [showRawData, setShowRawData] = useState(false);
   const [hashAcknowledged, setHashAcknowledged] = useState(false);
 
-  useEffect(() => {
-    if (!visible) {
-      return;
-    }
-
-    setSigning(false);
-    setError(null);
-    setShowRawData(false);
-    setHashAcknowledged(false);
-  }, [visible, request]);
-
   const security = useMemo(
     () =>
       inspectDAppOrigin(appOrigin, {
-        highRiskRequest: request?.kind === 'hash' ? 'raw hash signing' : 'message signing',
+        highRiskRequest: request.kind === 'hash' ? 'raw hash signing' : 'message signing',
       }),
-    [appOrigin, request?.kind]
+    [appOrigin, request.kind]
   );
 
-  const signerAccount = request
-    ? accounts.find((account) => account.address === request.signerAddress)
-    : undefined;
+  const signerAccount = accounts.find((account) => account.address === request.signerAddress);
 
-  const preview = request?.kind === 'hash'
+  const preview = request.kind === 'hash'
     ? formatHashPreview(request.hash, showRawData)
-    : formatMessagePreview(request?.message, showRawData);
+    : formatMessagePreview(request.message, showRawData);
 
   const handleReject = () => {
     HapticFeedback.selection();
-    onReject(request?.kind === 'hash' ? 'User rejected the hash signing request' : 'User rejected the message signing request');
+    onReject(request.kind === 'hash' ? 'User rejected the hash signing request' : 'User rejected the message signing request');
   };
 
   const handleRequestClose = () => {
@@ -169,13 +188,9 @@ export const DAppMessageSigningModal: React.FC<DAppMessageSigningModalProps> = (
     }
   };
 
-  if (!visible || !request) {
-    return null;
-  }
-
   return (
     <Modal
-      visible={visible}
+      visible
       animationType="slide"
       presentationStyle="pageSheet"
       onRequestClose={handleRequestClose}
@@ -289,6 +304,24 @@ export const DAppMessageSigningModal: React.FC<DAppMessageSigningModalProps> = (
         </View>
       </View>
     </Modal>
+  );
+};
+
+export const DAppMessageSigningModal: React.FC<DAppMessageSigningModalProps> = ({
+  visible,
+  request,
+  ...props
+}) => {
+  if (!visible || !request) {
+    return null;
+  }
+
+  return (
+    <DAppMessageSigningModalVisible
+      key={getRequestResetKey(request)}
+      request={request}
+      {...props}
+    />
   );
 };
 
