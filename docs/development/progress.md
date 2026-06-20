@@ -9,9 +9,10 @@
 - Replaced the placeholder Swap tab with token selection, quote review, slippage presets, quote refresh, confirmation alerts, and execution status feedback.
 - Preserved dynamic dry-run RC estimation and kept KoinDX swaps payer-owned rather than using free-mana payer rewriting.
 - Updated dApp transaction decoding so current KoinDX approve and `swap_tokens_in` operations display with readable labels.
+- Hardened canonical KOIN/VHP routing, invalid dry-run RC handling, and dApp KoinDX swap rejection before authentication/signing.
 
 ### Verification
-- `npm test -- --runInBand` passed: 16 suites, 137 tests.
+- `npm test -- --runInBand` passed: 16 suites, 139 tests.
 - `npx tsc --noEmit` passed.
 - Read-only KOIN-to-VHP quote check succeeded against mainnet RPC; no transaction was signed or broadcast.
 - `npm run ios` built, installed, bundled, and launched on the iPhone 15 Pro simulator.
