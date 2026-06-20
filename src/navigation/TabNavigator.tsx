@@ -10,6 +10,7 @@ import { SendScreen } from '../screens/SendScreen';
 import { ReceiveScreen } from '../screens/ReceiveScreen';
 import { ContactsScreen } from '../screens/ContactsScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+import { BackupRecoveryScreen } from '../screens/BackupRecoveryScreen';
 import { TokenManagementScreen } from '../screens/TokenManagementScreen';
 import { ConnectedSitesScreen } from '../screens/ConnectedSitesScreen';
 import { CollectiblesScreen } from '../screens/CollectiblesScreen';
@@ -36,6 +37,7 @@ export type HomeStackParamList = {
   Activity: undefined;
   Contacts: undefined;
   Settings: undefined;
+  BackupRecovery: undefined;
   TokenManagement: undefined;
   ConnectedSites: undefined;
   TokenDetail: { token: Token };
@@ -98,6 +100,10 @@ const HomeStackNavigator = () => (
     <HomeStack.Screen
       name="Settings"
       component={SettingsScreen}
+    />
+    <HomeStack.Screen
+      name="BackupRecovery"
+      component={BackupRecoveryScreen}
     />
     <HomeStack.Screen
       name="TokenManagement"

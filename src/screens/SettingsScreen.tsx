@@ -176,6 +176,19 @@ export const SettingsScreen = () => {
               </View>
               <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
             </TouchableOpacity>
+
+            <View style={styles.separator} />
+
+            <TouchableOpacity
+              style={styles.settingItem}
+              onPress={() => navigation.navigate('BackupRecovery')}
+            >
+              <View style={styles.settingItemLeft}>
+                <Ionicons name="cloud-upload-outline" size={22} color={colors.purple} />
+                <Text style={styles.settingItemText}>Backup & Recovery</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+            </TouchableOpacity>
           </View>
 
           {/* Network Section */}
