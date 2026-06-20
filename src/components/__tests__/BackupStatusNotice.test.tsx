@@ -75,6 +75,26 @@ describe('BackupStatusNotice', () => {
     expect(rendered).toContain('Create a fresh encrypted backup before sending.');
   });
 
+  it('keeps full stale copy explanatory', async () => {
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <BackupStatusNotice
+          backupHealth={{
+            ...baseHealth,
+            status: 'stale',
+            provider: 'manual-file',
+          }}
+          onPress={jest.fn()}
+        />
+      );
+    });
+
+    const rendered = text(renderer!);
+    expect(rendered).toContain('Backup stale');
+    expect(rendered).toContain('Your wallet changed after the last backup. Create a fresh encrypted backup.');
+  });
+
   it('keeps failed compact copy actionable', async () => {
     let renderer: TestRenderer.ReactTestRenderer;
     await act(async () => {
@@ -95,6 +115,27 @@ describe('BackupStatusNotice', () => {
     const rendered = text(renderer!);
     expect(rendered).toContain('Backup failed');
     expect(rendered).toContain('Create a verified backup before relying on it.');
+  });
+
+  it('keeps full failed copy explanatory', async () => {
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <BackupStatusNotice
+          backupHealth={{
+            ...baseHealth,
+            status: 'failed',
+            provider: 'manual-file',
+            failureReason: 'verification failed',
+          }}
+          onPress={jest.fn()}
+        />
+      );
+    });
+
+    const rendered = text(renderer!);
+    expect(rendered).toContain('Backup failed');
+    expect(rendered).toContain('The last backup did not verify. Create a verified encrypted backup before relying on it.');
   });
 
   it('fires onPress from the notice', async () => {

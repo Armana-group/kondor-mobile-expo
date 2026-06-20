@@ -23,11 +23,17 @@ export function BackupStatusNotice({
     return null;
   }
 
-  const body = backupHealth.status === 'stale'
+  const fullBody = backupHealth.status === 'stale'
+    ? 'Your wallet changed after the last backup. Create a fresh encrypted backup.'
+    : backupHealth.status === 'failed'
+      ? 'The last backup did not verify. Create a verified encrypted backup before relying on it.'
+      : 'Create a verified encrypted backup before relying on this wallet.';
+  const compactBody = backupHealth.status === 'stale'
     ? 'Create a fresh encrypted backup before sending.'
     : backupHealth.status === 'failed'
       ? 'Create a verified backup before relying on it.'
-      : 'Create a verified encrypted backup before relying on this wallet.';
+      : fullBody;
+  const body = compact ? compactBody : fullBody;
   const showBody = !compact || backupHealth.status === 'stale' || backupHealth.status === 'failed';
 
   return (
