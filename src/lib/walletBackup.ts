@@ -3,7 +3,8 @@ import { validateMnemonic, createWalletFromMnemonic, createWalletFromPrivateKey 
 import type { Account } from '../stores/walletStore';
 
 const BACKUP_KIND = 'kondor-wallet-backup';
-const BACKUP_VERSION = 1;
+const BACKUP_VERSION = 2;
+const LEGACY_BACKUP_VERSION = 1;
 const PBKDF2_ITERATIONS = 250000;
 const AES_KEY_LENGTH = 256;
 const SALT_BYTES = 16;
@@ -19,6 +20,13 @@ export interface EncryptedSecret {
   keyLength: number;
 }
 
+export interface BackupEncryptionMetadata {
+  algorithm: 'pbkdf2-aes-256-gcm';
+  digest: 'SHA-256';
+  keyLength: number;
+  iterations: number;
+}
+
 export interface WalletBackupAccountData extends Account {
   encryptedPrivateKey: EncryptedSecret;
 }
@@ -30,13 +38,34 @@ export interface WalletBackupSnapshot {
   accounts: WalletBackupAccountData[];
 }
 
-export interface BackupData {
+export interface CreateWalletBackupOptions {
+  version?: 1 | 2;
+  now?: string;
+  appVersion?: string;
+}
+
+export interface BackupDataV1 {
   kind: typeof BACKUP_KIND;
-  version: typeof BACKUP_VERSION;
+  version: typeof LEGACY_BACKUP_VERSION;
   createdAt: string;
   checksum: string;
   wallet: WalletBackupSnapshot;
 }
+
+export interface BackupDataV2 {
+  kind: typeof BACKUP_KIND;
+  version: typeof BACKUP_VERSION;
+  createdAt: string;
+  updatedAt: string;
+  appVersion: string;
+  walletFingerprint: string;
+  accountSetHash: string;
+  encryption: BackupEncryptionMetadata;
+  checksum: string;
+  wallet: WalletBackupSnapshot;
+}
+
+export type BackupData = BackupDataV1 | BackupDataV2;
 
 export interface RestoredWalletSnapshot {
   accounts: Account[];
@@ -128,6 +157,10 @@ function stableStringify(value: unknown): string {
     .join(',')}}`;
 }
 
+function getChecksumPayload(backup: Omit<BackupData, 'checksum'>): Omit<BackupData, 'checksum'> {
+  return backup;
+}
+
 async function computeChecksum(payload: Omit<BackupData, 'checksum'>): Promise<string> {
   return Crypto.digestStringAsync(
     Crypto.CryptoDigestAlgorithm.SHA256,
@@ -139,7 +172,7 @@ function assertSupportedVersion(backup: BackupData): void {
   if (backup.kind !== BACKUP_KIND) {
     throw new Error('Unsupported backup format');
   }
-  if (backup.version !== BACKUP_VERSION) {
+  if (backup.version !== LEGACY_BACKUP_VERSION && backup.version !== BACKUP_VERSION) {
     throw new Error('Unsupported backup version');
   }
 }
@@ -156,31 +189,14 @@ function assertBackupShape(backup: BackupData): void {
   }
 }
 
-async function decryptAndValidateMnemonic(
-  encryptedMnemonic: EncryptedSecret | undefined,
-  accounts: WalletBackupAccountData[],
-  pin: string
-): Promise<string | null> {
-  if (!encryptedMnemonic) {
-    const hasHdAccounts = accounts.some((account) => !account.isImported);
-    if (hasHdAccounts) {
-      throw new Error('Backup is missing the encrypted mnemonic for HD accounts');
-    }
-    return null;
-  }
-
-  const mnemonic = await decryptSecretWithPin(encryptedMnemonic, pin);
-  if (!validateMnemonic(mnemonic)) {
-    throw new Error('Backup mnemonic is invalid');
-  }
-  return mnemonic;
-}
-
-export async function encryptSecretWithPin(secret: string, pin: string): Promise<EncryptedSecret> {
+export async function encryptSecretWithBackupSecret(
+  secret: string,
+  backupSecret: string
+): Promise<EncryptedSecret> {
   const subtle = getSubtleCrypto();
   const salt = normalizeBytes(await Crypto.getRandomBytesAsync(SALT_BYTES));
   const iv = normalizeBytes(await Crypto.getRandomBytesAsync(IV_BYTES));
-  const key = await deriveAesKey(pin, salt, ['encrypt']);
+  const key = await deriveAesKey(backupSecret, salt, ['encrypt']);
   const encodedSecret = normalizeBytes(new TextEncoder().encode(secret));
   const encrypted = await subtle.encrypt(
     { name: 'AES-GCM', iv: toArrayBuffer(iv) },
@@ -199,7 +215,12 @@ export async function encryptSecretWithPin(secret: string, pin: string): Promise
   };
 }
 
-export async function decryptSecretWithPin(secret: EncryptedSecret, pin: string): Promise<string> {
+export const encryptSecretWithPin = encryptSecretWithBackupSecret;
+
+export async function decryptSecretWithBackupSecret(
+  secret: EncryptedSecret,
+  backupSecret: string
+): Promise<string> {
   if (
     !secret ||
     secret.algorithm !== 'pbkdf2-aes-256-gcm' ||
@@ -214,7 +235,7 @@ export async function decryptSecretWithPin(secret: EncryptedSecret, pin: string)
   const salt = normalizeBytes(hexToBytes(secret.salt));
   const iv = normalizeBytes(hexToBytes(secret.iv));
   const ciphertext = normalizeBytes(hexToBytes(secret.ciphertext));
-  const key = await deriveAesKey(pin, salt, ['decrypt']);
+  const key = await deriveAesKey(backupSecret, salt, ['decrypt']);
 
   try {
     const decrypted = await subtle.decrypt(
@@ -228,35 +249,121 @@ export async function decryptSecretWithPin(secret: EncryptedSecret, pin: string)
   }
 }
 
+export const decryptSecretWithPin = decryptSecretWithBackupSecret;
+
+async function decryptAndValidateMnemonic(
+  encryptedMnemonic: EncryptedSecret | undefined,
+  accounts: WalletBackupAccountData[],
+  backupSecret: string
+): Promise<string | null> {
+  if (!encryptedMnemonic) {
+    const hasHdAccounts = accounts.some((account) => !account.isImported);
+    if (hasHdAccounts) {
+      throw new Error('Backup is missing the encrypted mnemonic for HD accounts');
+    }
+    return null;
+  }
+
+  const mnemonic = await decryptSecretWithBackupSecret(encryptedMnemonic, backupSecret);
+  if (!validateMnemonic(mnemonic)) {
+    throw new Error('Backup mnemonic is invalid');
+  }
+  return mnemonic;
+}
+
 export async function createWalletBackup(
   walletSnapshot: WalletBackupSnapshot,
-  pin: string
+  backupSecret: string,
+  options: CreateWalletBackupOptions = {}
 ): Promise<BackupData> {
   if (!walletSnapshot.accounts.length) {
     throw new Error('Cannot back up an empty wallet');
   }
 
-  const createdAt = new Date().toISOString();
-  const backupWithoutChecksum = {
+  const version = options.version ?? BACKUP_VERSION;
+  const createdAt = options.now ?? new Date().toISOString();
+
+  if (version === LEGACY_BACKUP_VERSION) {
+    const backupWithoutChecksum: Omit<BackupDataV1, 'checksum'> = {
+      kind: BACKUP_KIND,
+      version: LEGACY_BACKUP_VERSION,
+      createdAt,
+      wallet: walletSnapshot,
+    };
+
+    await restoreWalletBackup(
+      {
+        ...backupWithoutChecksum,
+        checksum: '',
+      } as BackupData,
+      backupSecret,
+      { skipChecksum: true }
+    );
+
+    return {
+      ...backupWithoutChecksum,
+      checksum: await computeChecksum(getChecksumPayload(backupWithoutChecksum)),
+    };
+  }
+
+  const accountSetHash = await getBackupAccountSetHash(walletSnapshot.accounts);
+  const walletFingerprint = await getBackupWalletFingerprint(walletSnapshot);
+  const backupWithoutChecksum: Omit<BackupDataV2, 'checksum'> = {
     kind: BACKUP_KIND,
     version: BACKUP_VERSION,
     createdAt,
+    updatedAt: createdAt,
+    appVersion: options.appVersion ?? 'unknown',
+    walletFingerprint,
+    accountSetHash,
+    encryption: {
+      algorithm: 'pbkdf2-aes-256-gcm',
+      digest: 'SHA-256',
+      keyLength: AES_KEY_LENGTH,
+      iterations: PBKDF2_ITERATIONS,
+    },
     wallet: walletSnapshot,
-  } as const;
+  };
 
   await restoreWalletBackup(
     {
       ...backupWithoutChecksum,
       checksum: '',
     } as BackupData,
-    pin,
+    backupSecret,
     { skipChecksum: true }
   );
 
   return {
     ...backupWithoutChecksum,
-    checksum: await computeChecksum(backupWithoutChecksum),
+    checksum: await computeChecksum(getChecksumPayload(backupWithoutChecksum)),
   };
+}
+
+export async function getBackupAccountSetHash(accounts: Account[]): Promise<string> {
+  const publicAccounts = accounts.map(({ id, name, address, derivationIndex, isImported }) => ({
+    id,
+    name,
+    address,
+    derivationIndex,
+    isImported,
+  }));
+
+  return Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    stableStringify(publicAccounts)
+  );
+}
+
+export async function getBackupWalletFingerprint(snapshot: WalletBackupSnapshot): Promise<string> {
+  return Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    stableStringify({
+      activeAccountId: snapshot.activeAccountId,
+      nextDerivationIndex: snapshot.nextDerivationIndex,
+      accounts: snapshot.accounts.map(({ encryptedPrivateKey: _encryptedPrivateKey, ...account }) => account),
+    })
+  );
 }
 
 export async function verifyWalletBackup(backup: BackupData, pin: string): Promise<boolean> {
@@ -270,19 +377,17 @@ export async function verifyWalletBackup(backup: BackupData, pin: string): Promi
 
 export async function restoreWalletBackup(
   backup: BackupData,
-  pin: string,
+  backupSecret: string,
   options?: { skipChecksum?: boolean }
 ): Promise<RestoredWalletSnapshot> {
   assertSupportedVersion(backup);
   assertBackupShape(backup);
 
   if (!options?.skipChecksum) {
-    const expectedChecksum = await computeChecksum({
-      kind: backup.kind,
-      version: backup.version,
-      createdAt: backup.createdAt,
-      wallet: backup.wallet,
-    });
+    const { checksum: _checksum, ...backupWithoutChecksum } = backup;
+    const expectedChecksum = await computeChecksum(
+      getChecksumPayload(backupWithoutChecksum as Omit<BackupData, 'checksum'>)
+    );
 
     if (backup.checksum !== expectedChecksum) {
       throw new Error('Backup checksum mismatch');
@@ -292,12 +397,12 @@ export async function restoreWalletBackup(
   const mnemonic = await decryptAndValidateMnemonic(
     backup.wallet.encryptedMnemonic,
     backup.wallet.accounts,
-    pin
+    backupSecret
   );
   const importedPrivateKeys: Record<string, string> = {};
 
   for (const account of backup.wallet.accounts) {
-    const privateKey = await decryptSecretWithPin(account.encryptedPrivateKey, pin);
+    const privateKey = await decryptSecretWithBackupSecret(account.encryptedPrivateKey, backupSecret);
     const walletFromKey = createWalletFromPrivateKey(privateKey);
 
     if (walletFromKey.address !== account.address) {
