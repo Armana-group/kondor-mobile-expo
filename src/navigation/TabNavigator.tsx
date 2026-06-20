@@ -16,7 +16,7 @@ import { ConnectedSitesScreen } from '../screens/ConnectedSitesScreen';
 import { CollectiblesScreen } from '../screens/CollectiblesScreen';
 import { NFTDetailScreen } from '../screens/NFTDetailScreen';
 import { SwapScreen } from '../screens/SwapScreen';
-import { ActivityScreen } from '../screens/ActivityScreen';
+import { ActivityScreen, type ActivityFilter } from '../screens/ActivityScreen';
 import { BrowserScreen } from '../screens/BrowserScreen';
 import { TokenDetailScreen } from '../screens/TokenDetailScreen';
 import { DAppWebViewScreen } from '../screens/DAppWebViewScreen';
@@ -34,7 +34,7 @@ export type HomeStackParamList = {
   HomeMain: undefined;
   Send: { token?: Token } | undefined;
   Receive: { token?: Token } | undefined;
-  Activity: undefined;
+  Activity: { initialFilter?: ActivityFilter } | undefined;
   Contacts: undefined;
   Settings: undefined;
   BackupRecovery: undefined;
@@ -89,6 +89,9 @@ const HomeStackNavigator = () => (
     <HomeStack.Screen
       name="Activity"
       component={ActivityScreen}
+      options={{
+        animation: 'slide_from_right',
+      }}
     />
     <HomeStack.Screen
       name="Contacts"

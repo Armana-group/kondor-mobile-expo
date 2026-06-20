@@ -8,6 +8,11 @@
 import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import { Provider, Transaction, TransactionJson, utils } from 'koilib';
+import { useTokenStore } from '../stores/tokenStore';
+import {
+  buildPendingTransactionFromBroadcast,
+  useTransactionStore,
+} from '../stores/transactionStore';
 import { useWalletStore } from '../stores/walletStore';
 import {
   useWalletConnectStore,
@@ -47,6 +52,8 @@ export const WalletConnectHandler: React.FC = () => {
   const { address, isWalletCreated } = useWalletStore();
   const networkMode = useNetworkStore((state) => state.mode);
   const hasHydrated = useNetworkStore((state) => state.hasHydrated);
+  const historyNetworkMode = hasHydrated ? networkMode : 'mainnet';
+  const getTokenByContractId = useTokenStore((state) => state.getTokenByContractId);
   const {
     initialized,
     initialize,
@@ -355,6 +362,23 @@ export const WalletConnectHandler: React.FC = () => {
 
       try {
         const { id, topic, method } = transactionApproval.current;
+        if (method === KOINOS_METHODS.SignAndSendTransaction) {
+          useTransactionStore.getState().addPendingTransaction({
+            address: transactionApproval.request.signerAddress || address || '',
+            networkMode: historyNetworkMode,
+            chainTransactionId: signingResult.transaction.id,
+            source: 'walletconnect',
+            appOrigin: transactionApproval.appOrigin,
+            transaction: buildPendingTransactionFromBroadcast({
+              address: transactionApproval.request.signerAddress || address || '',
+              chainTransactionId: signingResult.transaction.id,
+              transaction: signingResult.transaction,
+              timestamp: Date.now(),
+              receipt: signingResult.receipt as { rc_used?: string | number | bigint | null } | null | undefined,
+              getTokenByContractId,
+            }),
+          });
+        }
 
         if (method === KOINOS_METHODS.SignAndSendTransaction) {
           // Return both transaction and receipt
@@ -376,7 +400,7 @@ export const WalletConnectHandler: React.FC = () => {
         Alert.alert('Error', sanitizeErrorForUser(error, 'Failed to send response'));
       }
     },
-    [transactionApproval, respondToRequest, clearPendingTransaction]
+    [address, clearPendingTransaction, getTokenByContractId, historyNetworkMode, respondToRequest, transactionApproval]
   );
 
   // Handle transaction rejection

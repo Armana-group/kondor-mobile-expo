@@ -26,6 +26,7 @@ import {
   isTokenScopeLoading,
 } from '../stores/tokenStore';
 import { useNetworkStore } from '../stores/networkStore';
+import { useTransactionStore } from '../stores/transactionStore';
 import { tokenPriceService } from '../lib/tokenPrices';
 import { truncateAddress, formatKoinBalance } from '../lib/utils';
 import { HapticFeedback } from '../lib/haptics';
@@ -86,6 +87,10 @@ export const HomeScreen = () => {
     cacheKey: tokenCacheKey,
     isLoading: tokensLoading,
   });
+  const pendingTransactionCount = useTransactionStore((state) => state.getPendingTransactions({
+    address,
+    networkMode: hasHydrated ? networkMode : 'mainnet',
+  }).length);
 
   // Core balance fetching logic (silent - no spinner)
   const fetchBalances = useCallback(async () => {
@@ -336,6 +341,21 @@ export const HomeScreen = () => {
           <View style={styles.headerActions}>
             <TouchableOpacity
               style={styles.headerButton}
+              onPress={() => navigation.navigate('Activity', pendingTransactionCount > 0 ? {
+                initialFilter: 'pending',
+              } : undefined)}
+            >
+              <Ionicons name="time-outline" size={22} color={colors.textSecondary} />
+              {pendingTransactionCount > 0 && (
+                <View style={styles.headerButtonBadge}>
+                  <Text style={styles.headerButtonBadgeText}>
+                    {pendingTransactionCount > 9 ? '9+' : pendingTransactionCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.headerButton}
               onPress={() => navigation.navigate('Contacts')}
             >
               <Ionicons name="people-outline" size={22} color={colors.textSecondary} />
@@ -552,6 +572,24 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     justifyContent: 'center',
     alignItems: 'center',
+    position: 'relative',
+  },
+  headerButtonBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    backgroundColor: colors.warning,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerButtonBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.background,
   },
   portfolioCard: {
     marginHorizontal: 16,

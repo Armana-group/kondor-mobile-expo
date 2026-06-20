@@ -28,6 +28,7 @@ import {
   isTokenScopeLoading,
 } from '../stores/tokenStore';
 import { useNetworkStore } from '../stores/networkStore';
+import { useTransactionStore } from '../stores/transactionStore';
 import { isValidAddress, calculateManaRegenTime, truncateAddress, formatKoinBalance } from '../lib/utils';
 import { requireBiometricAuth } from '../lib/biometrics';
 import { koinosLogger } from '../lib/logger';
@@ -99,6 +100,7 @@ export const SendScreen = () => {
   } = useTokenStore();
   const networkMode = useNetworkStore((state) => state.mode);
   const hasHydrated = useNetworkStore((state) => state.hasHydrated);
+  const historyNetworkMode = hasHydrated ? networkMode : 'mainnet';
   const visibleTokens = getScopedTokens({
     hasHydrated,
     networkMode,
@@ -288,6 +290,29 @@ export const SendScreen = () => {
                 amount,
                 selectedToken.decimals
               );
+
+              if (address) {
+                useTransactionStore.getState().addPendingTransaction({
+                  address,
+                  networkMode: historyNetworkMode,
+                  chainTransactionId: txId,
+                  source: 'send',
+                  transaction: {
+                    id: txId,
+                    type: 'send',
+                    amount,
+                    token: selectedToken.contractId,
+                    tokenSymbol: selectedToken.symbol,
+                    tokenDecimals: selectedToken.decimals,
+                    tokenIcon: selectedToken.icon,
+                    from: address,
+                    to: recipient,
+                    timestamp: Date.now(),
+                    fee: '0',
+                    payer: address,
+                  },
+                });
+              }
 
               // Refresh balances
               const newBalance = await getBalance(address);

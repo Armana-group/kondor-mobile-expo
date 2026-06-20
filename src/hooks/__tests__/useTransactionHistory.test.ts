@@ -4,7 +4,10 @@ jest.mock(
 );
 
 import type { ParsedTransaction } from '../../lib/transactionHistoryParser';
-import { getScopedHistoryState } from '../useTransactionHistory';
+import {
+  getScopedHistoryState,
+  mergeConfirmedAndPendingTransactions,
+} from '../useTransactionHistory';
 
 const sampleTransaction: ParsedTransaction = {
   id: 'tx-1',
@@ -54,5 +57,47 @@ describe('getScopedHistoryState', () => {
       refreshing: true,
       error: null,
     });
+  });
+});
+
+describe('mergeConfirmedAndPendingTransactions', () => {
+  it('keeps optimistic pending transactions ahead of older confirmed history', () => {
+    const pending: ParsedTransaction = {
+      ...sampleTransaction,
+      id: 'tx-pending',
+      type: 'send',
+      status: 'pending',
+      timestamp: 300,
+    };
+    const confirmed: ParsedTransaction = {
+      ...sampleTransaction,
+      id: 'tx-confirmed',
+      status: 'confirmed',
+      timestamp: 200,
+    };
+
+    expect(mergeConfirmedAndPendingTransactions([confirmed], [pending])).toEqual([
+      pending,
+      confirmed,
+    ]);
+  });
+
+  it('drops optimistic entries once confirmed history includes the same chain transaction id', () => {
+    const pending: ParsedTransaction = {
+      ...sampleTransaction,
+      id: 'tx-1',
+      status: 'pending',
+      timestamp: 400,
+    };
+    const confirmed: ParsedTransaction = {
+      ...sampleTransaction,
+      id: 'tx-1',
+      status: 'confirmed',
+      timestamp: 350,
+    };
+
+    expect(mergeConfirmedAndPendingTransactions([confirmed], [pending])).toEqual([
+      confirmed,
+    ]);
   });
 });

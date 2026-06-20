@@ -15,6 +15,7 @@ import {
   type SwapToken,
 } from '../lib/swapMath';
 import { getActiveNetworkConfig, type NetworkConfig, useNetworkStore } from '../stores/networkStore';
+import { useTransactionStore } from '../stores/transactionStore';
 import type { Token } from '../stores/tokenStore';
 
 declare const require: <T = unknown>(moduleName: string) => T;
@@ -656,6 +657,32 @@ export function useNativeSwap(): UseNativeSwapResult {
           maxRc: Number(mana.max) || undefined,
           availableRc: Number(mana.available) || undefined,
           onStatus: (status) => context.setStatus(mapExecutionStatus(status)),
+          onBroadcast: ({ transactionId, timestamp }) => {
+            useTransactionStore.getState().addPendingTransaction({
+              address: fromAddress,
+              networkMode: hasHydrated ? networkMode : 'mainnet',
+              chainTransactionId: transactionId,
+              source: 'swap',
+              transaction: {
+                id: transactionId,
+                type: 'swap',
+                amount: context.amount,
+                token: inputToken.contractId,
+                tokenSymbol: inputToken.symbol,
+                tokenDecimals: inputToken.decimals,
+                tokenIcon: inputToken.icon,
+                from: fromAddress,
+                to: fromAddress,
+                timestamp,
+                fee: '0',
+                payer: fromAddress,
+                swapTokenOut: outputToken.contractId,
+                swapTokenOutSymbol: outputToken.symbol,
+                swapAmountOutMin: quote.amountOutMin,
+                swapRoute: `${inputToken.symbol} -> ${outputToken.symbol}`,
+              },
+            });
+          },
         });
 
         const walletStore = getWalletStoreModule().useWalletStore.getState();

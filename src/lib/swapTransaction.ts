@@ -40,6 +40,7 @@ export interface SwapTransactionParams {
   availableRc?: number;
   receiverAddress?: string;
   onStatus?: (status: SwapExecutionStatus) => void;
+  onBroadcast?: (details: { transactionId: string; timestamp: number }) => void;
 }
 
 function getRevertReason(receipt: Partial<TransactionReceipt>): string {
@@ -253,6 +254,10 @@ export async function executeSwapTransaction(
   } catch (error) {
     throw normalizeSwapExecutionError(error);
   }
+  params.onBroadcast?.({
+    transactionId: receipt.id,
+    timestamp: Date.now(),
+  });
   const broadcastRpcError = getReceiptRpcError(receipt);
   if (broadcastRpcError && isInsufficientRcError(broadcastRpcError)) {
     throw new Error(INSUFFICIENT_SWAP_MANA_MESSAGE);

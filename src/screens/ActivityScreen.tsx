@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -13,19 +13,32 @@ import {
   Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { RouteProp, useRoute } from '@react-navigation/native';
 import { Screen } from '../components/Screen';
 import { useTransactionHistory, ParsedTransaction } from '../hooks/useTransactionHistory';
+import type { HomeStackParamList } from '../navigation/TabNavigator';
 import { getTransactionExplorerUrl } from '../lib/explorer';
 import { truncateAddress } from '../lib/utils';
 import colors from '../theme/colors';
 
-/**
- * Format transaction time relative to now
- */
-const formatTransactionTime = (timestamp: number): string => {
-  // 0 / missing = timestamp unavailable from the API; show neutral status
-  // rather than a misleading relative time.
+export type ActivityFilter = 'all' | 'send' | 'receive' | 'swap' | 'pending';
+
+const FILTER_OPTIONS: Array<{ value: ActivityFilter; label: string }> = [
+  { value: 'all', label: 'All' },
+  { value: 'send', label: 'Send' },
+  { value: 'receive', label: 'Receive' },
+  { value: 'swap', label: 'Swap' },
+  { value: 'pending', label: 'Pending' },
+];
+
+function formatTransactionTime(transaction: ParsedTransaction): string {
+  if (transaction.status === 'pending') {
+    return 'Pending';
+  }
+
+  const { timestamp } = transaction;
   if (!timestamp) return 'Confirmed';
+
   const now = Date.now();
   const diff = now - timestamp;
   const seconds = Math.floor(diff / 1000);
@@ -38,35 +51,87 @@ const formatTransactionTime = (timestamp: number): string => {
   if (hours < 24) return `${hours}h ago`;
   if (days < 7) return `${days}d ago`;
   return new Date(timestamp).toLocaleDateString();
-};
+}
 
-const getTransactionLabel = (tx: ParsedTransaction): string => {
+function getTransactionLabel(tx: ParsedTransaction): string {
   if (tx.type === 'swap') return 'Swap';
   return tx.type === 'send' ? 'Sent' : 'Received';
-};
+}
 
-const getTransactionDetail = (tx: ParsedTransaction): string => {
+function getTransactionDetail(tx: ParsedTransaction): string {
   if (tx.type === 'swap') return tx.swapRoute || `${tx.tokenSymbol} swap`;
   return tx.type === 'send' ? truncateAddress(tx.to) : truncateAddress(tx.from);
-};
+}
 
-const getTransactionColor = (tx: ParsedTransaction): string => {
+function getTransactionColor(tx: ParsedTransaction): string {
+  if (tx.status === 'pending') return colors.warning;
   if (tx.type === 'receive') return colors.success;
   if (tx.type === 'swap') return colors.purple;
   return colors.error;
-};
+}
 
-const getTransactionIcon = (tx: ParsedTransaction): keyof typeof Ionicons.glyphMap => {
+function getTransactionIcon(tx: ParsedTransaction): keyof typeof Ionicons.glyphMap {
+  if (tx.status === 'pending') return 'time-outline';
   if (tx.type === 'swap') return 'swap-horizontal';
   return tx.type === 'send' ? 'arrow-up' : 'arrow-down';
-};
+}
 
-const getAmountPrefix = (tx: ParsedTransaction): string => {
-  return tx.type === 'receive' ? '+' : '-';
-};
+function getAmountDisplay(tx: ParsedTransaction): string {
+  if (tx.status === 'pending' && tx.amount === '0' && tx.tokenSymbol === 'TX') {
+    return 'Pending';
+  }
+
+  const prefix = tx.type === 'receive' ? '+' : '-';
+  return `${prefix}${tx.amount}`;
+}
 
 export const ActivityScreen = () => {
+  const route = useRoute<RouteProp<HomeStackParamList, 'Activity'>>();
   const { transactions, loading, error, refetch } = useTransactionHistory();
+  const [activeFilter, setActiveFilter] = useState<ActivityFilter>(
+    route.params?.initialFilter ?? 'all'
+  );
+
+  useEffect(() => {
+    if (route.params?.initialFilter) {
+      setActiveFilter(route.params.initialFilter);
+    }
+  }, [route.params?.initialFilter]);
+
+  const filteredTransactions = useMemo(() => {
+    if (activeFilter === 'all') {
+      return transactions;
+    }
+    if (activeFilter === 'pending') {
+      return transactions.filter((transaction) => transaction.status === 'pending');
+    }
+    return transactions.filter((transaction) => transaction.type === activeFilter);
+  }, [activeFilter, transactions]);
+
+  const renderFilterChip = useCallback(
+    ({ item }: { item: { value: ActivityFilter; label: string } }) => {
+      const isActive = item.value === activeFilter;
+      return (
+        <TouchableOpacity
+          style={[
+            styles.filterChip,
+            isActive ? styles.filterChipActive : null,
+          ]}
+          onPress={() => setActiveFilter(item.value)}
+        >
+          <Text
+            style={[
+              styles.filterChipText,
+              isActive ? styles.filterChipTextActive : null,
+            ]}
+          >
+            {item.label}
+          </Text>
+        </TouchableOpacity>
+      );
+    },
+    [activeFilter]
+  );
 
   const handleTransactionPress = (tx: ParsedTransaction) => {
     const detail =
@@ -84,6 +149,7 @@ export const ActivityScreen = () => {
       'Transaction Details',
       `Type: ${getTransactionLabel(tx)}\n` +
       detail +
+      `Status: ${tx.status === 'pending' ? 'Pending' : 'Confirmed'}\n` +
       `Block: ${tx.blockHeight || 'N/A'}\n` +
       `Time: ${tx.timestamp ? new Date(tx.timestamp).toLocaleString() : 'N/A'}`,
       [
@@ -118,7 +184,7 @@ export const ActivityScreen = () => {
         )}
         <View style={[
           styles.transactionTypeIndicator,
-          { backgroundColor: getTransactionColor(tx) }
+          { backgroundColor: getTransactionColor(tx) },
         ]}>
           <Ionicons
             name={getTransactionIcon(tx)}
@@ -128,9 +194,16 @@ export const ActivityScreen = () => {
         </View>
       </View>
       <View style={styles.transactionDetails}>
-        <Text style={styles.transactionType}>
-          {getTransactionLabel(tx)} {tx.tokenSymbol}
-        </Text>
+        <View style={styles.transactionTitleRow}>
+          <Text style={styles.transactionType}>
+            {getTransactionLabel(tx)} {tx.tokenSymbol}
+          </Text>
+          {tx.status === 'pending' && (
+            <View style={styles.pendingBadge}>
+              <Text style={styles.pendingBadgeText}>Pending</Text>
+            </View>
+          )}
+        </View>
         <Text style={styles.transactionAddress}>
           {getTransactionDetail(tx)}
         </Text>
@@ -138,28 +211,36 @@ export const ActivityScreen = () => {
       <View style={styles.transactionAmount}>
         <Text style={[
           styles.transactionAmountText,
-          { color: getTransactionColor(tx) }
+          { color: getTransactionColor(tx) },
         ]}>
-          {getAmountPrefix(tx)}{tx.amount}
+          {getAmountDisplay(tx)}
         </Text>
         <Text style={styles.transactionTime}>
-          {formatTransactionTime(tx.timestamp)}
+          {formatTransactionTime(tx)}
         </Text>
       </View>
     </TouchableOpacity>
   );
 
-  const renderEmpty = () => (
-    <View style={styles.emptyState}>
-      <View style={styles.emptyIconContainer}>
-        <Ionicons name="document-text-outline" size={36} color={colors.textTertiary} />
+  const renderEmpty = () => {
+    const activeLabel = FILTER_OPTIONS.find((option) => option.value === activeFilter)?.label ?? 'Transactions';
+
+    return (
+      <View style={styles.emptyState}>
+        <View style={styles.emptyIconContainer}>
+          <Ionicons name="document-text-outline" size={36} color={colors.textTertiary} />
+        </View>
+        <Text style={styles.emptyTitle}>
+          {activeFilter === 'all' ? 'No Transactions' : `No ${activeLabel}`}
+        </Text>
+        <Text style={styles.emptyDescription}>
+          {activeFilter === 'pending'
+            ? 'Broadcasted transactions will stay here until on-chain history confirms them.'
+            : 'Your transaction history will appear here.'}
+        </Text>
       </View>
-      <Text style={styles.emptyTitle}>No Transactions</Text>
-      <Text style={styles.emptyDescription}>
-        Your transaction history will appear here.
-      </Text>
-    </View>
-  );
+    );
+  };
 
   const renderError = () => (
     <View style={styles.errorState}>
@@ -177,7 +258,16 @@ export const ActivityScreen = () => {
           <Text style={styles.title}>Activity</Text>
         </View>
 
-        {loading && transactions.length === 0 ? (
+        <FlatList
+          horizontal
+          data={FILTER_OPTIONS}
+          keyExtractor={(item) => item.value}
+          renderItem={renderFilterChip}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterRow}
+        />
+
+        {loading && filteredTransactions.length === 0 ? (
           <View style={styles.loadingState}>
             <ActivityIndicator size="large" color={colors.purple} />
             <Text style={styles.loadingText}>Loading transactions...</Text>
@@ -186,11 +276,13 @@ export const ActivityScreen = () => {
           renderError()
         ) : (
           <FlatList
-            data={transactions}
+            data={filteredTransactions}
             keyExtractor={(item) => item.id}
             renderItem={renderTransaction}
             ListEmptyComponent={renderEmpty}
-            contentContainerStyle={transactions.length === 0 ? styles.emptyContainer : styles.listContainer}
+            contentContainerStyle={
+              filteredTransactions.length === 0 ? styles.emptyContainer : styles.listContainer
+            }
             refreshControl={
               <RefreshControl
                 refreshing={loading}
@@ -213,11 +305,36 @@ const styles = StyleSheet.create({
   },
   header: {
     padding: 20,
-    paddingBottom: 16,
+    paddingBottom: 8,
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
+    color: colors.textPrimary,
+  },
+  filterRow: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    gap: 8,
+  },
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  filterChipActive: {
+    backgroundColor: colors.purple,
+    borderColor: colors.purple,
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  filterChipTextActive: {
     color: colors.textPrimary,
   },
   listContainer: {
@@ -275,12 +392,28 @@ const styles = StyleSheet.create({
   },
   transactionDetails: {
     flex: 1,
+    gap: 4,
+  },
+  transactionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   transactionType: {
     fontSize: 16,
     fontWeight: '600',
     color: colors.textPrimary,
-    marginBottom: 2,
+  },
+  pendingBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: colors.warning,
+  },
+  pendingBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.background,
   },
   transactionAddress: {
     fontSize: 13,
@@ -289,6 +422,7 @@ const styles = StyleSheet.create({
   },
   transactionAmount: {
     alignItems: 'flex-end',
+    marginLeft: 12,
   },
   transactionAmountText: {
     fontSize: 16,

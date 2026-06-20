@@ -21,6 +21,11 @@ import * as SecureStore from 'expo-secure-store';
 import { DApp } from '../constants/dapps';
 import colors from '../theme/colors';
 import { Account, useWalletStore } from '../stores/walletStore';
+import { useTokenStore } from '../stores/tokenStore';
+import {
+  buildPendingTransactionFromBroadcast,
+  useTransactionStore,
+} from '../stores/transactionStore';
 import { browserLogger } from '../lib/logger';
 import {
   KONDOR_PROVIDER_SCRIPT,
@@ -120,6 +125,8 @@ export const DAppWebViewScreen = () => {
   const { app } = route.params;
   const networkMode = useNetworkStore((state) => state.mode);
   const hasHydrated = useNetworkStore((state) => state.hasHydrated);
+  const historyNetworkMode = hasHydrated ? networkMode : 'mainnet';
+  const getTokenByContractId = useTokenStore((state) => state.getTokenByContractId);
   const activeNetwork = getActiveNetworkConfig();
   const rpcNodesKey = activeNetwork.rpcNodes.join(',');
   const rpcNodes = useMemo(() => rpcNodesKey.split(',').filter(Boolean), [rpcNodesKey]);
@@ -419,6 +426,23 @@ export const DAppWebViewScreen = () => {
 
     if (pendingRequest) {
       browserLogger.debug('Transaction approved:', pendingRequest.id);
+      if (pendingRequest.isSend) {
+        useTransactionStore.getState().addPendingTransaction({
+          address: pendingRequest.request.signerAddress || address || '',
+          networkMode: historyNetworkMode,
+          chainTransactionId: result.transaction.id,
+          source: 'dapp',
+          appOrigin: pendingRequest.origin,
+          transaction: buildPendingTransactionFromBroadcast({
+            address: pendingRequest.request.signerAddress || address || '',
+            chainTransactionId: result.transaction.id,
+            transaction: result.transaction,
+            timestamp: Date.now(),
+            receipt: result.receipt as { rc_used?: string | number | bigint | null } | null | undefined,
+            getTokenByContractId,
+          }),
+        });
+      }
       // Send the result back to the dApp
       if (pendingRequest.isSend) {
         sendResponse({
@@ -440,7 +464,7 @@ export const DAppWebViewScreen = () => {
     pendingTransactionRequestRef.current = null;
     setShowApprovalModal(false);
     setPendingRequest(null);
-  }, [pendingRequest, sendResponse]);
+  }, [address, getTokenByContractId, historyNetworkMode, pendingRequest, sendResponse]);
 
   // Handle transaction rejection
   const handleRejectTransaction = useCallback((error: string) => {

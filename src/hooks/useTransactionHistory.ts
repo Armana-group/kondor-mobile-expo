@@ -4,7 +4,7 @@
  * Supports multi-token transactions
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useWalletStore } from '../stores/walletStore';
 import { useTokenStore } from '../stores/tokenStore';
 import { txLogger } from '../lib/logger';
@@ -14,6 +14,7 @@ import {
   type ParsedTransaction,
 } from '../lib/transactionHistoryParser';
 import { getActiveNetworkConfig, useNetworkStore } from '../stores/networkStore';
+import { useTransactionStore } from '../stores/transactionStore';
 
 export type { ParsedTransaction } from '../lib/transactionHistoryParser';
 
@@ -81,6 +82,22 @@ export function getScopedHistoryState({
   };
 }
 
+export function mergeConfirmedAndPendingTransactions(
+  confirmedTransactions: ParsedTransaction[],
+  pendingTransactions: ParsedTransaction[]
+): ParsedTransaction[] {
+  const confirmedIds = new Set(
+    confirmedTransactions.map((transaction) => transaction.id).filter(Boolean)
+  );
+  const optimisticTransactions = pendingTransactions.filter(
+    (transaction) => !confirmedIds.has(transaction.id)
+  );
+
+  return [...optimisticTransactions, ...confirmedTransactions].sort(
+    (left, right) => right.timestamp - left.timestamp
+  );
+}
+
 /**
  * Hook to fetch and manage transaction history
  * Auto-refreshes every 30 seconds
@@ -91,6 +108,10 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
   const { getTokenByContractId } = useTokenStore();
   const networkMode = useNetworkStore((state) => state.mode);
   const hasHydrated = useNetworkStore((state) => state.hasHydrated);
+  const pendingTransactions = useTransactionStore((state) => state.getPendingTransactions({
+    address,
+    networkMode: hasHydrated ? networkMode : 'mainnet',
+  }));
   const [transactions, setTransactions] = useState<ParsedTransaction[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
@@ -164,6 +185,11 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
         txLogger.warn('Timestamp enrichment failed:', tsErr);
       }
 
+      useTransactionStore.getState().pruneStalePendingTransactions();
+      useTransactionStore.getState().confirmPendingTransactionsByChainIds(
+        parsedTransactions.map((transaction) => transaction.id)
+      );
+
       if (getCurrentHistoryScopeKey() !== requestScopeKey) {
         return;
       }
@@ -195,6 +221,10 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
     }
   }, [address, fetchTransactions, historyScopeKey]);
 
+  useEffect(() => {
+    useTransactionStore.getState().pruneStalePendingTransactions();
+  }, [historyScopeKey]);
+
   // Auto-refresh every 30 seconds
   useEffect(() => {
     if (!address) return;
@@ -216,16 +246,20 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
     refreshing,
     error,
   });
+  const mergedTransactions = useMemo(
+    () => mergeConfirmedAndPendingTransactions(scopedState.transactions, pendingTransactions),
+    [pendingTransactions, scopedState.transactions]
+  );
   const stats: TransactionStats = {
-    incoming: scopedState.transactions.filter((tx) => tx.type === 'receive').length,
-    outgoing: scopedState.transactions.filter(
+    incoming: mergedTransactions.filter((tx) => tx.type === 'receive').length,
+    outgoing: mergedTransactions.filter(
       (tx) => tx.type === 'send' || tx.type === 'swap'
     ).length,
-    total: scopedState.transactions.length,
+    total: mergedTransactions.length,
   };
 
   return {
-    transactions: scopedState.transactions,
+    transactions: mergedTransactions,
     loading: scopedState.loading,
     error: scopedState.error,
     refreshing: scopedState.refreshing,
