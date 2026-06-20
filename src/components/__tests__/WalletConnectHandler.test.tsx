@@ -5,6 +5,7 @@ import { MAINNET, TESTNET } from '../../lib/constants';
 const mockMainnetConfig = MAINNET;
 const mockTestnetConfig = TESTNET;
 const mockProvider = jest.fn();
+const mockProviderCall = jest.fn();
 const mockProviderSendTransaction = jest.fn();
 const mockInitialize = jest.fn(async () => undefined);
 const mockApproveSession = jest.fn(async () => undefined);
@@ -50,6 +51,7 @@ jest.mock('../../stores/networkStore', () => ({
 jest.mock('../../stores/walletConnectStore', () => ({
   KOINOS_METHODS: {
     GetHeadInfo: 'koinos_getHeadInfo',
+    JsonRpcCall: 'koinos_JsonRpcCall',
     SendTransaction: 'koinos_sendTransaction',
     SignAndSendTransaction: 'koinos_signAndSendTransaction',
   },
@@ -107,6 +109,10 @@ jest.mock('koilib', () => {
       return { head_topology: { height: '1' } };
     }
 
+    async call(method: string, params: unknown) {
+      return mockProviderCall(method, params);
+    }
+
     async sendTransaction(transaction: unknown, broadcast: boolean) {
       return mockProviderSendTransaction(transaction, broadcast);
     }
@@ -132,6 +138,7 @@ function flushEffects() {
 describe('WalletConnectHandler network reconciliation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockProviderCall.mockReset();
     mockIsSessionTopicApprovedForActiveNetwork.mockReset().mockReturnValue(true);
     mockGetSessionTopicValidationForActiveNetwork.mockReset().mockReturnValue({
       status: 'ready',
@@ -253,6 +260,41 @@ describe('WalletConnectHandler network reconciliation', () => {
     );
     expect(mockRespondToRequest).not.toHaveBeenCalled();
     expect(mockProviderSendTransaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects koinos_JsonRpcCall requests instead of executing passthrough RPC methods', async () => {
+    mockProviderCall.mockResolvedValue({ receipt: 'should-not-run' });
+    mockWalletConnectState = {
+      ...mockWalletConnectState,
+      pendingRequest: {
+        id: 33,
+        topic: 'rpc-topic',
+        method: 'koinos_JsonRpcCall',
+        params: {
+          method: 'chain.submit_transaction',
+          params: { transaction: { operations: [] } },
+        },
+        peerMeta: {
+          name: 'RPC dApp',
+          url: 'https://rpc.example.com',
+        },
+      },
+    };
+
+    const { WalletConnectHandler } = require('../WalletConnectHandler');
+
+    await act(async () => {
+      TestRenderer.create(<WalletConnectHandler />);
+    });
+    await flushEffects();
+
+    expect(mockRejectRequest).toHaveBeenCalledWith(
+      33,
+      'rpc-topic',
+      expect.stringMatching(/read-only|approval|required|unsupported/i)
+    );
+    expect(mockRespondToRequest).not.toHaveBeenCalled();
+    expect(mockProviderCall).not.toHaveBeenCalled();
   });
 
   it('keeps transaction approval hidden until hydration completes and rejects stale topics before showing it', async () => {

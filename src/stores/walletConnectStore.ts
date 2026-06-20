@@ -98,7 +98,6 @@ const APPROVED_METHODS: string[] = [
   KOINOS_METHODS.SignAndSendTransaction,
   KOINOS_METHODS.PrepareTransaction,
   KOINOS_METHODS.WaitForTransaction,
-  KOINOS_METHODS.JsonRpcCall,
   KOINOS_METHODS.GetNonce,
   KOINOS_METHODS.GetNextNonce,
   KOINOS_METHODS.GetAccountRc,

@@ -629,3 +629,74 @@ tsc exit code 0
 ### Remaining concerns
 
 - The WebView provider still exposes `provider:sendTransaction` as a callable command name for compatibility, but the runtime now rejects anything except an explicit non-broadcast dry run and never auto-broadcasts.
+
+---
+
+## Eighth fix pass after RPC passthrough security review
+
+### Findings addressed
+
+- Restricted WebView `provider:call` to a small allowlist of safe read-only Koinos RPC methods and fail-closed everything else with approval-required/unsupported copy.
+- Changed WebView `provider:submitBlock` to reject explicitly instead of forwarding block submission.
+- Stopped advertising `koinos_JsonRpcCall` in WalletConnect approved namespaces for Task 2.
+- Kept a WalletConnect runtime guard that rejects any unexpected `koinos_JsonRpcCall` request before a provider is constructed or a passthrough RPC executes.
+
+### Additional regression coverage
+
+- Extended `src/screens/__tests__/DAppWebViewScreen.test.ts`
+- Extended `src/components/__tests__/WalletConnectHandler.test.tsx`
+- Tightened `src/stores/__tests__/walletConnectStore.test.ts`
+
+### RED
+
+Command:
+
+```bash
+npm test -- src/screens/__tests__/DAppWebViewScreen.test.ts src/components/__tests__/WalletConnectHandler.test.tsx src/stores/__tests__/walletConnectStore.test.ts --runInBand
+```
+
+Key failures before the fix:
+
+```text
+TypeError: handleWebViewProviderCall is not a function
+TypeError: handleWebViewProviderSubmitBlock is not a function
+Expected approved WalletConnect methods to exclude koinos_JsonRpcCall
+Expected mockRejectRequest to be called for koinos_JsonRpcCall, but it was never called
+```
+
+### GREEN
+
+Focused RPC-guard verification:
+
+```bash
+npm test -- src/screens/__tests__/DAppWebViewScreen.test.ts src/components/__tests__/WalletConnectHandler.test.tsx src/stores/__tests__/walletConnectStore.test.ts --runInBand
+```
+
+Result:
+
+```text
+PASS src/screens/__tests__/DAppWebViewScreen.test.ts
+PASS src/components/__tests__/WalletConnectHandler.test.tsx
+PASS src/stores/__tests__/walletConnectStore.test.ts
+
+Test Suites: 3 passed, 3 total
+Tests:       14 passed, 14 total
+```
+
+Required final verification:
+
+```bash
+npm test -- --runInBand
+npx tsc --noEmit
+```
+
+Result:
+
+```text
+PASS 26 test suites, 185 tests, 2 snapshots
+tsc ok
+```
+
+### Remaining concerns
+
+- Generic WalletConnect JSON-RPC passthrough remains intentionally unavailable until there is a reviewed safe-policy design for which methods can be exposed and how approval flows should work for anything state-changing.

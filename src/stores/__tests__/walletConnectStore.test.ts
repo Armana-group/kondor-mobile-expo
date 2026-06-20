@@ -263,7 +263,6 @@ describe('walletConnectStore network reconciliation', () => {
       KOINOS_METHODS.SignAndSendTransaction,
       KOINOS_METHODS.PrepareTransaction,
       KOINOS_METHODS.WaitForTransaction,
-      KOINOS_METHODS.JsonRpcCall,
       KOINOS_METHODS.GetNonce,
       KOINOS_METHODS.GetNextNonce,
       KOINOS_METHODS.GetAccountRc,
@@ -277,6 +276,7 @@ describe('walletConnectStore network reconciliation', () => {
     ]);
     expect(approvedMethods).not.toContain(KOINOS_METHODS.SignMessage);
     expect(approvedMethods).not.toContain(KOINOS_METHODS.SignHash);
+    expect(approvedMethods).not.toContain(KOINOS_METHODS.JsonRpcCall);
     expect(approvedMethods).not.toContain(KOINOS_METHODS.SendTransaction);
     expect(approvedMethods).not.toContain(KOINOS_METHODS.SubmitBlock);
     expect(approveSession).toHaveBeenCalledWith({

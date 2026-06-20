@@ -32,3 +32,44 @@ describe('DAppWebViewScreen provider sendTransaction guard', () => {
     expect(mockSendTransaction).toHaveBeenCalledWith({ operations: [] }, false);
   });
 });
+
+describe('DAppWebViewScreen generic RPC guards', () => {
+  it('allows only safe read-only provider.call RPC methods', async () => {
+    const mockCall = jest.fn(async () => ({ head_topology: { id: '0xabc' } }));
+    const { handleWebViewProviderCall } = require('../dappWebViewProviderGuards');
+
+    await expect(
+      handleWebViewProviderCall(
+        { call: mockCall },
+        { method: 'chain.get_head_info', params: { payload: 'ok' } }
+      )
+    ).resolves.toEqual({ head_topology: { id: '0xabc' } });
+
+    expect(mockCall).toHaveBeenCalledWith('chain.get_head_info', { payload: 'ok' });
+  });
+
+  it('rejects mutating provider.call RPC methods and never executes them', async () => {
+    const mockCall = jest.fn(async () => ({ receipt: 'should-not-run' }));
+    const { handleWebViewProviderCall } = require('../dappWebViewProviderGuards');
+
+    await expect(
+      handleWebViewProviderCall(
+        { call: mockCall },
+        { method: 'chain.submit_transaction', params: { transaction: { operations: [] } } }
+      )
+    ).rejects.toThrow(/read-only|approval|required|unsupported/i);
+
+    expect(mockCall).not.toHaveBeenCalled();
+  });
+
+  it('rejects provider.submitBlock instead of executing it in the background', async () => {
+    const mockSubmitBlock = jest.fn(async () => ({ receipt: 'should-not-run' }));
+    const { handleWebViewProviderSubmitBlock } = require('../dappWebViewProviderGuards');
+
+    await expect(
+      handleWebViewProviderSubmitBlock({ submitBlock: mockSubmitBlock }, { block: { header: {} } })
+    ).rejects.toThrow(/approval|required|unsupported/i);
+
+    expect(mockSubmitBlock).not.toHaveBeenCalled();
+  });
+});

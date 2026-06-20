@@ -32,7 +32,11 @@ import {
   SigningResult,
 } from '../components/TransactionApprovalModal';
 import { getActiveNetworkConfig, useNetworkStore } from '../stores/networkStore';
-import { handleWebViewProviderSendTransaction } from './dappWebViewProviderGuards';
+import {
+  handleWebViewProviderCall,
+  handleWebViewProviderSendTransaction,
+  handleWebViewProviderSubmitBlock,
+} from './dappWebViewProviderGuards';
 
 type DAppWebViewRouteParams = {
   DAppWebView: {
@@ -106,7 +110,7 @@ export const DAppWebViewScreen = () => {
 
     switch (command) {
       case 'provider:call':
-        return provider.call(args.method as string, args.params);
+        return handleWebViewProviderCall(provider, args);
 
       case 'provider:getNonce':
         return provider.getNonce(args.account as string);
@@ -151,7 +155,7 @@ export const DAppWebViewScreen = () => {
         return handleWebViewProviderSendTransaction(provider, args);
 
       case 'provider:submitBlock':
-        return provider.submitBlock(args.block as any);
+        return handleWebViewProviderSubmitBlock(provider, args);
 
       case 'provider:readContract':
         return provider.readContract(args.operation as any);
@@ -371,6 +375,9 @@ export const DAppWebViewScreen = () => {
         } else if (command === 'signer:signTransaction' || command === 'signer:sendTransaction') {
           // These require approval modal - modal handles the response
           await handleSignerCommand(id, command, args);
+        } else if (command === 'provider:submitBlock') {
+          result = await handleProviderCommand(command, args);
+          sendResponse({ type: 'kondor-response', id, result });
         } else if (command === 'signer:signHash' || command === 'signer:signMessage') {
           // Message signing - handled by handleSignerCommand (throws error for now)
           result = await handleSignerCommand(id, command, args);

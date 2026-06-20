@@ -23,6 +23,7 @@ import {
 } from './TransactionApprovalModal';
 import { requireBiometricAuth } from '../lib/biometrics';
 import { HapticFeedback } from '../lib/haptics';
+import { WALLETCONNECT_JSONRPC_UNSUPPORTED_ERROR } from '../lib/koinosRpcPolicy';
 import { wcLogger, sanitizeErrorForUser } from '../lib/logger';
 import { getActiveNetworkConfig, useNetworkStore } from '../stores/networkStore';
 
@@ -151,6 +152,11 @@ export const WalletConnectHandler: React.FC = () => {
       return;
     }
 
+    if (method === KOINOS_METHODS.JsonRpcCall) {
+      await rejectRequest(id, topic, WALLETCONNECT_JSONRPC_UNSUPPORTED_ERROR);
+      return;
+    }
+
     const activeNetwork = getActiveNetworkConfig();
 
     try {
@@ -228,12 +234,6 @@ export const WalletConnectHandler: React.FC = () => {
         case KOINOS_METHODS.WaitForTransaction: {
           const waitParams = params as { transaction_id: string; timeout?: number };
           result = await provider.wait(waitParams.transaction_id, 'byBlock', waitParams.timeout);
-          break;
-        }
-
-        case KOINOS_METHODS.JsonRpcCall: {
-          const rpcParams = params as { method: string; params: unknown };
-          result = await provider.call(rpcParams.method, rpcParams.params);
           break;
         }
 
