@@ -17,7 +17,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Signer, Transaction, Provider, TransactionJson, type OperationJson } from 'koilib';
+import { Transaction, Provider, TransactionJson, type OperationJson } from 'koilib';
 import colors from '../theme/colors';
 import { useWalletStore } from '../stores/walletStore';
 import { HapticFeedback } from '../lib/haptics';
@@ -138,10 +138,13 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
   const [expandedOps, setExpandedOps] = useState<Set<number>>(new Set([0])); // First op expanded by default
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const { getActiveAccount } = useWalletStore();
+  const { accounts, getActiveAccount } = useWalletStore();
   useNetworkStore((state) => state.mode);
   useNetworkStore((state) => state.hasHydrated);
   const activeAccount = getActiveAccount();
+  const requestedAccount = request
+    ? accounts.find((account) => account.address === request.signerAddress)
+    : undefined;
   const activeNetwork = getActiveNetworkConfig();
   const normalizedOrigin = normalizeOrigin(appOrigin);
   const originSecurity = useMemo(
@@ -196,8 +199,8 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
       return;
     }
 
-    if (request.signerAddress !== activeAccount.address) {
-      rejectPendingRequest('Transaction signer does not match the active wallet account.');
+    if (!requestedAccount) {
+      rejectPendingRequest('Transaction signer is not in this wallet.');
       return;
     }
 
@@ -367,6 +370,7 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
   }, [
     request,
     activeAccount,
+    requestedAccount,
     activeNetwork.chainId,
     activeNetwork.freeManaSharer,
     activeNetwork.rpcNodes,
@@ -532,7 +536,7 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
                 <View style={styles.advancedCard}>
                   <Text style={styles.advancedLabel}>Signer</Text>
                   <Text style={styles.advancedValue}>
-                    {activeAccount?.name || 'Unknown'}
+                    {requestedAccount?.name || 'Unknown'}
                   </Text>
                   <Text style={styles.advancedValueSmall} numberOfLines={1}>
                     {request.signerAddress}

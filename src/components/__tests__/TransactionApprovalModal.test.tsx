@@ -21,6 +21,15 @@ jest.mock('@expo/vector-icons', () => ({
 
 let mockWalletState = {
   activeAccountId: 'account-1',
+  accounts: [
+    {
+      id: 'account-1',
+      name: 'Primary',
+      address: '12vRwxu2nVG2697dM36KMNkmfecNdU8PpR',
+      derivationIndex: 0,
+      isImported: false,
+    },
+  ],
   getActiveAccount: () => ({
     id: 'account-1',
     name: 'Primary',
@@ -48,7 +57,7 @@ jest.mock('../../stores/walletStore', () => ({
     () => mockWalletState,
     {
       getState: () => ({
-        accounts: [mockWalletState.getActiveAccount()],
+        accounts: mockWalletState.accounts,
       }),
     }
   ),
@@ -58,10 +67,17 @@ jest.mock('../../lib/biometrics', () => ({
   requireBiometricAuth: jest.fn(async () => true),
 }));
 
-const mockCreateWalletFromMnemonic = jest.fn((_mnemonic: string, _derivationIndex: number) => ({
-  address: OWNER,
-  privateKey: 'a'.repeat(64),
-}));
+const mockCreateWalletFromMnemonic = jest.fn((_mnemonic: string, derivationIndex: number) =>
+  derivationIndex === 1
+    ? {
+        address: RECEIVER,
+        privateKey: 'b'.repeat(64),
+      }
+    : {
+        address: OWNER,
+        privateKey: 'a'.repeat(64),
+      }
+);
 
 jest.mock('../../lib/wallet', () => ({
   createWalletFromMnemonic: (mnemonic: string, derivationIndex: number) =>
@@ -104,6 +120,9 @@ jest.mock('koilib', () => {
       return new Signer({ privateKey, provider: undefined as unknown as Provider });
     }
     getAddress() {
+      if (this.privateKey.startsWith('b')) {
+        return RECEIVER;
+      }
       return OWNER;
     }
     async signTransaction(tx: unknown) {
@@ -182,6 +201,15 @@ describe('TransactionApprovalModal', () => {
     jest.clearAllMocks();
     mockWalletState = {
       activeAccountId: 'account-1',
+      accounts: [
+        {
+          id: 'account-1',
+          name: 'Primary',
+          address: OWNER,
+          derivationIndex: 0,
+          isImported: false,
+        },
+      ],
       getActiveAccount: () => ({
         id: 'account-1',
         name: 'Primary',
@@ -261,7 +289,7 @@ describe('TransactionApprovalModal', () => {
     expect(requireBiometricAuth).not.toHaveBeenCalled();
   });
 
-  it('rejects signer address mismatches before auth', async () => {
+  it('rejects signer addresses not owned by the wallet before auth', async () => {
     const onReject = jest.fn();
 
     let renderer: TestRenderer.ReactTestRenderer;
@@ -293,7 +321,7 @@ describe('TransactionApprovalModal', () => {
     });
     await flushEffects();
 
-    expect(onReject).toHaveBeenCalledWith('Transaction signer does not match the active wallet account.');
+    expect(onReject).toHaveBeenCalledWith('Transaction signer is not in this wallet.');
     expect(requireBiometricAuth).not.toHaveBeenCalled();
   });
 
@@ -529,6 +557,133 @@ describe('TransactionApprovalModal', () => {
         transaction: expect.objectContaining({
           header: expect.objectContaining({
             payee: OWNER,
+          }),
+        }),
+      })
+    );
+  });
+
+  it('signs with a non-active HD account owned by the wallet', async () => {
+    const onApprove = jest.fn();
+    mockWalletState = {
+      ...mockWalletState,
+      accounts: [
+        mockWalletState.getActiveAccount(),
+        {
+          id: 'account-2',
+          name: 'Second',
+          address: RECEIVER,
+          derivationIndex: 1,
+          isImported: false,
+        },
+      ],
+    };
+    jest.spyOn(SecureStore, 'getItemAsync').mockImplementation(async (key: string) => {
+      if (key === 'kondor_wallet_mnemonic') {
+        return 'test mnemonic words';
+      }
+      return null;
+    });
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TransactionApprovalModal
+          visible
+          request={{
+            signerAddress: RECEIVER,
+            transaction: {
+              operations: [],
+              header: {},
+            },
+          }}
+          appName="Multi-account dApp"
+          appOrigin="https://example.com"
+          isSend={false}
+          onApprove={onApprove}
+          onReject={jest.fn()}
+          onClose={jest.fn()}
+        />
+      );
+    });
+    activeRenderer = renderer!;
+    await flushEffects();
+
+    await act(async () => {
+      findButton(renderer!, 'Sign')?.props.onPress();
+    });
+    await flushEffects();
+
+    expect(mockCreateWalletFromMnemonic).toHaveBeenCalledWith('test mnemonic words', 1);
+    expect(onApprove).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transaction: expect.objectContaining({
+          header: expect.objectContaining({
+            payee: RECEIVER,
+          }),
+        }),
+      })
+    );
+  });
+
+  it('signs with a non-active imported account owned by the wallet', async () => {
+    const onApprove = jest.fn();
+    mockWalletState = {
+      ...mockWalletState,
+      accounts: [
+        mockWalletState.getActiveAccount(),
+        {
+          id: 'imported-1',
+          name: 'Imported',
+          address: RECEIVER,
+          derivationIndex: 0,
+          isImported: true,
+        },
+      ],
+    };
+    jest.spyOn(SecureStore, 'getItemAsync').mockImplementation(async (key: string) => {
+      if (key === 'kondor_pk_imported-1') {
+        return 'b'.repeat(64);
+      }
+      return null;
+    });
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <TransactionApprovalModal
+          visible
+          request={{
+            signerAddress: RECEIVER,
+            transaction: {
+              operations: [],
+              header: {},
+            },
+          }}
+          appName="Imported dApp"
+          appOrigin="https://example.com"
+          isSend={false}
+          onApprove={onApprove}
+          onReject={jest.fn()}
+          onClose={jest.fn()}
+        />
+      );
+    });
+    activeRenderer = renderer!;
+    await flushEffects();
+
+    await act(async () => {
+      findButton(renderer!, 'Sign')?.props.onPress();
+    });
+    await flushEffects();
+
+    expect(SecureStore.getItemAsync).toHaveBeenCalledWith('kondor_pk_imported-1');
+    expect(mockCreateWalletFromMnemonic).not.toHaveBeenCalled();
+    expect(onApprove).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transaction: expect.objectContaining({
+          header: expect.objectContaining({
+            payee: RECEIVER,
           }),
         }),
       })
