@@ -262,6 +262,9 @@ export async function executeSwapTransaction(
     onStatus?.('confirming');
     return pendingConfirmationResult(receipt, broadcastRpcError);
   }
+  if (receipt.reverted) {
+    throw new Error(`Swap broadcast failed: ${getRevertReason(receipt)}`);
+  }
   params.onBroadcast?.({
     transactionId: receipt.id,
     timestamp: Date.now(),

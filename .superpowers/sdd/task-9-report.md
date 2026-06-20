@@ -243,3 +243,43 @@ Results:
 - Focused store + history tests: PASS, 2 suites / 14 tests.
 - Type-check: PASS, exit code 0.
 - Full Jest suite: PASS, 41 suites / 308 tests.
+
+## Review Fixes: edba4c3..HEAD
+
+### Important finding: swap pending boundary on reverted receipts
+
+- Moved `swapTransaction`'s `onBroadcast` callback behind all broadcast-receipt failure checks that `executeSwapTransaction` treats as non-accepted outcomes.
+- Added explicit rejection for `receipt.reverted` on the accepted-broadcast path, using the receipt's revert reason.
+- Added a regression proving a reverted broadcast receipt neither emits `onBroadcast` nor enters confirmation polling.
+
+### TDD evidence
+
+RED:
+
+```bash
+npm test -- src/lib/__tests__/swapTransaction.test.ts --runInBand
+```
+
+Result: FAIL, new `does not emit onBroadcast when the accepted receipt is reverted` test resolved instead of rejecting and exposed the current bug.
+
+GREEN:
+
+```bash
+npm test -- src/lib/__tests__/swapTransaction.test.ts --runInBand
+```
+
+Result: PASS, 1 suite / 12 tests.
+
+### Verification
+
+```bash
+npm test -- src/lib/__tests__/swapTransaction.test.ts --runInBand
+npx tsc --noEmit
+npm test -- --runInBand
+```
+
+Results:
+
+- Focused swap test: PASS, 1 suite / 12 tests.
+- Type-check: PASS, exit code 0.
+- Full Jest suite: PASS, 41 suites / 309 tests.

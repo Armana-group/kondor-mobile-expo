@@ -13,12 +13,16 @@ let mockDryRunReceipt: {
   rc_used?: string;
   reverted: boolean;
   rpc_error?: unknown;
+  logs?: string[];
+  error_message?: string;
 };
 let mockBroadcastReceipt: {
   id: string;
   rc_used?: string;
   reverted: boolean;
   rpc_error?: unknown;
+  logs?: string[];
+  error_message?: string;
 };
 let mockDryRunError: Error | null;
 let mockBroadcastError: Error | null;
@@ -360,6 +364,31 @@ describe('swapTransaction', () => {
     expect(result.transactionId).toBe('0xsent');
     expect(result.confirmationPending).toBe(true);
     expect(result.confirmationError).toContain('context deadline exceeded');
+    expect(mockWait).not.toHaveBeenCalled();
+    expect(onBroadcast).not.toHaveBeenCalled();
+  });
+
+  it('does not emit onBroadcast when the accepted receipt is reverted', async () => {
+    mockBroadcastReceipt = {
+      id: '0xsent',
+      rc_used: '50000000',
+      reverted: true,
+      error_message: 'swap reverted on chain',
+    };
+    const onBroadcast = jest.fn();
+
+    await expect(executeSwapTransaction({
+      provider: {} as Provider,
+      signer,
+      quote,
+      tokenIn: koin,
+      tokenOut: vhp,
+      allTokens: [koin, vhp],
+      maxRc: 1_000_000_000,
+      availableRc: 100_000_000,
+      onBroadcast,
+    })).rejects.toThrow(/swap reverted on chain/i);
+
     expect(mockWait).not.toHaveBeenCalled();
     expect(onBroadcast).not.toHaveBeenCalled();
   });
