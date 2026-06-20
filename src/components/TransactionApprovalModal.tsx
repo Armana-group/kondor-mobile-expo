@@ -25,15 +25,7 @@ import { requireBiometricAuth } from '../lib/biometrics';
 import { HapticFeedback } from '../lib/haptics';
 import { DEFAULT_NETWORK, FREE_MANA_SHARER } from '../lib/constants';
 import { txLogger } from '../lib/logger';
-
-// Decoded operation for display
-export interface DecodedOperation {
-  type: 'contract_call' | 'upload_contract' | 'set_system_call' | 'set_system_contract';
-  title: string;
-  contractId: string;
-  entryPoint?: number;
-  details: { label: string; value: string }[];
-}
+import { type DecodedOperation, decodeKnownOperation } from '../lib/transactionDecoder';
 
 // Transaction request from dApp
 export interface TransactionRequest {
@@ -61,104 +53,6 @@ interface TransactionApprovalModalProps {
   onApprove: (result: SigningResult) => void;
   onReject: (error: string) => void;
   onClose: () => void;
-}
-
-// Known contract addresses for better display
-const KNOWN_CONTRACTS: Record<string, { name: string; symbol?: string }> = {
-  '15DJN4a8SgrbGhhGksSBASiSYjGnMU8dGL': { name: 'KOIN', symbol: 'KOIN' },
-  '19GYjDBVXU7keLbYvMLazsGQn3GTWHjHkK': { name: 'KOIN', symbol: 'KOIN' },
-  '1AdzuXSpC6K9qtXdCBgD5NUpDNwHjMgrc9': { name: 'VHP', symbol: 'VHP' },
-  '18tWNU7E4yuQzz7hMVpceb9ixmaWLVyQsr': { name: 'VHP', symbol: 'VHP' },
-  '1KD9Es7LBBjA1FY3ViCgQJ7e6WH1ipKbhz': { name: 'KoinDX Router' },
-  '1NHReq2apWsQ6UPBjNqcV3ABsj88Ncimiy': { name: 'Kollection' },
-};
-
-// Known entry points for better display
-const KNOWN_ENTRY_POINTS: Record<number, string> = {
-  0x27f576ca: 'transfer',
-  0x82a3537f: 'mint',
-  0x859facc5: 'burn',
-  0x5c721497: 'approve',
-  0xe74b785a: 'balanceOf',
-  0xc65b2bae: 'totalSupply',
-  0x7e794b24: 'swap',
-  0x8f5a3e29: 'addLiquidity',
-  0x12b4a9c3: 'removeLiquidity',
-};
-
-// Decode entry point number to human-readable name
-function decodeEntryPoint(entryPoint: number): string {
-  return KNOWN_ENTRY_POINTS[entryPoint] || `0x${entryPoint.toString(16)}`;
-}
-
-// Decode contract ID to human-readable name
-function decodeContract(contractId: string): string {
-  const known = KNOWN_CONTRACTS[contractId];
-  if (known) {
-    return known.symbol ? `${known.name} (${known.symbol})` : known.name;
-  }
-  return contractId;
-}
-
-// Decode transaction operations for display
-function decodeOperations(transaction: TransactionJson): DecodedOperation[] {
-  const operations: DecodedOperation[] = [];
-
-  if (!transaction.operations) {
-    return operations;
-  }
-
-  for (const op of transaction.operations) {
-    if (op.call_contract) {
-      const { contract_id, entry_point, args } = op.call_contract;
-      const entryPointName = decodeEntryPoint(entry_point);
-      const contractName = decodeContract(contract_id);
-
-      operations.push({
-        type: 'contract_call',
-        title: `${entryPointName}`,
-        contractId: contract_id,
-        entryPoint: entry_point,
-        details: [
-          { label: 'Contract', value: contractName },
-          { label: 'Entry Point', value: entryPointName },
-          ...(args ? [{ label: 'Arguments', value: args.length > 100 ? `${args.slice(0, 100)}...` : args }] : []),
-        ],
-      });
-    } else if (op.upload_contract) {
-      operations.push({
-        type: 'upload_contract',
-        title: 'Upload Contract',
-        contractId: op.upload_contract.contract_id || 'New Contract',
-        details: [
-          { label: 'Contract ID', value: op.upload_contract.contract_id || 'TBD' },
-          { label: 'Bytecode Size', value: `${(op.upload_contract.bytecode?.length || 0) / 2} bytes` },
-        ],
-      });
-    } else if (op.set_system_call) {
-      operations.push({
-        type: 'set_system_call',
-        title: 'Set System Call',
-        contractId: 'System',
-        details: [
-          { label: 'Call ID', value: String(op.set_system_call.call_id) },
-          { label: 'Target', value: JSON.stringify(op.set_system_call.target) },
-        ],
-      });
-    } else if (op.set_system_contract) {
-      operations.push({
-        type: 'set_system_contract',
-        title: 'Set System Contract',
-        contractId: 'System',
-        details: [
-          { label: 'Contract ID', value: op.set_system_contract.contract_id || 'N/A' },
-          { label: 'System Contract', value: String(op.set_system_contract.system_contract) },
-        ],
-      });
-    }
-  }
-
-  return operations;
 }
 
 // Get simplified domain name from origin
@@ -199,7 +93,7 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
   // Decode operations when request changes
   useEffect(() => {
     if (request?.transaction) {
-      const decoded = decodeOperations(request.transaction);
+      const decoded = request.transaction.operations?.map(decodeKnownOperation) ?? [];
       setOperations(decoded);
       setLoading(false);
     } else {
@@ -489,7 +383,7 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
                       <View style={styles.operationTitleContainer}>
                         <Text style={styles.operationTitle}>{op.title}</Text>
                         <Text style={styles.operationContract} numberOfLines={1}>
-                          {decodeContract(op.contractId)}
+                          {op.details.find(detail => detail.label === 'Contract')?.value ?? op.contractId}
                         </Text>
                       </View>
                       <Ionicons
