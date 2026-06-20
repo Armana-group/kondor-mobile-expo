@@ -14,6 +14,7 @@ import {
   useWalletConnectStore,
   KOINOS_METHODS,
   WCTransactionRequest,
+  WALLETCONNECT_NETWORK_MISMATCH_ERROR,
 } from '../stores/walletConnectStore';
 import { WCSessionApprovalModal } from './WCSessionApprovalModal';
 import {
@@ -41,6 +42,8 @@ export const WalletConnectHandler: React.FC = () => {
     respondToRequest,
     rejectRequest,
     clearPendingTransaction,
+    reconcileSessionsForActiveNetwork,
+    isSessionTopicApprovedForActiveNetwork,
   } = useWalletConnectStore();
 
   // State for transaction approval
@@ -55,6 +58,16 @@ export const WalletConnectHandler: React.FC = () => {
       });
     }
   }, [isWalletCreated, address, initialized, initialize]);
+
+  useEffect(() => {
+    if (!initialized || !hasHydrated) {
+      return;
+    }
+
+    reconcileSessionsForActiveNetwork().catch((error) => {
+      wcLogger.error('Failed to reconcile WalletConnect sessions:', error);
+    });
+  }, [initialized, hasHydrated, networkMode, reconcileSessionsForActiveNetwork]);
 
   // Handle session approval
   const handleApproveSession = useCallback(async () => {
@@ -92,18 +105,17 @@ export const WalletConnectHandler: React.FC = () => {
     }
   }, [pendingTransaction]);
 
-  // Handle generic requests (non-transaction)
-  useEffect(() => {
-    if (pendingRequest) {
-      handleGenericRequest();
-    }
-  }, [pendingRequest]);
-
   // Handle generic (non-signing) requests
   const handleGenericRequest = useCallback(async () => {
     if (!pendingRequest) return;
 
     const { id, topic, method, params } = pendingRequest;
+
+    if (!isSessionTopicApprovedForActiveNetwork(topic)) {
+      await rejectRequest(id, topic, WALLETCONNECT_NETWORK_MISMATCH_ERROR);
+      return;
+    }
+
     const activeNetwork = getActiveNetworkConfig();
 
     try {
@@ -206,7 +218,21 @@ export const WalletConnectHandler: React.FC = () => {
       wcLogger.error('Request error:', error);
       await rejectRequest(id, topic, error.message || 'Request failed');
     }
-  }, [hasHydrated, networkMode, pendingRequest, respondToRequest, rejectRequest]);
+  }, [
+    hasHydrated,
+    isSessionTopicApprovedForActiveNetwork,
+    networkMode,
+    pendingRequest,
+    rejectRequest,
+    respondToRequest,
+  ]);
+
+  // Handle generic requests (non-transaction)
+  useEffect(() => {
+    if (hasHydrated && pendingRequest) {
+      handleGenericRequest();
+    }
+  }, [hasHydrated, pendingRequest, handleGenericRequest]);
 
   // Handle transaction approval
   const handleApproveTransaction = useCallback(

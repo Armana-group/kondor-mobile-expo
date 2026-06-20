@@ -35,6 +35,31 @@ function getActiveWalletConnectChainId() {
     : KOINOS_CHAIN_IDS.Mainnet;
 }
 
+export const WALLETCONNECT_NETWORK_MISMATCH_ERROR =
+  'WalletConnect session no longer matches the active network';
+
+function getSessionChains(session: any): string[] {
+  return Object.values(session?.namespaces || {}).flatMap(
+    (namespace: any) => namespace?.chains || []
+  );
+}
+
+function getSessionAccounts(session: any): string[] {
+  return Object.values(session?.namespaces || {}).flatMap(
+    (namespace: any) => namespace?.accounts || []
+  );
+}
+
+function sessionMatchesChain(session: any, activeChainId: string): boolean {
+  const chains = getSessionChains(session);
+  const accounts = getSessionAccounts(session);
+
+  return (
+    chains.includes(activeChainId) &&
+    accounts.some((account: string) => account.startsWith(`${activeChainId}:`))
+  );
+}
+
 // Koinos methods from @armana/walletconnect-koinos-sdk-js
 export const KOINOS_METHODS = {
   SignMessage: 'koinos_signMessage',
@@ -144,6 +169,8 @@ interface WalletConnectState {
   _setPendingRequest: (request: WCPendingRequest | null) => void;
   _setPendingTransaction: (request: WCTransactionRequest | null) => void;
   _updateSessions: () => void;
+  isSessionTopicApprovedForActiveNetwork: (topic: string) => boolean;
+  reconcileSessionsForActiveNetwork: () => Promise<void>;
 }
 
 export const useWalletConnectStore = create<WalletConnectState>()(
@@ -192,6 +219,66 @@ export const useWalletConnectStore = create<WalletConnectState>()(
         } catch (error) {
           wcLogger.error('Failed to update sessions:', error);
         }
+      },
+
+      isSessionTopicApprovedForActiveNetwork: (topic: string) => {
+        const { _walletKit } = get();
+        if (!_walletKit) {
+          return false;
+        }
+
+        const session = _walletKit.getActiveSessions()?.[topic];
+        if (!session) {
+          return false;
+        }
+
+        return sessionMatchesChain(session, getActiveWalletConnectChainId());
+      },
+
+      reconcileSessionsForActiveNetwork: async () => {
+        const { _walletKit, pendingRequest, pendingTransaction } = get();
+        if (!_walletKit) {
+          set({ sessions: [] });
+          return;
+        }
+
+        const activeChainId = getActiveWalletConnectChainId();
+        const activeSessions = _walletKit.getActiveSessions();
+        const mismatchedTopics = Object.entries(activeSessions)
+          .filter(([, session]) => !sessionMatchesChain(session, activeChainId))
+          .map(([topic]) => topic);
+
+        if (!mismatchedTopics.length) {
+          get()._updateSessions();
+          return;
+        }
+
+        wcLogger.debug('Disconnecting sessions that no longer match the active network', {
+          activeChainId,
+          mismatchedTopics,
+        });
+
+        for (const topic of mismatchedTopics) {
+          try {
+            await _walletKit.disconnectSession({
+              topic,
+              reason: getSdkError('USER_DISCONNECTED'),
+            });
+          } catch (error) {
+            wcLogger.error('Failed to reconcile WalletConnect session:', error);
+          }
+        }
+
+        set({
+          pendingRequest:
+            pendingRequest && mismatchedTopics.includes(pendingRequest.topic) ? null : pendingRequest,
+          pendingTransaction:
+            pendingTransaction && mismatchedTopics.includes(pendingTransaction.topic)
+              ? null
+              : pendingTransaction,
+        });
+
+        get()._updateSessions();
       },
 
       initialize: async (address: string) => {
@@ -262,6 +349,12 @@ export const useWalletConnectStore = create<WalletConnectState>()(
 
             if (!session) {
               wcLogger.error('Session not found for topic:', topic);
+              return;
+            }
+
+            if (!sessionMatchesChain(session, getActiveWalletConnectChainId())) {
+              wcLogger.error('Rejecting request for stale WalletConnect session topic:', topic);
+              await get().rejectRequest(id, topic, WALLETCONNECT_NETWORK_MISMATCH_ERROR);
               return;
             }
 

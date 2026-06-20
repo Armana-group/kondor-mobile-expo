@@ -196,3 +196,85 @@ tsc exit code 0
 ### Remaining concerns
 
 - Harbinger swap is intentionally disabled for this parity pass. Mainnet swap behavior remains unchanged; Harbinger now errors clearly instead of drifting onto mainnet KoinDX contracts.
+
+---
+
+## Second fix pass after re-review
+
+### Finding addressed
+
+- WalletConnect now reconciles existing sessions whenever the active network changes by disconnecting sessions whose approved chain/account namespace no longer matches the app-wide network.
+- Generic WalletConnect request handling now fails closed for stale sessions instead of servicing provider calls against the wrong network.
+- Added focused regression coverage for both the store-side reconciliation path and the handler-side request guard.
+
+### Additional regression coverage
+
+- Added `src/stores/__tests__/walletConnectStore.test.ts`
+- Added `src/components/__tests__/WalletConnectHandler.test.tsx`
+
+### RED
+
+Command:
+
+```bash
+npm test -- src/stores/__tests__/walletConnectStore.test.ts src/components/__tests__/WalletConnectHandler.test.tsx --runInBand
+```
+
+Key failures before the fix:
+
+```text
+TypeError: useWalletConnectStore.getState(...).reconcileSessionsForActiveNetwork is not a function
+Expected number of calls: 1
+Received number of calls: 0
+Expected: 9, "stale-topic", StringMatching /active network/i
+Number of calls: 0
+```
+
+### GREEN
+
+Focused WalletConnect regression suite:
+
+```bash
+npm test -- src/stores/__tests__/walletConnectStore.test.ts src/components/__tests__/WalletConnectHandler.test.tsx --runInBand
+```
+
+Result:
+
+```text
+PASS src/components/__tests__/WalletConnectHandler.test.tsx
+PASS src/stores/__tests__/walletConnectStore.test.ts
+
+Test Suites: 2 passed, 2 total
+Tests:       3 passed, 3 total
+```
+
+Broader focused verification:
+
+```bash
+npm test -- src/stores/__tests__/networkStore.test.ts src/stores/__tests__/walletConnectStore.test.ts src/components/__tests__/WalletConnectHandler.test.tsx --runInBand
+```
+
+Result:
+
+```text
+Test Suites: 3 passed, 3 total
+Tests:       7 passed, 7 total
+```
+
+Required final verification:
+
+```bash
+npm test -- --runInBand
+npx tsc --noEmit
+```
+
+Result:
+
+```text
+PASS 24 test suites, 170 tests, 2 snapshots
+tsc exit code 0
+```
+
+### Remaining concerns
+
+- Session reconciliation disconnects mismatched peers instead of attempting in-place namespace mutation. That is intentional here because it uses confirmed WalletKit APIs and keeps the behavior explicit.
