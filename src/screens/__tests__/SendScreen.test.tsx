@@ -8,6 +8,7 @@ jest.mock('@expo/vector-icons', () => ({
 }));
 
 const mockGoBack = jest.fn();
+const mockNavigate = jest.fn();
 const mockUpdateBalance = jest.fn();
 const mockRefreshSingleBalance = jest.fn(async () => undefined);
 const mockInitializeTokens = jest.fn(async () => undefined);
@@ -55,6 +56,7 @@ let mockBackupHealth: BackupHealth = {
 jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({
     goBack: mockGoBack,
+    navigate: mockNavigate,
   }),
   useRoute: () => ({
     params: mockRouteParams,
@@ -177,6 +179,19 @@ function collectRenderedText(renderer: TestRenderer.ReactTestRenderer): string[]
         .join('');
     })
     .filter(Boolean);
+}
+
+function findPressableByText(renderer: TestRenderer.ReactTestRenderer, label: string) {
+  const node = renderer.root.findAll((candidate) =>
+    typeof candidate.props.onPress === 'function' &&
+    candidate.findAllByType(Text).some((textNode) => textNode.props.children === label)
+  )[0];
+
+  if (!node) {
+    throw new Error(`Pressable not found: ${label}`);
+  }
+
+  return node;
 }
 
 function findSendButton(renderer: TestRenderer.ReactTestRenderer): TestRenderer.ReactTestInstance {
@@ -306,6 +321,12 @@ describe('SendScreen balance scoping', () => {
     });
 
     expect(collectRenderedText(renderer!).join(' ')).toContain('Back up this wallet');
+
+    await act(async () => {
+      findPressableByText(renderer!, 'Back up this wallet').props.onPress();
+    });
+
+    expect(mockNavigate).toHaveBeenCalledWith('Settings', { screen: 'BackupRecovery' });
   });
 
   it('shows actionable compact copy for a stale backup before sending', async () => {

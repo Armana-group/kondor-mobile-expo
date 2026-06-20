@@ -219,6 +219,22 @@ function collectRenderedText(renderer: TestRenderer.ReactTestRenderer): string[]
     .filter(Boolean);
 }
 
+function findPressableByText(renderer: TestRenderer.ReactTestRenderer, label: string) {
+  const node = renderer.root.findAll((candidate) =>
+    typeof candidate.props.onPress === 'function' &&
+    candidate.findAll((child) =>
+      String((child as TestRenderer.ReactTestInstance).type) === 'Text' &&
+      child.props.children === label
+    ).length > 0
+  )[0];
+
+  if (!node) {
+    throw new Error(`Pressable not found: ${label}`);
+  }
+
+  return node;
+}
+
 describe('HomeScreen network initialization', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -357,6 +373,12 @@ describe('HomeScreen network initialization', () => {
     });
 
     expect(collectRenderedText(renderer!).join(' ')).toContain('Back up this wallet');
+
+    await act(async () => {
+      findPressableByText(renderer!, 'Back up this wallet').props.onPress();
+    });
+
+    expect(mockNavigate).toHaveBeenCalledWith('Settings', { screen: 'BackupRecovery' });
   });
 
   it('hides stale balance and token data synchronously when the active scope changes', async () => {

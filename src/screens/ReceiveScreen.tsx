@@ -58,7 +58,7 @@ export const ReceiveScreen = () => {
   };
 
   const handleBackupPress = () => {
-    navigation.navigate('Settings');
+    navigation.navigate('Settings', { screen: 'BackupRecovery' });
   };
 
   return (

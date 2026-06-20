@@ -293,7 +293,7 @@ export const HomeScreen = () => {
   };
 
   const handleBackupPress = () => {
-    navigation.navigate('Settings');
+    navigation.navigate('Settings', { screen: 'BackupRecovery' });
   };
 
   const getManaColor = () => {

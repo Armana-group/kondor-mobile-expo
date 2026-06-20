@@ -36,16 +36,6 @@ import { useKoinosStore } from '../stores/koinosStore';
 import { useTokenStore } from '../stores/tokenStore';
 
 // Types
-export type HomeStackParamList = {
-  HomeMain: undefined;
-  Send: { token?: Token } | undefined;
-  Receive: { token?: Token } | undefined;
-  Activity: { initialFilter?: ActivityFilter } | undefined;
-  Contacts: undefined;
-  Settings: undefined;
-  TokenDetail: { token: Token };
-};
-
 export type SettingsStackParamList = {
   SettingsHome: undefined;
   ManageAccounts: undefined;
@@ -54,6 +44,16 @@ export type SettingsStackParamList = {
   ConnectedSites: undefined;
   BackupRecovery: undefined;
   NetworkSettings: undefined;
+};
+
+export type HomeStackParamList = {
+  HomeMain: undefined;
+  Send: { token?: Token } | undefined;
+  Receive: { token?: Token } | undefined;
+  Activity: { initialFilter?: ActivityFilter } | undefined;
+  Contacts: undefined;
+  Settings: { screen?: keyof SettingsStackParamList } | undefined;
+  TokenDetail: { token: Token };
 };
 
 export type AppsStackParamList = {

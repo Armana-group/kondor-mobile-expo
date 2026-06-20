@@ -44,6 +44,19 @@ function renderedText(renderer: TestRenderer.ReactTestRenderer): string {
     .join(' ');
 }
 
+function findPressableByText(renderer: TestRenderer.ReactTestRenderer, label: string) {
+  const node = renderer.root.findAll((candidate) =>
+    typeof candidate.props.onPress === 'function' &&
+    candidate.findAllByType(Text).some((textNode) => textNode.props.children === label)
+  )[0];
+
+  if (!node) {
+    throw new Error(`Pressable not found: ${label}`);
+  }
+
+  return node;
+}
+
 describe('ReceiveScreen backup warning', () => {
   it('shows backup warning before displaying a receive address', async () => {
     const { ReceiveScreen } = require('../ReceiveScreen');
@@ -54,5 +67,11 @@ describe('ReceiveScreen backup warning', () => {
     });
 
     expect(renderedText(renderer!)).toContain('Back up this wallet');
+
+    await act(async () => {
+      findPressableByText(renderer!, 'Back up this wallet').props.onPress();
+    });
+
+    expect(mockNavigate).toHaveBeenCalledWith('Settings', { screen: 'BackupRecovery' });
   });
 });

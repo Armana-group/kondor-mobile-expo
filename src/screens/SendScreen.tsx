@@ -437,7 +437,7 @@ export const SendScreen = () => {
   };
 
   const handleBackupPress = () => {
-    navigation.navigate('Settings');
+    navigation.navigate('Settings', { screen: 'BackupRecovery' });
   };
 
   // Render token picker modal
