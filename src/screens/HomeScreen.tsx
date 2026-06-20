@@ -69,11 +69,12 @@ export const HomeScreen = () => {
 
   // Core balance fetching logic (silent - no spinner)
   const fetchBalances = useCallback(async () => {
-    if (!address) {
+    if (!address || !hasHydrated) {
       koinosLogger.debug('No address, skipping balance refresh');
       return;
     }
 
+    const requestScope = `${networkMode}:${address}`;
     koinosLogger.debug('Fetching balances for address:', address);
     try {
       // Refresh token balances
@@ -81,12 +82,20 @@ export const HomeScreen = () => {
 
       // Get KOIN balance for portfolio display
       const newBalance = await getBalance(address);
+      if (initializedScopeRef.current !== requestScope) {
+        koinosLogger.debug('Skipping stale balance write for scope:', requestScope);
+        return;
+      }
       koinosLogger.debug('Balance fetched successfully:', newBalance);
       updateBalance(newBalance);
 
       // Fetch mana
       try {
         const manaData = await getMana(address);
+        if (initializedScopeRef.current !== requestScope) {
+          koinosLogger.debug('Skipping stale mana write for scope:', requestScope);
+          return;
+        }
         koinosLogger.debug('Mana fetched successfully:', manaData);
         setManaPercentage(manaData.availablePercentage);
       } catch (manaError: any) {
@@ -95,7 +104,7 @@ export const HomeScreen = () => {
     } catch (error: any) {
       koinosLogger.error('Balance fetch error:', error);
     }
-  }, [address, refreshBalances, getBalance, updateBalance, getMana]);
+  }, [address, hasHydrated, networkMode, refreshBalances, getBalance, updateBalance, getMana]);
 
   // Initialize on first load (silent)
   const initializeAndLoadBalance = useCallback(async () => {

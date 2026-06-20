@@ -259,6 +259,55 @@ Test Suites: 3 passed, 3 total
 Tests:       7 passed, 7 total
 ```
 
+## Tenth fix pass after re-review
+
+### Finding addressed
+
+- Guarded `HomeScreen` balance/mana writes behind the in-flight request's `network:address` scope so a previous-network response cannot repaint the current screen after a network switch.
+- Reworked `SendScreen` to derive token selection, available balance display, and send-button enablement from active-scope token state instead of raw `useTokenStore().tokens` or `useWalletStore().balance`.
+- During a scope transition, `SendScreen` now shows a loading balance state and keeps send/max disabled until the active-network token scope is ready.
+
+### Additional regression coverage
+
+- Extended `src/screens/__tests__/HomeScreen.test.tsx`
+- Added `src/screens/__tests__/SendScreen.test.tsx`
+
+### RED
+
+Command:
+
+```bash
+npm test -- src/screens/__tests__/HomeScreen.test.tsx src/screens/__tests__/SendScreen.test.tsx --runInBand
+```
+
+Key failures before the fix:
+
+```text
+Expected value: not "Available: 12.34 KOIN"
+Received array: ["Send KOIN", ..., "Available: 12.34 KOIN", ...]
+
+Expected value: "70.0%"
+Received array: [..., "Mana Available", "12.5%", ...]
+```
+
+### GREEN
+
+Focused regression suite:
+
+```bash
+npm test -- src/screens/__tests__/HomeScreen.test.tsx src/screens/__tests__/SendScreen.test.tsx --runInBand
+```
+
+Result:
+
+```text
+PASS src/screens/__tests__/SendScreen.test.tsx
+PASS src/screens/__tests__/HomeScreen.test.tsx
+
+Test Suites: 2 passed, 2 total
+Tests:       4 passed, 4 total
+```
+
 ## Ninth fix section after final review
 
 ### Findings addressed

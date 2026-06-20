@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -21,7 +21,13 @@ import { QRScannerModal, ParsedQRData } from '../components/QRScannerModal';
 import { useKoinosStore } from '../stores/koinosStore';
 import { useWalletStore } from '../stores/walletStore';
 import { useContactStore, Contact } from '../stores/contactStore';
-import { useTokenStore, Token } from '../stores/tokenStore';
+import {
+  useTokenStore,
+  Token,
+  getScopedTokens,
+  isTokenScopeLoading,
+} from '../stores/tokenStore';
+import { useNetworkStore } from '../stores/networkStore';
 import { isValidAddress, calculateManaRegenTime, truncateAddress, formatKoinBalance } from '../lib/utils';
 import { requireBiometricAuth } from '../lib/biometrics';
 import { koinosLogger } from '../lib/logger';
@@ -31,18 +37,87 @@ type SendRouteParams = {
   Send: { token?: Token } | undefined;
 };
 
+type TokenSelectionPreference = {
+  contractId: string | null;
+  symbol: string | null;
+};
+
+function getTokenSelectionPreference(token?: Pick<Token, 'contractId' | 'symbol'> | null): TokenSelectionPreference {
+  if (!token) {
+    return {
+      contractId: null,
+      symbol: 'KOIN',
+    };
+  }
+
+  return {
+    contractId: token.contractId,
+    symbol: token.symbol,
+  };
+}
+
+function resolveSelectedToken(
+  scopedTokens: Token[],
+  preference: TokenSelectionPreference
+): Token | null {
+  if (scopedTokens.length === 0) {
+    return null;
+  }
+
+  if (preference.contractId) {
+    const tokenByContract = scopedTokens.find((token) => token.contractId === preference.contractId);
+    if (tokenByContract) {
+      return tokenByContract;
+    }
+  }
+
+  if (preference.symbol) {
+    const tokenBySymbol = scopedTokens.find(
+      (token) => token.symbol.toLowerCase() === preference.symbol!.toLowerCase()
+    );
+    if (tokenBySymbol) {
+      return tokenBySymbol;
+    }
+  }
+
+  return scopedTokens.find((token) => token.symbol === 'KOIN') || scopedTokens[0] || null;
+}
+
 export const SendScreen = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<SendRouteParams, 'Send'>>();
   const { transfer, transferToken, getMana, getBalance } = useKoinosStore();
-  const { balance, address, updateBalance } = useWalletStore();
+  const { address, updateBalance } = useWalletStore();
   const { getContactByAddress } = useContactStore();
-  const { tokens, getTokenBySymbol, refreshSingleBalance } = useTokenStore();
-
-  // Get initial token from route params or default to KOIN
-  const initialToken = route.params?.token || getTokenBySymbol('KOIN') || tokens[0];
-
-  const [selectedToken, setSelectedToken] = useState<Token | null>(initialToken || null);
+  const {
+    tokens,
+    isLoading: tokensLoading,
+    cacheKey: tokenCacheKey,
+    refreshSingleBalance,
+  } = useTokenStore();
+  const networkMode = useNetworkStore((state) => state.mode);
+  const hasHydrated = useNetworkStore((state) => state.hasHydrated);
+  const visibleTokens = getScopedTokens({
+    hasHydrated,
+    networkMode,
+    address,
+    cacheKey: tokenCacheKey,
+    tokens,
+  });
+  const tokenScopeLoading = isTokenScopeLoading({
+    hasHydrated,
+    networkMode,
+    address,
+    cacheKey: tokenCacheKey,
+    isLoading: tokensLoading,
+  });
+  const [selectedTokenPreference, setSelectedTokenPreference] = useState<TokenSelectionPreference>(() =>
+    getTokenSelectionPreference(route.params?.token)
+  );
+  const selectedToken = useMemo(
+    () => resolveSelectedToken(visibleTokens, selectedTokenPreference),
+    [visibleTokens, selectedTokenPreference]
+  );
   const [showTokenPicker, setShowTokenPicker] = useState(false);
   const [recipient, setRecipient] = useState('');
   const [amount, setAmount] = useState('');
@@ -58,17 +133,23 @@ export const SendScreen = () => {
   // Update selected token when route params change
   useEffect(() => {
     if (route.params?.token) {
-      setSelectedToken(route.params.token);
+      setSelectedTokenPreference(getTokenSelectionPreference(route.params.token));
     }
-  }, [route.params?.token]);
+  }, [route.params?.token?.contractId, route.params?.token?.symbol]);
 
   // Get token balance
   const tokenBalance = selectedToken?.balance || '0';
+  const canSend = Boolean(recipient && amount && selectedToken && !tokenScopeLoading);
 
   const validateForm = (): boolean => {
     const newErrors: typeof errors = {};
 
     // Validate token selection
+    if (tokenScopeLoading) {
+      Alert.alert('Balance Loading', 'Token balances are still loading for the active network.');
+      return false;
+    }
+
     if (!selectedToken) {
       Alert.alert('Error', 'Please select a token to send');
       return false;
@@ -208,6 +289,10 @@ export const SendScreen = () => {
   };
 
   const handleMaxAmount = () => {
+    if (!selectedToken || tokenScopeLoading) {
+      return;
+    }
+
     // For KOIN, leave a small amount for mana. For other tokens, use full balance.
     const bal = parseFloat(tokenBalance);
     const maxAmount = selectedToken?.symbol === 'KOIN'
@@ -218,7 +303,7 @@ export const SendScreen = () => {
   };
 
   const handleTokenSelect = (token: Token) => {
-    setSelectedToken(token);
+    setSelectedTokenPreference(getTokenSelectionPreference(token));
     setShowTokenPicker(false);
     setAmount(''); // Clear amount when changing token
   };
@@ -264,9 +349,16 @@ export const SendScreen = () => {
 
     // If token was specified, try to select it
     if (data.token) {
-      const token = getTokenBySymbol(data.token.toUpperCase());
+      const token = visibleTokens.find(
+        (candidate) => candidate.symbol.toLowerCase() === data.token!.toLowerCase()
+      );
       if (token) {
-        setSelectedToken(token);
+        setSelectedTokenPreference(getTokenSelectionPreference(token));
+      } else {
+        setSelectedTokenPreference({
+          contractId: null,
+          symbol: data.token.toUpperCase(),
+        });
       }
     }
   };
@@ -287,7 +379,7 @@ export const SendScreen = () => {
           </TouchableOpacity>
         </View>
         <FlatList
-          data={tokens}
+          data={visibleTokens}
           keyExtractor={(item) => item.contractId}
           renderItem={({ item }) => (
             <TouchableOpacity
@@ -375,7 +467,9 @@ export const SendScreen = () => {
                   </View>
                 </>
               ) : (
-                <Text style={styles.tokenSelectorPlaceholder}>Select a token</Text>
+                <Text style={styles.tokenSelectorPlaceholder}>
+                  {tokenScopeLoading ? 'Loading...' : 'Select a token'}
+                </Text>
               )}
               <Ionicons name="chevron-down" size={20} color={colors.textSecondary} />
             </TouchableOpacity>
@@ -447,9 +541,18 @@ export const SendScreen = () => {
             />
             <View style={styles.balanceInfo}>
               <Text style={styles.balanceText}>
-                Available: {formatKoinBalance(tokenBalance)} {selectedToken?.symbol || ''}
+                {tokenScopeLoading
+                  ? 'Available: --'
+                  : `Available: ${formatKoinBalance(tokenBalance)} ${selectedToken?.symbol || ''}`.trim()}
               </Text>
-              <TouchableOpacity style={styles.maxButton} onPress={handleMaxAmount}>
+              <TouchableOpacity
+                style={[
+                  styles.maxButton,
+                  (!selectedToken || tokenScopeLoading) && styles.maxButtonDisabled,
+                ]}
+                onPress={handleMaxAmount}
+                disabled={!selectedToken || tokenScopeLoading}
+              >
                 <Text style={styles.maxButtonText}>Max</Text>
               </TouchableOpacity>
             </View>
@@ -466,10 +569,10 @@ export const SendScreen = () => {
             <TouchableOpacity
               style={[
                 styles.sendButton,
-                (!recipient || !amount) && styles.sendButtonDisabled,
+                !canSend && styles.sendButtonDisabled,
               ]}
               onPress={handleSend}
-              disabled={!recipient || !amount}
+              disabled={!canSend}
             >
               <Text style={styles.sendButtonText}>Send Transaction</Text>
             </TouchableOpacity>
@@ -655,6 +758,9 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     backgroundColor: colors.elevated,
     borderRadius: 6,
+  },
+  maxButtonDisabled: {
+    opacity: 0.5,
   },
   maxButtonText: {
     fontSize: 12,

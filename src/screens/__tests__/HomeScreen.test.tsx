@@ -285,4 +285,85 @@ describe('HomeScreen network initialization', () => {
     expect(renderedText).not.toContain('12.34 KOIN');
     expect(renderedText).not.toContain('99.00 KOIN');
   });
+
+  it('ignores stale mana responses from the previous network scope', async () => {
+    mockNetworkState = {
+      mode: 'mainnet',
+      hasHydrated: true,
+    };
+
+    let resolveStaleMana: ((value: {
+      current: string;
+      reserved: string;
+      available: string;
+      max: string;
+      percentage: number;
+      availablePercentage: number;
+    }) => void) | null = null;
+
+    const staleManaPromise = new Promise<{
+      current: string;
+      reserved: string;
+      available: string;
+      max: string;
+      percentage: number;
+      availablePercentage: number;
+    }>((resolve) => {
+      resolveStaleMana = resolve;
+    });
+
+    mockGetMana
+      .mockImplementationOnce(() => staleManaPromise)
+      .mockResolvedValueOnce({
+        current: '0',
+        reserved: '0',
+        available: '0',
+        max: '0',
+        percentage: 0,
+        availablePercentage: 70,
+      });
+
+    const { HomeScreen } = require('../HomeScreen');
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<HomeScreen />);
+    });
+    await flushEffects();
+
+    expect(mockGetMana).toHaveBeenCalledTimes(1);
+
+    mockNetworkState = {
+      mode: 'harbinger',
+      hasHydrated: true,
+    };
+    mockTokenState = {
+      ...mockTokenState,
+      cacheKey: `harbinger:${mockAddress}`,
+    };
+
+    await act(async () => {
+      renderer!.update(<HomeScreen />);
+    });
+    await flushEffects();
+
+    expect(collectRenderedText(renderer!)).toContain('70.0%');
+
+    await act(async () => {
+      resolveStaleMana?.({
+        current: '0',
+        reserved: '0',
+        available: '0',
+        max: '0',
+        percentage: 0,
+        availablePercentage: 12.5,
+      });
+      await Promise.resolve();
+    });
+    await flushEffects();
+
+    const renderedText = collectRenderedText(renderer!);
+    expect(renderedText).toContain('70.0%');
+    expect(renderedText).not.toContain('12.5%');
+  });
 });
