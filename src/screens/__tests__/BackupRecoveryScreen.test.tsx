@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, Text, TextInput } from 'react-native';
+import { Alert, StyleSheet, Text, TextInput } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 
 const mockGoBack = jest.fn();
@@ -152,6 +152,15 @@ function findInputByLabel(renderer: TestRenderer.ReactTestRenderer, label: strin
   return input;
 }
 
+function findInputContainerByLabel(renderer: TestRenderer.ReactTestRenderer, label: string) {
+  const labelNode = renderer.root.findAllByType(Text).find((candidate) => candidate.props.children === label);
+  const container = labelNode?.parent;
+  if (!container) {
+    throw new Error(`Input container not found: ${label}`);
+  }
+  return container;
+}
+
 describe('BackupRecoveryScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -189,6 +198,39 @@ describe('BackupRecoveryScreen', () => {
     });
 
     expect(mockNavigate).toHaveBeenCalledWith('CreateBackup');
+  });
+
+  it('keeps restore inputs visually separated from each other and the action buttons', async () => {
+    const { BackupRecoveryScreen } = require('../BackupRecoveryScreen');
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(<BackupRecoveryScreen />);
+    });
+
+    const backupSecretContainer = findInputContainerByLabel(
+      renderer!,
+      'Backup recovery key or legacy backup PIN'
+    );
+    const currentPinContainer = findInputContainerByLabel(renderer!, 'Current Wallet PIN');
+
+    expect(StyleSheet.flatten(backupSecretContainer.props.style).marginBottom).toBeGreaterThanOrEqual(16);
+    expect(StyleSheet.flatten(currentPinContainer.props.style).marginBottom).toBeGreaterThanOrEqual(18);
+  });
+
+  it('keeps create backup inputs visually separated from the final action', async () => {
+    const { CreateBackupScreen } = require('../CreateBackupScreen');
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(<CreateBackupScreen />);
+    });
+
+    const recoveryKeyContainer = findInputContainerByLabel(renderer!, 'Confirm backup recovery key');
+    const currentPinContainer = findInputContainerByLabel(renderer!, 'Current wallet PIN');
+
+    expect(StyleSheet.flatten(recoveryKeyContainer.props.style).marginBottom).toBeGreaterThanOrEqual(16);
+    expect(StyleSheet.flatten(currentPinContainer.props.style).marginBottom).toBeGreaterThanOrEqual(18);
   });
 
   it('requires generated recovery key confirmation before creating a backup', async () => {
@@ -424,7 +466,7 @@ describe('BackupRecoveryScreen', () => {
 
     expect(alertSpy).toHaveBeenCalledWith(
       'Import Failed',
-      'Select a valid Kondor backup JSON file and try again.'
+      'Select a valid Kondor backup file and try again.'
     );
   });
 

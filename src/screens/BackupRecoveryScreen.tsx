@@ -46,12 +46,12 @@ function getErrorMessage(error: unknown): string {
 
 function getImportBackupErrorMessage(error: unknown): string {
   if (error instanceof SyntaxError) {
-    return 'Select a valid Kondor backup JSON file and try again.';
+    return 'Select a valid Kondor backup file and try again.';
   }
 
   return sanitizeErrorForUser(
     error,
-    'Unable to import wallet backup. Select a valid Kondor backup JSON file and try again.'
+    'Unable to import wallet backup. Select a valid Kondor backup file and try again.'
   );
 }
 
@@ -318,7 +318,11 @@ export const BackupRecoveryScreen = () => {
           <View style={styles.headerSpacer} />
         </View>
 
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.statusCard}>
             <Text style={styles.sectionTitle}>Backup Status</Text>
             <View style={styles.statusRow}>
@@ -373,7 +377,7 @@ export const BackupRecoveryScreen = () => {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Import Recovery File</Text>
             <Text style={styles.helperText}>
-              Restore from an encrypted JSON backup. New backups use the backup recovery key; older backups may use the legacy backup PIN.
+              Restore from an encrypted backup file. New backups use the backup recovery key; older backups may use the legacy backup PIN.
             </Text>
 
             <Pressable style={styles.fileRow} onPress={handleImportBackup}>
@@ -468,6 +472,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 20,
   },
+  scrollContent: {
+    paddingBottom: 120,
+  },
   section: {
     backgroundColor: colors.card,
     borderWidth: 1,
@@ -494,7 +501,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     color: colors.textSecondary,
-    marginBottom: 14,
+    marginBottom: 18,
   },
   statusRow: {
     flexDirection: 'row',
@@ -509,7 +516,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   input: {
-    marginBottom: 0,
+    marginBottom: 18,
   },
   backupList: {
     gap: 12,
@@ -574,7 +581,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     paddingHorizontal: 14,
     paddingVertical: 14,
-    marginBottom: 16,
+    marginBottom: 20,
   },
   fileRowLeft: {
     flexDirection: 'row',
@@ -589,6 +596,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   buttonStack: {
-    gap: 12,
+    gap: 14,
   },
 });

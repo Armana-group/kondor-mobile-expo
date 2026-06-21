@@ -163,14 +163,18 @@ export const CreateBackupScreen = () => {
           <View style={styles.headerSpacer} />
         </View>
 
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.summaryCard}>
             <View style={styles.summaryIcon}>
               <Ionicons name="shield-checkmark-outline" size={22} color={colors.purple} />
             </View>
             <Text style={styles.summaryTitle}>Encrypted wallet backup</Text>
             <Text style={styles.summaryBody}>
-              This creates an encrypted JSON file containing the secrets needed to restore your accounts.
+              This creates an encrypted backup file containing the secrets needed to restore your accounts.
             </Text>
           </View>
 
@@ -288,13 +292,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 20,
   },
+  scrollContent: {
+    paddingBottom: 120,
+  },
   summaryCard: {
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: 'rgba(112, 97, 239, 0.35)',
     borderRadius: 8,
-    padding: 16,
-    marginBottom: 14,
+    padding: 18,
+    marginBottom: 18,
   },
   summaryIcon: {
     width: 40,
@@ -321,8 +328,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 8,
-    padding: 16,
-    marginBottom: 14,
+    padding: 18,
+    marginBottom: 18,
   },
   sectionTitle: {
     fontSize: 16,
@@ -334,7 +341,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     color: colors.textSecondary,
-    marginBottom: 14,
+    marginBottom: 18,
   },
   requirementRow: {
     flexDirection: 'row',
@@ -357,8 +364,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(245, 158, 11, 0.35)',
     borderRadius: 8,
-    padding: 14,
-    marginBottom: 14,
+    padding: 16,
+    marginBottom: 18,
   },
   warningText: {
     flex: 1,
@@ -367,7 +374,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   input: {
-    marginBottom: 0,
+    marginBottom: 18,
   },
   recoveryKeyBox: {
     backgroundColor: colors.elevated,
