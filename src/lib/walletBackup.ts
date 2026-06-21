@@ -122,29 +122,43 @@ async function deriveAesKey(
 ): Promise<CryptoKey> {
   const subtle = getSubtleCrypto();
   const encodedSecret = normalizeBytes(new TextEncoder().encode(backupSecret));
-  const baseKey = await subtle.importKey(
-    'raw',
-    toArrayBuffer(encodedSecret),
-    'PBKDF2',
-    false,
-    ['deriveKey']
-  );
+  const derivationParams = {
+    name: 'PBKDF2',
+    hash: 'SHA-256',
+    salt: toArrayBuffer(salt),
+    iterations: PBKDF2_ITERATIONS,
+  };
+  const aesParams = {
+    name: 'AES-GCM',
+    length: AES_KEY_LENGTH,
+  };
 
-  return subtle.deriveKey(
-    {
-      name: 'PBKDF2',
-      hash: 'SHA-256',
-      salt: toArrayBuffer(salt),
-      iterations: PBKDF2_ITERATIONS,
-    },
-    baseKey,
-    {
-      name: 'AES-GCM',
-      length: AES_KEY_LENGTH,
-    },
-    false,
-    usages
-  );
+  if (typeof subtle.deriveBits === 'function') {
+    const baseKey = await subtle.importKey(
+      'raw',
+      toArrayBuffer(encodedSecret),
+      'PBKDF2',
+      false,
+      ['deriveBits']
+    );
+    const derivedBits = await subtle.deriveBits(derivationParams, baseKey, AES_KEY_LENGTH);
+
+    return subtle.importKey('raw', derivedBits, aesParams, false, usages);
+  }
+
+  if (typeof subtle.deriveKey === 'function') {
+    const baseKey = await subtle.importKey(
+      'raw',
+      toArrayBuffer(encodedSecret),
+      'PBKDF2',
+      false,
+      ['deriveKey']
+    );
+
+    return subtle.deriveKey(derivationParams, baseKey, aesParams, false, usages);
+  }
+
+  throw new Error('Secure backup encryption is unavailable on this device');
 }
 
 function stableStringify(value: unknown): string {

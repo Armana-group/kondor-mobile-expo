@@ -86,6 +86,11 @@ const LEGACY_V1_BACKUP: BackupData = {
   checksum: '52b3a1eb',
 };
 
+function arrayBufferFrom(bytes: number[]): ArrayBuffer {
+  const view = Uint8Array.from(bytes);
+  return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength) as ArrayBuffer;
+}
+
 async function buildSnapshot(): Promise<WalletBackupSnapshot> {
   const hdPrimary = createWalletFromMnemonic(TEST_MNEMONIC, 0);
   const hdSecondary = createWalletFromMnemonic(TEST_MNEMONIC, 1);
@@ -136,6 +141,77 @@ async function buildSnapshot(): Promise<WalletBackupSnapshot> {
 }
 
 describe('walletBackup', () => {
+  it('derives encryption keys when crypto subtle only supports deriveBits', async () => {
+    const originalCrypto = globalThis.crypto;
+    const importKey = jest.fn(
+      async (
+        format: string,
+        _keyData: ArrayBuffer,
+        algorithm: string | { name: string; length?: number },
+        _extractable: boolean,
+        keyUsages: string[]
+      ) =>
+        ({
+          format,
+          algorithm: typeof algorithm === 'string' ? { name: algorithm } : algorithm,
+          keyUsages,
+        }) as unknown as CryptoKey
+    );
+    const deriveBits = jest.fn(
+      async (_algorithm: unknown, baseKey: CryptoKey, length: number) => {
+        expect((baseKey as unknown as { keyUsages: string[] }).keyUsages).toEqual([
+          'deriveBits',
+        ]);
+        expect(length).toBe(256);
+        return arrayBufferFrom(new Array(32).fill(7));
+      }
+    );
+    const encrypt = jest.fn(async () => arrayBufferFrom([0xab, 0xcd, 0xef]));
+
+    Object.defineProperty(globalThis, 'crypto', {
+      configurable: true,
+      writable: true,
+      value: {
+        subtle: {
+          importKey,
+          deriveBits,
+          encrypt,
+        },
+      },
+    });
+
+    try {
+      await expect(
+        encryptSecretWithBackupSecret('secret-value', TEST_BACKUP_SECRET)
+      ).resolves.toMatchObject({
+        algorithm: 'pbkdf2-aes-256-gcm',
+        ciphertext: 'abcdef',
+        keyLength: 256,
+      });
+      expect(importKey).toHaveBeenCalledWith(
+        'raw',
+        expect.any(ArrayBuffer),
+        'PBKDF2',
+        false,
+        ['deriveBits']
+      );
+      expect(importKey).toHaveBeenCalledWith(
+        'raw',
+        expect.any(ArrayBuffer),
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt']
+      );
+      expect(deriveBits).toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(globalThis, 'crypto', {
+        configurable: true,
+        writable: true,
+        value: originalCrypto,
+      });
+    }
+  });
+
   it('rejects PIN-shaped secrets when encrypting backup secrets directly', async () => {
     await expect(
       encryptSecretWithBackupSecret('secret-value', LEGACY_PIN)
