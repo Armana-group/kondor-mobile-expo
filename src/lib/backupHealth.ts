@@ -11,6 +11,16 @@ export type BackupHealth = {
   failureReason: string | null;
 };
 
+export type BackupRecord = {
+  id: string;
+  fileName: string;
+  fileUri: string;
+  provider: BackupProvider;
+  createdAt: string;
+  walletFingerprint: string;
+  accountSetHash: string;
+};
+
 export type MarkBackupVerifiedInput = {
   provider: BackupProvider;
   verifiedAt: string;

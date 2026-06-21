@@ -14,6 +14,7 @@ import { SettingsScreen } from '../screens/SettingsScreen';
 import { SecurityPrivacyScreen } from '../screens/SecurityPrivacyScreen';
 import { NetworkSettingsScreen } from '../screens/NetworkSettingsScreen';
 import { BackupRecoveryScreen } from '../screens/BackupRecoveryScreen';
+import { CreateBackupScreen } from '../screens/CreateBackupScreen';
 import { TokenManagementScreen } from '../screens/TokenManagementScreen';
 import { ConnectedSitesScreen } from '../screens/ConnectedSitesScreen';
 import { CollectiblesScreen } from '../screens/CollectiblesScreen';
@@ -43,6 +44,7 @@ export type SettingsStackParamList = {
   SecurityPrivacy: undefined;
   ConnectedSites: undefined;
   BackupRecovery: undefined;
+  CreateBackup: undefined;
   NetworkSettings: undefined;
 };
 
@@ -113,6 +115,7 @@ const SettingsStackNavigator = ({ onLockWallet }: SettingsStackNavigatorProps) =
     <SettingsStack.Screen name="SecurityPrivacy" component={SecurityPrivacyScreen} />
     <SettingsStack.Screen name="ConnectedSites" component={ConnectedSitesScreen} />
     <SettingsStack.Screen name="BackupRecovery" component={BackupRecoveryScreen} />
+    <SettingsStack.Screen name="CreateBackup" component={CreateBackupScreen} />
     <SettingsStack.Screen name="NetworkSettings" component={NetworkSettingsScreen} />
   </SettingsStack.Navigator>
 );
@@ -155,11 +158,12 @@ const HomeStackNavigator = ({ onLockWallet }: HomeStackNavigatorProps) => (
     />
     <HomeStack.Screen
       name="Settings"
-      children={() => <SettingsStackNavigator onLockWallet={onLockWallet} />}
       options={{
         animation: 'slide_from_right',
       }}
-    />
+    >
+      {() => <SettingsStackNavigator onLockWallet={onLockWallet} />}
+    </HomeStack.Screen>
     <HomeStack.Screen
       name="TokenDetail"
       component={TokenDetailScreen}
@@ -206,14 +210,15 @@ export const TabNavigator = ({ onLockWallet }: TabNavigatorProps) => {
     >
       <Tab.Screen
         name="HomeTab"
-        children={() => <HomeStackNavigator onLockWallet={onLockWallet} />}
         options={{
           tabBarLabel: 'Home',
           tabBarIcon: ({ focused, color }) => (
             <Ionicons name={focused ? 'home' : 'home-outline'} size={24} color={color} />
           ),
         }}
-      />
+      >
+        {() => <HomeStackNavigator onLockWallet={onLockWallet} />}
+      </Tab.Screen>
       <Tab.Screen
         name="Collectibles"
         component={CollectiblesStackNavigator}

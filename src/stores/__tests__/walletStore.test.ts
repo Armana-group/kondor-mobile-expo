@@ -257,6 +257,42 @@ describe('walletStore backup restore hardening', () => {
     });
   });
 
+  it('records created backup metadata without storing the backup recovery key', async () => {
+    const { useWalletStore } = await loadWalletStore();
+
+    useWalletStore.getState().recordBackupCreated({
+      id: 'backup-1',
+      fileName: 'kondor-wallet-backup-1782000000000.json',
+      fileUri: 'file:///documents/backups/kondor-wallet-backup-1782000000000.json',
+      provider: 'manual-file',
+      createdAt: '2026-06-20T00:00:00.000Z',
+      walletFingerprint: 'wallet-hash',
+      accountSetHash: 'account-hash',
+    });
+
+    expect(useWalletStore.getState().backupRecords).toEqual([
+      {
+        id: 'backup-1',
+        fileName: 'kondor-wallet-backup-1782000000000.json',
+        fileUri: 'file:///documents/backups/kondor-wallet-backup-1782000000000.json',
+        provider: 'manual-file',
+        createdAt: '2026-06-20T00:00:00.000Z',
+        walletFingerprint: 'wallet-hash',
+        accountSetHash: 'account-hash',
+      },
+    ]);
+    expect(JSON.stringify(useWalletStore.getState().backupRecords)).not.toContain(TEST_BACKUP_SECRET);
+    expect(useWalletStore.getState().backupHealth).toEqual({
+      status: 'verified',
+      provider: 'manual-file',
+      lastCreatedAt: '2026-06-20T00:00:00.000Z',
+      lastVerifiedAt: '2026-06-20T00:00:00.000Z',
+      walletFingerprint: 'wallet-hash',
+      accountSetHash: 'account-hash',
+      failureReason: null,
+    });
+  });
+
   it('marks an existing verified backup stale when an account is imported', async () => {
     const { useWalletStore, secureStoreState } = await loadWalletStore();
 

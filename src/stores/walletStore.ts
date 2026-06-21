@@ -18,6 +18,7 @@ import {
   EMPTY_BACKUP_HEALTH,
   markBackupHealthStale,
   markBackupHealthVerified,
+  type BackupRecord,
   type BackupHealth,
   type MarkBackupVerifiedInput,
 } from '../lib/backupHealth';
@@ -60,6 +61,7 @@ interface WalletState {
   isWalletCreated: boolean;
   lastBackupAt: string | null;
   backupHealth: BackupHealth;
+  backupRecords: BackupRecord[];
 
   // Actions
   createWallet: (mnemonic: string) => Promise<void>;
@@ -81,6 +83,7 @@ interface WalletState {
   restoreFromBackup: (backup: BackupData, backupPin: string, currentPin: string) => Promise<void>;
   setLastBackupAt: (timestamp: string | null) => void;
   markBackupVerified: (input: MarkBackupVerifiedInput) => void;
+  recordBackupCreated: (record: BackupRecord) => void;
   markBackupStale: (reason: string) => void;
 }
 
@@ -185,6 +188,7 @@ export const useWalletStore = create<WalletState>()(
       isWalletCreated: false,
       lastBackupAt: null,
       backupHealth: EMPTY_BACKUP_HEALTH,
+      backupRecords: [],
 
       createWallet: async (mnemonic: string) => {
         try {
@@ -212,6 +216,7 @@ export const useWalletStore = create<WalletState>()(
             isWalletCreated: true,
             lastBackupAt: null,
             backupHealth: EMPTY_BACKUP_HEALTH,
+            backupRecords: [],
           });
 
           await HapticFeedback.walletCreated();
@@ -303,6 +308,7 @@ export const useWalletStore = create<WalletState>()(
             isWalletCreated: false,
             lastBackupAt: null,
             backupHealth: EMPTY_BACKUP_HEALTH,
+            backupRecords: [],
           });
         } catch (error) {
           log.error('Failed to clear wallet:', error);
@@ -466,6 +472,7 @@ export const useWalletStore = create<WalletState>()(
           balance: '0',
           isWalletCreated: true,
           lastBackupAt: null,
+          backupRecords: [],
           backupHealth: backup.version === 2
             ? markBackupHealthVerified({
                 provider: 'manual-file',
@@ -484,6 +491,22 @@ export const useWalletStore = create<WalletState>()(
           backupHealth: markBackupHealthVerified(input),
           lastBackupAt: input.verifiedAt,
         });
+      },
+
+      recordBackupCreated: (record: BackupRecord) => {
+        set((state) => ({
+          backupHealth: markBackupHealthVerified({
+            provider: record.provider,
+            verifiedAt: record.createdAt,
+            walletFingerprint: record.walletFingerprint,
+            accountSetHash: record.accountSetHash,
+          }),
+          backupRecords: [
+            record,
+            ...state.backupRecords.filter((candidate) => candidate.id !== record.id),
+          ].slice(0, 20),
+          lastBackupAt: record.createdAt,
+        }));
       },
 
       markBackupStale: (reason: string) => {
@@ -653,6 +676,7 @@ export const useWalletStore = create<WalletState>()(
         isWalletCreated: state.isWalletCreated,
         lastBackupAt: state.lastBackupAt,
         backupHealth: state.backupHealth,
+        backupRecords: state.backupRecords,
       }),
     }
   )

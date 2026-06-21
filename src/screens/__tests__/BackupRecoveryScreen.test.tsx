@@ -3,9 +3,11 @@ import { Alert, Text, TextInput } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 
 const mockGoBack = jest.fn();
+const mockNavigate = jest.fn();
 const mockCreateBackupSnapshot = jest.fn();
 const mockRestoreFromBackup = jest.fn();
 const mockMarkBackupVerified = jest.fn();
+const mockRecordBackupCreated = jest.fn();
 const mockCopyWithAutoClear = jest.fn(async (_value: string) => undefined);
 const mockGenerateBackupRecoveryKey = jest.fn(async () => 'ABCD-EFGH-IJKM-NPQR-STVW-XYZ2-3456-789A');
 const mockVerifyWalletBackup = jest.fn<Promise<boolean>, [unknown, string]>(async () => true);
@@ -54,7 +56,7 @@ const mockCreateWalletBackup = jest.fn<Promise<{
 const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
 
 jest.mock('@react-navigation/native', () => ({
-  useNavigation: () => ({ goBack: mockGoBack }),
+  useNavigation: () => ({ goBack: mockGoBack, navigate: mockNavigate }),
 }));
 
 jest.mock('@expo/vector-icons', () => ({
@@ -86,6 +88,8 @@ jest.mock('../../stores/walletStore', () => ({
     createBackupSnapshot: mockCreateBackupSnapshot,
     restoreFromBackup: mockRestoreFromBackup,
     markBackupVerified: mockMarkBackupVerified,
+    recordBackupCreated: mockRecordBackupCreated,
+    backupRecords: [],
     backupHealth: {
       status: 'none',
       provider: null,
@@ -165,12 +169,34 @@ describe('BackupRecoveryScreen', () => {
     alertSpy.mockRestore();
   });
 
-  it('requires generated recovery key confirmation before creating a backup', async () => {
+  it('explains recovery requirements and opens the dedicated create backup screen', async () => {
     const { BackupRecoveryScreen } = require('../BackupRecoveryScreen');
     let renderer: TestRenderer.ReactTestRenderer;
 
     await act(async () => {
       renderer = TestRenderer.create(<BackupRecoveryScreen />);
+    });
+
+    const renderedText = renderer!.root
+      .findAllByType(Text)
+      .map((node) => node.props.children)
+      .join(' ');
+
+    expect(renderedText).toContain('To recover this wallet later, you need the encrypted backup file and its backup recovery key.');
+
+    await act(async () => {
+      findButton(renderer!, 'Create new backup').props.onPress();
+    });
+
+    expect(mockNavigate).toHaveBeenCalledWith('CreateBackup');
+  });
+
+  it('requires generated recovery key confirmation before creating a backup', async () => {
+    const { CreateBackupScreen } = require('../CreateBackupScreen');
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(<CreateBackupScreen />);
     });
 
     await act(async () => {
@@ -182,7 +208,7 @@ describe('BackupRecoveryScreen', () => {
     });
 
     await act(async () => {
-      findButton(renderer!, 'Create Manual Backup').props.onPress();
+      findButton(renderer!, 'Create encrypted backup').props.onPress();
     });
 
     expect(mockCreateBackupSnapshot).not.toHaveBeenCalled();
@@ -193,11 +219,11 @@ describe('BackupRecoveryScreen', () => {
   });
 
   it('creates a manual backup with current PIN plus backup recovery key', async () => {
-    const { BackupRecoveryScreen } = require('../BackupRecoveryScreen');
+    const { CreateBackupScreen } = require('../CreateBackupScreen');
     let renderer: TestRenderer.ReactTestRenderer;
 
     await act(async () => {
-      renderer = TestRenderer.create(<BackupRecoveryScreen />);
+      renderer = TestRenderer.create(<CreateBackupScreen />);
     });
 
     await act(async () => {
@@ -211,7 +237,7 @@ describe('BackupRecoveryScreen', () => {
     });
 
     await act(async () => {
-      findButton(renderer!, 'Create Manual Backup').props.onPress();
+      findButton(renderer!, 'Create encrypted backup').props.onPress();
     });
 
     expect(mockCreateBackupSnapshot).toHaveBeenCalledWith(
@@ -222,20 +248,23 @@ describe('BackupRecoveryScreen', () => {
       expect.any(Object),
       'ABCD-EFGH-IJKM-NPQR-STVW-XYZ2-3456-789A'
     );
-    expect(mockMarkBackupVerified).toHaveBeenCalledWith({
+    expect(mockRecordBackupCreated).toHaveBeenCalledWith({
+      id: expect.any(String),
+      fileName: expect.stringMatching(/^kondor-wallet-backup-\d+\.json$/),
+      fileUri: expect.stringMatching(/^file:\/\/\/documents\/backups\/kondor-wallet-backup-\d+\.json$/),
       provider: 'manual-file',
-      verifiedAt: expect.any(String),
+      createdAt: expect.any(String),
       walletFingerprint: 'wallet-hash',
       accountSetHash: 'account-hash',
     });
   });
 
   it('copies the generated backup recovery key so the user can save it', async () => {
-    const { BackupRecoveryScreen } = require('../BackupRecoveryScreen');
+    const { CreateBackupScreen } = require('../CreateBackupScreen');
     let renderer: TestRenderer.ReactTestRenderer;
 
     await act(async () => {
-      renderer = TestRenderer.create(<BackupRecoveryScreen />);
+      renderer = TestRenderer.create(<CreateBackupScreen />);
     });
 
     await act(async () => {
@@ -351,11 +380,11 @@ describe('BackupRecoveryScreen', () => {
   it('shows an actionable production error when the current PIN cannot create a backup', async () => {
     mockCreateBackupSnapshot.mockRejectedValueOnce(new Error('Incorrect PIN'));
 
-    const { BackupRecoveryScreen } = require('../BackupRecoveryScreen');
+    const { CreateBackupScreen } = require('../CreateBackupScreen');
     let renderer: TestRenderer.ReactTestRenderer;
 
     await act(async () => {
-      renderer = TestRenderer.create(<BackupRecoveryScreen />);
+      renderer = TestRenderer.create(<CreateBackupScreen />);
     });
 
     await act(async () => {
@@ -369,7 +398,7 @@ describe('BackupRecoveryScreen', () => {
     });
 
     await act(async () => {
-      findButton(renderer!, 'Create Manual Backup').props.onPress();
+      findButton(renderer!, 'Create encrypted backup').props.onPress();
     });
 
     expect(alertSpy).toHaveBeenCalledWith('Backup Failed', 'Current PIN is incorrect.');
