@@ -165,4 +165,69 @@ describe('tokenStore network token helpers', () => {
       })
     );
   });
+
+  it('stops a token balance refresh after a transient HTML RPC response', async () => {
+    jest.resetModules();
+
+    const mockProviderCall = jest.fn(async () => {
+      throw new SyntaxError('JSON Parse error: Unexpected character: <');
+    });
+
+    jest.doMock('koilib', () => {
+      const actual = jest.requireActual('koilib');
+
+      return {
+        ...actual,
+        Provider: jest.fn(function MockProvider(this: any) {
+          this.call = mockProviderCall;
+        }),
+        utils: {
+          ...actual.utils,
+          decodeBase58: jest.fn(() => new Uint8Array([1, 2, 3])),
+          encodeBase64url: jest.fn(() => 'encoded-balance-args'),
+        },
+      };
+    });
+
+    try {
+      const { useTokenStore } = await loadTokenStoreModule();
+      const existingTokens: Token[] = [
+        {
+          contractId: MAINNET.koinContract,
+          symbol: 'KOIN',
+          name: 'Koinos',
+          decimals: 8,
+          icon: '',
+          balance: '8.00000000',
+          isLoading: false,
+        },
+        {
+          contractId: KOINOS_TOKEN_CONTRACTS.VHP,
+          symbol: 'VHP',
+          name: 'Virtual Hash Power',
+          decimals: 8,
+          icon: '',
+          balance: '2.00000000',
+          isLoading: false,
+        },
+      ];
+
+      useTokenStore.setState({
+        tokens: existingTokens,
+        allTokens: existingTokens,
+        cacheKey: `mainnet:${ADDRESS}`,
+        isInitialized: true,
+        error: null,
+      });
+
+      await useTokenStore.getState().refreshBalances(ADDRESS);
+
+      expect(mockProviderCall).toHaveBeenCalledTimes(1);
+      expect(useTokenStore.getState().tokens).toEqual(existingTokens);
+      expect(useTokenStore.getState().allTokens).toEqual(existingTokens);
+      expect(useTokenStore.getState().error).toMatch(/temporarily unavailable/i);
+    } finally {
+      jest.dontMock('koilib');
+    }
+  });
 });

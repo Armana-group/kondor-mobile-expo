@@ -93,6 +93,8 @@ const BLACKLISTED_CONTRACTS = new Set([
 
 const MAINNET_TOKEN_LIST_URL = 'https://raw.githubusercontent.com/koindx/token-list/main/src/tokens/mainnet.json';
 const TOKEN_LIST_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const TRANSIENT_BALANCE_REFRESH_ERROR =
+  'Token balances are temporarily unavailable. Try again shortly.';
 
 interface ScopedTokensParams {
   hasHydrated: boolean;
@@ -311,6 +313,26 @@ function getManagedTokenState(networkMode: NetworkMode): {
   };
 }
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
+}
+
+function isTransientRpcResponseError(error: unknown): boolean {
+  const message = getErrorMessage(error);
+
+  return (
+    message.includes('Unexpected character: <') ||
+    (message.includes('Unexpected token') && message.includes('<!DOCTYPE')) ||
+    message.includes('invalid json response body') ||
+    message.includes('HTTP 502') ||
+    message.includes('status 502')
+  );
+}
+
 /**
  * Encode balanceOf arguments using protobufjs
  */
@@ -376,7 +398,6 @@ async function getTokenBalance(
     const value = decodeBalanceOfResult(resultBytes);
     return utils.formatUnits(value, decimals);
   } catch (error) {
-    log.error(`Error getting balance for ${contractId}:`, error);
     throw error;
   }
 }
@@ -536,42 +557,58 @@ export const useTokenStore = create<TokenState>()(
           tokens: canonicalTokens.map((token) => ({ ...token, isLoading: true })),
         });
 
-        // Fetch balances in parallel (batch of 5 to avoid rate limiting)
-        const batchSize = 5;
-        const updatedTokens = [...canonicalTokens];
+        const updatedTokens = canonicalTokens.map((token) => ({
+          ...token,
+          isLoading: true,
+        }));
 
-        for (let i = 0; i < canonicalTokens.length; i += batchSize) {
-          const batch = canonicalTokens.slice(i, i + batchSize);
+        for (let i = 0; i < canonicalTokens.length; i += 1) {
+          const token = canonicalTokens[i];
 
-          await Promise.all(
-            batch.map(async (token, batchIndex) => {
-              const tokenIndex = i + batchIndex;
-              try {
-                const balance = await getTokenBalance(
-                  provider,
-                  token.contractId,
-                  address,
-                  token.decimals
-                );
-                updatedTokens[tokenIndex] = {
-                  ...token,
-                  balance,
-                  isLoading: false,
-                  error: undefined,
-                };
-              } catch (error: any) {
-                log.error(`Error fetching ${token.symbol}:`, error);
-                updatedTokens[tokenIndex] = {
-                  ...token,
-                  balance: '0',
-                  isLoading: false,
-                  error: error.message,
-                };
+          try {
+            const balance = await getTokenBalance(
+              provider,
+              token.contractId,
+              address,
+              token.decimals
+            );
+            updatedTokens[i] = {
+              ...token,
+              balance,
+              isLoading: false,
+              error: undefined,
+            };
+          } catch (error: any) {
+            if (isTransientRpcResponseError(error)) {
+              log.debug(' Balance refresh paused:', getErrorMessage(error));
+
+              const settledTokens = updatedTokens.map((updatedToken, tokenIndex) =>
+                tokenIndex < i
+                  ? { ...updatedToken, isLoading: false }
+                  : { ...canonicalTokens[tokenIndex], isLoading: false }
+              );
+
+              if (get().cacheKey !== scope.cacheKey) {
+                return;
               }
-            })
-          );
 
-          // Update state after each batch
+              set({
+                allTokens: settledTokens,
+                tokens: settledTokens,
+                error: TRANSIENT_BALANCE_REFRESH_ERROR,
+              });
+              return;
+            }
+
+            log.error(`Error fetching ${token.symbol}:`, error);
+            updatedTokens[i] = {
+              ...token,
+              balance: '0',
+              isLoading: false,
+              error: error.message,
+            };
+          }
+
           if (get().cacheKey !== scope.cacheKey) {
             return;
           }
@@ -581,6 +618,7 @@ export const useTokenStore = create<TokenState>()(
           });
         }
 
+        set({ error: null });
         log.debug(' Finished refreshing balances');
       },
 
