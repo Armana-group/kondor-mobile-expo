@@ -21,6 +21,10 @@ export const Input: React.FC<InputProps> = ({
   error,
   containerStyle,
   rightIcon,
+  style,
+  placeholderTextColor = colors.textMuted,
+  autoCapitalize = 'none',
+  autoCorrect = false,
   ...props
 }) => {
   return (
@@ -32,10 +36,11 @@ export const Input: React.FC<InputProps> = ({
             styles.input,
             rightIcon ? styles.inputWithIcon : null,
             error ? styles.inputError : null,
+            style,
           ]}
-          placeholderTextColor={colors.textMuted}
-          autoCapitalize="none"
-          autoCorrect={false}
+          placeholderTextColor={placeholderTextColor}
+          autoCapitalize={autoCapitalize}
+          autoCorrect={autoCorrect}
           {...props}
         />
         {rightIcon && <View style={styles.rightIconContainer}>{rightIcon}</View>}

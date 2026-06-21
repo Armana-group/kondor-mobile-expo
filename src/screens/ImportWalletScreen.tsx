@@ -56,11 +56,15 @@ export const ImportWalletScreen = () => {
   };
 
   return (
-    <Screen>
+    <Screen
+      scroll={false}
+      keyboardAvoiding={false}
+      safeAreaEdges={['left', 'right', 'bottom']}
+    >
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 20}
       >
         <ScrollView
           style={styles.scrollView}
@@ -68,15 +72,17 @@ export const ImportWalletScreen = () => {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.title}>Import Wallet</Text>
-          <Text style={styles.description}>
-            Enter your 12-word recovery phrase to restore your wallet
-          </Text>
+          <View style={styles.hero}>
+            <Text style={styles.title}>Import Wallet</Text>
+            <Text style={styles.description}>
+              Enter your 12-word recovery phrase to restore your wallet.
+            </Text>
+          </View>
 
           <View style={styles.content}>
             <Input
               label="Recovery Phrase"
-              placeholder="Enter your 12 words separated by spaces"
+              placeholder="word one word two word three..."
               value={mnemonic}
               onChangeText={(text) => {
                 setMnemonic(text);
@@ -85,6 +91,7 @@ export const ImportWalletScreen = () => {
               multiline
               numberOfLines={4}
               style={styles.input}
+              containerStyle={styles.inputContainer}
               error={error}
               autoCapitalize="none"
               autoCorrect={false}
@@ -96,23 +103,23 @@ export const ImportWalletScreen = () => {
               </Text>
             </View>
           </View>
-
-          <View style={styles.buttons}>
-            <Button
-              title="Import Wallet"
-              onPress={handleImport}
-              loading={isLoading}
-              disabled={!mnemonic.trim()}
-              style={styles.button}
-            />
-            <Button
-              title="Cancel"
-              onPress={() => navigation.goBack()}
-              variant="secondary"
-              style={styles.button}
-            />
-          </View>
         </ScrollView>
+
+        <View style={styles.buttons}>
+          <Button
+            title="Import Wallet"
+            onPress={handleImport}
+            loading={isLoading}
+            disabled={!mnemonic.trim()}
+            style={styles.button}
+          />
+          <Button
+            title="Cancel"
+            onPress={() => navigation.goBack()}
+            variant="secondary"
+            style={styles.secondaryButton}
+          />
+        </View>
       </KeyboardAvoidingView>
     </Screen>
   );
@@ -127,41 +134,62 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: 20,
+    paddingHorizontal: 24,
+    paddingTop: 28,
+    paddingBottom: 24,
+  },
+  hero: {
+    marginBottom: 28,
   },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
+    fontSize: 30,
+    fontWeight: '700',
     color: colors.textPrimary,
-    marginBottom: 8,
+    marginBottom: 10,
   },
   description: {
     fontSize: 16,
     color: colors.textSecondary,
-    marginBottom: 24,
+    lineHeight: 22,
   },
   content: {
     flex: 1,
   },
+  inputContainer: {
+    marginBottom: 14,
+  },
   input: {
-    minHeight: 100,
+    minHeight: 132,
+    paddingTop: 14,
+    paddingBottom: 14,
+    lineHeight: 22,
     textAlignVertical: 'top',
   },
   infoBox: {
     backgroundColor: colors.elevated,
-    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderRadius: 8,
-    marginTop: 16,
   },
   infoText: {
     fontSize: 14,
     color: colors.textSecondary,
-    textAlign: 'center',
+    lineHeight: 20,
   },
   buttons: {
-    marginTop: 'auto',
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 20 : 16,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(64, 64, 64, 0.45)',
+    backgroundColor: colors.background,
   },
   button: {
     marginBottom: 12,
+  },
+  secondaryButton: {
+    marginBottom: 0,
   },
 });

@@ -8,7 +8,7 @@ import {
   Platform,
   StatusBar,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, type Edges } from 'react-native-safe-area-context';
 import colors from '../theme/colors';
 
 interface ScreenProps {
@@ -17,6 +17,7 @@ interface ScreenProps {
   style?: ViewStyle;
   contentContainerStyle?: ViewStyle;
   keyboardAvoiding?: boolean;
+  safeAreaEdges?: Edges;
 }
 
 export const Screen: React.FC<ScreenProps> = ({
@@ -25,6 +26,7 @@ export const Screen: React.FC<ScreenProps> = ({
   style,
   contentContainerStyle,
   keyboardAvoiding = true,
+  safeAreaEdges,
 }) => {
   const content = scroll ? (
     <ScrollView
@@ -44,7 +46,7 @@ export const Screen: React.FC<ScreenProps> = ({
 
   if (keyboardAvoiding) {
     return (
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={styles.safeArea} edges={safeAreaEdges}>
         <StatusBar barStyle="light-content" backgroundColor={colors.background} />
         <KeyboardAvoidingView
           style={styles.keyboardView}
@@ -56,7 +58,7 @@ export const Screen: React.FC<ScreenProps> = ({
   }
 
   return (
-    <SafeAreaView style={[styles.safeArea, style]}>
+    <SafeAreaView style={[styles.safeArea, style]} edges={safeAreaEdges}>
       <StatusBar barStyle="light-content" backgroundColor={colors.background} />
       {content}
     </SafeAreaView>
