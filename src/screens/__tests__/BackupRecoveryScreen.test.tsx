@@ -1,11 +1,12 @@
 import React from 'react';
-import { Alert, Text, TextInput, TouchableOpacity } from 'react-native';
+import { Alert, Text, TextInput } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 
 const mockGoBack = jest.fn();
 const mockCreateBackupSnapshot = jest.fn();
 const mockRestoreFromBackup = jest.fn();
 const mockMarkBackupVerified = jest.fn();
+const mockCopyWithAutoClear = jest.fn(async (_value: string) => undefined);
 const mockGenerateBackupRecoveryKey = jest.fn(async () => 'ABCD-EFGH-IJKM-NPQR-STVW-XYZ2-3456-789A');
 const mockVerifyWalletBackup = jest.fn<Promise<boolean>, [unknown, string]>(async () => true);
 const mockGetDocumentAsync = jest.fn<
@@ -122,10 +123,15 @@ jest.mock('../../lib/logger', () => ({
   sanitizeErrorForUser: (_error: unknown, fallback: string) => fallback,
 }));
 
+jest.mock('../../lib/clipboard', () => ({
+  copyWithAutoClear: (value: string) => mockCopyWithAutoClear(value),
+}));
+
 function findButton(renderer: TestRenderer.ReactTestRenderer, label: string) {
-  const node = renderer.root
-    .findAllByType(TouchableOpacity)
-    .find((candidate) => candidate.findAllByType(Text).some((textNode) => textNode.props.children === label));
+  const node = renderer.root.findAll((candidate) =>
+    typeof candidate.props.onPress === 'function' &&
+    candidate.findAllByType(Text).some((textNode) => textNode.props.children === label)
+  )[0];
   if (!node) {
     throw new Error(`Button not found: ${label}`);
   }
@@ -222,6 +228,31 @@ describe('BackupRecoveryScreen', () => {
       walletFingerprint: 'wallet-hash',
       accountSetHash: 'account-hash',
     });
+  });
+
+  it('copies the generated backup recovery key so the user can save it', async () => {
+    const { BackupRecoveryScreen } = require('../BackupRecoveryScreen');
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(<BackupRecoveryScreen />);
+    });
+
+    await act(async () => {
+      findButton(renderer!, 'Generate Recovery Key').props.onPress();
+    });
+
+    await act(async () => {
+      findButton(renderer!, 'Copy Recovery Key').props.onPress();
+    });
+
+    expect(mockCopyWithAutoClear).toHaveBeenCalledWith(
+      'ABCD-EFGH-IJKM-NPQR-STVW-XYZ2-3456-789A'
+    );
+    expect(alertSpy).toHaveBeenCalledWith(
+      'Recovery Key Copied',
+      'Backup recovery key copied to clipboard. It will be cleared in 30 seconds.'
+    );
   });
 
   it('normalizes recovery key input before verifying and restoring a v2 backup', async () => {

@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import {
   Alert,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -15,6 +15,7 @@ import * as Sharing from 'expo-sharing';
 import { Screen } from '../components/Screen';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
+import { copyWithAutoClear } from '../lib/clipboard';
 import { HapticFeedback } from '../lib/haptics';
 import { sanitizeErrorForUser } from '../lib/logger';
 import { getBackupHealthLabel } from '../lib/backupHealth';
@@ -126,6 +127,18 @@ export const BackupRecoveryScreen = () => {
     setGeneratedRecoveryKey(key);
     setConfirmedRecoveryKey('');
     await HapticFeedback.selection();
+  };
+
+  const handleCopyRecoveryKey = async () => {
+    if (!generatedRecoveryKey) {
+      return;
+    }
+
+    await copyWithAutoClear(generatedRecoveryKey);
+    Alert.alert(
+      'Recovery Key Copied',
+      'Backup recovery key copied to clipboard. It will be cleared in 30 seconds.'
+    );
   };
 
   const handleCreateBackup = async () => {
@@ -313,9 +326,9 @@ export const BackupRecoveryScreen = () => {
     <Screen scroll={false}>
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <Pressable style={styles.backButton} onPress={() => navigation.goBack()}>
             <Ionicons name="chevron-back" size={28} color={colors.purple} />
-          </TouchableOpacity>
+          </Pressable>
           <Text style={styles.title}>Backup & Recovery</Text>
           <View style={styles.headerSpacer} />
         </View>
@@ -345,6 +358,13 @@ export const BackupRecoveryScreen = () => {
             {generatedRecoveryKey ? (
               <View style={styles.recoveryKeyBox}>
                 <Text style={styles.recoveryKeyText}>{generatedRecoveryKey}</Text>
+                <Pressable
+                  style={styles.copyRecoveryKeyButton}
+                  onPress={handleCopyRecoveryKey}
+                >
+                  <Ionicons name="copy-outline" size={16} color={colors.purple} />
+                  <Text style={styles.copyRecoveryKeyText}>Copy Recovery Key</Text>
+                </Pressable>
               </View>
             ) : null}
             <Input
@@ -377,7 +397,7 @@ export const BackupRecoveryScreen = () => {
               Import a previously exported backup, verify it with the backup recovery key or legacy backup PIN, then restore it over the current wallet.
             </Text>
 
-            <TouchableOpacity style={styles.fileRow} onPress={handleImportBackup} activeOpacity={0.8}>
+            <Pressable style={styles.fileRow} onPress={handleImportBackup}>
               <View style={styles.fileRowLeft}>
                 <Ionicons name="document-outline" size={20} color={colors.purple} />
                 <Text style={styles.fileRowText}>
@@ -385,7 +405,7 @@ export const BackupRecoveryScreen = () => {
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-            </TouchableOpacity>
+            </Pressable>
 
             <Input
               label="Backup recovery key or legacy backup PIN"
@@ -519,6 +539,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     lineHeight: 22,
+  },
+  copyRecoveryKeyButton: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(139, 92, 246, 0.45)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  copyRecoveryKeyText: {
+    color: colors.purple,
+    fontSize: 14,
+    fontWeight: '700',
   },
   fileRow: {
     flexDirection: 'row',
