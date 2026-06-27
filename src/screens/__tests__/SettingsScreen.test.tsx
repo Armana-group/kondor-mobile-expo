@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, Switch, Text } from 'react-native';
+import { Alert, Text } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 
 jest.mock('@expo/vector-icons', () => ({
@@ -16,9 +16,6 @@ const mockNavigation = {
     navigate: mockNavigate,
   })),
 };
-
-const mockIsSendConfirmationRequired = jest.fn(async () => true);
-const mockSetSendConfirmationRequired = jest.fn(async (_required: boolean) => undefined);
 
 let mockNetworkState = {
   mode: 'mainnet' as 'mainnet' | 'harbinger',
@@ -46,11 +43,6 @@ jest.mock('../../stores/walletStore', () => ({
 jest.mock('../../stores/networkStore', () => ({
   useNetworkStore: (selector?: (state: typeof mockNetworkState) => unknown) =>
     selector ? selector(mockNetworkState) : mockNetworkState,
-}));
-
-jest.mock('../../services/auth', () => ({
-  isSendConfirmationRequired: () => mockIsSendConfirmationRequired(),
-  setSendConfirmationRequired: (required: boolean) => mockSetSendConfirmationRequired(required),
 }));
 
 function collectRenderedText(renderer: TestRenderer.ReactTestRenderer): string[] {
@@ -83,23 +75,11 @@ function findButtonByText(
   return button[0];
 }
 
-function findSwitch(renderer: TestRenderer.ReactTestRenderer): TestRenderer.ReactTestInstance {
-  const switches = renderer.root.findAllByType(Switch);
-
-  if (switches.length !== 1) {
-    throw new Error(`Expected one Switch, found ${switches.length}`);
-  }
-
-  return switches[0];
-}
-
 describe('SettingsScreen', () => {
   const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockIsSendConfirmationRequired.mockResolvedValue(true);
-    mockSetSendConfirmationRequired.mockResolvedValue(undefined);
     mockNetworkState = {
       mode: 'mainnet',
       hasHydrated: true,
@@ -126,16 +106,15 @@ describe('SettingsScreen', () => {
       'Security & Privacy',
       'Connected Sites',
       'Backup & Recovery',
-      'Send confirmation',
       'Network',
       'Contacts',
       'Lock Wallet',
       'Remove Wallet',
       'Mainnet',
     ]));
+    expect(text).not.toContain('Send confirmation');
+    expect(text).not.toContain('Require biometrics for sends');
     expect(text).not.toContain('Less secure: sends will not ask for biometrics.');
-    expect(findSwitch(renderer!).props.value).toBe(true);
-    expect(findSwitch(renderer!).props.accessibilityLabel).toBe('Send confirmation');
   });
 
   it('routes new settings shell entries through the dedicated settings flow', async () => {
@@ -210,49 +189,4 @@ describe('SettingsScreen', () => {
     expect(mockNavigate).not.toHaveBeenCalledWith('LockWallet');
   });
 
-  it('warns before turning off manual send confirmation', async () => {
-    const { SettingsScreen } = require('../SettingsScreen');
-    let renderer: TestRenderer.ReactTestRenderer;
-
-    await act(async () => {
-      renderer = TestRenderer.create(<SettingsScreen />);
-    });
-
-    await act(async () => {
-      findSwitch(renderer!).props.onValueChange(false);
-    });
-
-    const warning = alertSpy.mock.calls.at(-1);
-    expect(warning?.[0]).toBe('Turn Off Send Confirmation?');
-    expect(warning?.[1]).toContain('Anyone with access to your unlocked wallet can send tokens without biometric confirmation.');
-
-    const turnOff = warning?.[2]?.find((button) => button.text === 'Turn Off');
-    expect(turnOff?.onPress).toEqual(expect.any(Function));
-
-    await act(async () => {
-      await turnOff?.onPress?.();
-    });
-
-    expect(mockSetSendConfirmationRequired).toHaveBeenCalledWith(false);
-    expect(findSwitch(renderer!).props.value).toBe(false);
-  });
-
-  it('turns manual send confirmation back on without an extra warning', async () => {
-    mockIsSendConfirmationRequired.mockResolvedValue(false);
-    const { SettingsScreen } = require('../SettingsScreen');
-    let renderer: TestRenderer.ReactTestRenderer;
-
-    await act(async () => {
-      renderer = TestRenderer.create(<SettingsScreen />);
-    });
-
-    expect(findSwitch(renderer!).props.value).toBe(false);
-
-    await act(async () => {
-      await findSwitch(renderer!).props.onValueChange(true);
-    });
-
-    expect(mockSetSendConfirmationRequired).toHaveBeenCalledWith(true);
-    expect(findSwitch(renderer!).props.value).toBe(true);
-  });
 });

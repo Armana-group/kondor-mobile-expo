@@ -661,7 +661,7 @@ describe('SendScreen balance scoping', () => {
       renderer = TestRenderer.create(<SendScreen />);
     });
 
-    expect(collectRenderedText(renderer!).join(' ')).toContain('Send confirmation is off');
+    expect(collectRenderedText(renderer!).join(' ')).toContain('Send biometrics are off');
 
     const [recipientInput, amountInput] = renderer!.root.findAllByType(TextInput);
 

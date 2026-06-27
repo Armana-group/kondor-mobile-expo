@@ -810,7 +810,7 @@ export const SendScreen = () => {
             <View style={styles.sendConfirmationWarning}>
               <Ionicons name="warning-outline" size={16} color={colors.warning} />
               <Text style={styles.sendConfirmationWarningText}>
-                Send confirmation is off
+                Send biometrics are off
               </Text>
             </View>
           )}

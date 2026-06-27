@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
+  Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -14,6 +15,10 @@ import { HapticFeedback } from '../lib/haptics';
 import { copyWithAutoClear } from '../lib/clipboard';
 import { sanitizeErrorForUser } from '../lib/logger';
 import { useWalletStore } from '../stores/walletStore';
+import {
+  isSendConfirmationRequired,
+  setSendConfirmationRequired as persistSendConfirmationRequired,
+} from '../services/auth';
 import {
   getTransactionAuthorizationMode,
   getTransactionAuthorizationOptions,
@@ -34,8 +39,29 @@ export const SecurityPrivacyScreen = () => {
   const getMnemonic = useWalletStore((state) => state.getMnemonic);
   const getPrivateKey = useWalletStore((state) => state.getPrivateKey);
   const [isLoading, setIsLoading] = useState(false);
+  const [sendConfirmationRequired, setSendConfirmationRequiredState] = useState(true);
   const [transactionAuthorizationMode, setSelectedTransactionAuthorizationMode] =
     useState<TransactionAuthorizationMode>('always');
+
+  useEffect(() => {
+    let mounted = true;
+
+    void isSendConfirmationRequired()
+      .then((required) => {
+        if (mounted) {
+          setSendConfirmationRequiredState(required);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setSendConfirmationRequiredState(true);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -85,6 +111,35 @@ export const SecurityPrivacyScreen = () => {
       setSelectedTransactionAuthorizationMode(await getTransactionAuthorizationMode());
       Alert.alert('Error', sanitizeErrorForUser(error, 'Failed to update transaction authorization'));
     }
+  };
+
+  const updateSendConfirmationRequired = async (required: boolean) => {
+    try {
+      await persistSendConfirmationRequired(required);
+      setSendConfirmationRequiredState(required);
+    } catch (error: any) {
+      Alert.alert('Error', sanitizeErrorForUser(error, 'Failed to update send biometric approval'));
+    }
+  };
+
+  const handleSendConfirmationToggle = (nextRequired = !sendConfirmationRequired) => {
+    if (nextRequired) {
+      void updateSendConfirmationRequired(true);
+      return;
+    }
+
+    Alert.alert(
+      'Turn Off Send Biometrics?',
+      'Anyone with access to your unlocked wallet can send tokens without biometric confirmation. Keep this on for the strongest protection.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Turn Off',
+          style: 'destructive',
+          onPress: () => updateSendConfirmationRequired(false),
+        },
+      ]
+    );
   };
 
   const handleRevealSecret = (action: SecretAction) => {
@@ -140,9 +195,12 @@ export const SecurityPrivacyScreen = () => {
     <Screen scroll={false}>
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <Pressable
+            style={({ pressed }) => [styles.backButton, pressed ? styles.pressed : null]}
+            onPress={() => navigation.goBack()}
+          >
             <Ionicons name="chevron-back" size={28} color={colors.purple} />
-          </TouchableOpacity>
+          </Pressable>
           <Text style={styles.title}>Security & Privacy</Text>
           <View style={styles.headerSpacer} />
         </View>
@@ -156,6 +214,38 @@ export const SecurityPrivacyScreen = () => {
           </View>
 
           <View style={styles.authorizationCard}>
+            <View style={styles.sendApprovalHeader}>
+              <View style={styles.sendApprovalCopy}>
+                <Text style={styles.summaryTitle}>Require biometrics for sends</Text>
+                <Text style={styles.summaryBody}>
+                  Manual sends ask for device authentication before broadcasting.
+                </Text>
+              </View>
+              <View style={styles.sendApprovalControl}>
+                <Switch
+                  accessibilityLabel="Require biometrics for sends"
+                  value={sendConfirmationRequired}
+                  onValueChange={handleSendConfirmationToggle}
+                  trackColor={{
+                    false: colors.border,
+                    true: colors.purple,
+                  }}
+                  thumbColor={colors.textPrimary}
+                  ios_backgroundColor={colors.border}
+                />
+              </View>
+            </View>
+            {!sendConfirmationRequired && (
+              <View style={styles.sendApprovalWarning}>
+                <Ionicons name="warning-outline" size={15} color={colors.warning} />
+                <Text style={styles.sendApprovalWarningText}>
+                  Manual sends will skip device authentication.
+                </Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.authorizationCard}>
             <Text style={styles.summaryTitle}>Transaction Authorization</Text>
             <Text style={styles.summaryBody}>
               Remember manual send and native swap authorization briefly in memory. dApp and WalletConnect approvals still require confirmation.
@@ -163,9 +253,13 @@ export const SecurityPrivacyScreen = () => {
             <View style={styles.authorizationOptions}>
               {getTransactionAuthorizationOptions().map((option, index, options) => (
                 <React.Fragment key={option.mode}>
-                  <TouchableOpacity
-                    style={styles.authorizationOption}
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.authorizationOption,
+                      pressed ? styles.pressed : null,
+                    ]}
                     onPress={() => void handleTransactionAuthorizationModePress(option.mode)}
+                    accessibilityRole="button"
                   >
                     <View style={styles.authorizationOptionCopy}>
                       <Text style={styles.settingItemText}>{option.label}</Text>
@@ -174,7 +268,7 @@ export const SecurityPrivacyScreen = () => {
                     {transactionAuthorizationMode === option.mode && (
                       <Ionicons name="checkmark-circle" size={20} color={colors.success} />
                     )}
-                  </TouchableOpacity>
+                  </Pressable>
                   {index < options.length - 1 && <View style={styles.authorizationSeparator} />}
                 </React.Fragment>
               ))}
@@ -184,10 +278,14 @@ export const SecurityPrivacyScreen = () => {
           <View style={styles.section}>
             {secretActions.map((action, index) => (
               <React.Fragment key={action.title}>
-                <TouchableOpacity
-                  style={styles.settingItem}
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.settingItem,
+                    pressed ? styles.pressed : null,
+                  ]}
                   onPress={() => handleRevealSecret(action)}
                   disabled={isLoading}
+                  accessibilityRole="button"
                 >
                   <View style={styles.settingItemLeft}>
                     <Ionicons name={action.icon} size={22} color={colors.purple} />
@@ -197,7 +295,7 @@ export const SecurityPrivacyScreen = () => {
                     </View>
                   </View>
                   <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
-                </TouchableOpacity>
+                </Pressable>
                 {index < secretActions.length - 1 && <View style={styles.separator} />}
               </React.Fragment>
             ))}
@@ -232,6 +330,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.textPrimary,
   },
+  pressed: {
+    opacity: 0.65,
+  },
   content: {
     flex: 1,
     paddingHorizontal: 20,
@@ -258,6 +359,36 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
+  },
+  sendApprovalHeader: {
+    minHeight: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  sendApprovalCopy: {
+    flex: 1,
+    paddingRight: 4,
+  },
+  sendApprovalControl: {
+    width: 66,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  sendApprovalWarning: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sendApprovalWarningText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.warning,
   },
   authorizationOptions: {
     marginTop: 12,

@@ -1,10 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import {
   Alert,
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   View,
 } from 'react-native';
@@ -13,10 +12,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { useWalletStore } from '../stores/walletStore';
 import { useNetworkStore } from '../stores/networkStore';
-import {
-  isSendConfirmationRequired,
-  setSendConfirmationRequired as persistSendConfirmationRequired,
-} from '../services/auth';
 import colors from '../theme/colors';
 
 type SettingsItem = {
@@ -24,9 +19,6 @@ type SettingsItem = {
   icon: keyof typeof Ionicons.glyphMap;
   onPress?: () => void;
   value?: string;
-  helperText?: string;
-  switchValue?: boolean;
-  onSwitchChange?: (value: boolean) => void;
   destructive?: boolean;
 };
 
@@ -44,59 +36,9 @@ export const SettingsScreen = ({ onLockWallet }: SettingsScreenProps) => {
   const clearWallet = useWalletStore((state) => state.clearWallet);
   const networkMode = useNetworkStore((state) => state.mode);
   const hasHydrated = useNetworkStore((state) => state.hasHydrated);
-  const [sendConfirmationRequired, setSendConfirmationRequiredState] = useState(true);
   const networkLabel = hasHydrated
     ? networkMode === 'harbinger' ? 'Harbinger' : 'Mainnet'
     : 'Loading...';
-
-  useEffect(() => {
-    let mounted = true;
-
-    void isSendConfirmationRequired()
-      .then((required) => {
-        if (mounted) {
-          setSendConfirmationRequiredState(required);
-        }
-      })
-      .catch(() => {
-        if (mounted) {
-          setSendConfirmationRequiredState(true);
-        }
-      });
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  const updateSendConfirmationRequired = async (required: boolean) => {
-    try {
-      await persistSendConfirmationRequired(required);
-      setSendConfirmationRequiredState(required);
-    } catch {
-      Alert.alert('Error', 'Failed to update send confirmation setting.');
-    }
-  };
-
-  const handleSendConfirmationToggle = (nextRequired = !sendConfirmationRequired) => {
-    if (nextRequired) {
-      void updateSendConfirmationRequired(true);
-      return;
-    }
-
-    Alert.alert(
-      'Turn Off Send Confirmation?',
-      'Anyone with access to your unlocked wallet can send tokens without biometric confirmation. Keep this on for the strongest protection.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Turn Off',
-          style: 'destructive',
-          onPress: () => updateSendConfirmationRequired(false),
-        },
-      ]
-    );
-  };
 
   const handleRemoveWallet = () => {
     Alert.alert(
@@ -152,12 +94,6 @@ export const SettingsScreen = ({ onLockWallet }: SettingsScreenProps) => {
           label: 'Backup & Recovery',
           icon: 'cloud-upload-outline',
           onPress: () => navigation.navigate('BackupRecovery'),
-        },
-        {
-          label: 'Send confirmation',
-          icon: 'shield-checkmark-outline',
-          switchValue: sendConfirmationRequired,
-          onSwitchChange: handleSendConfirmationToggle,
         },
         {
           label: 'Lock Wallet',
@@ -233,25 +169,10 @@ export const SettingsScreen = ({ onLockWallet }: SettingsScreenProps) => {
                           <Text style={[styles.settingItemText, { color: textColor }]}>
                             {item.label}
                           </Text>
-                          {item.helperText ? (
-                            <Text style={styles.settingItemHelper}>{item.helperText}</Text>
-                          ) : null}
                         </View>
                       </View>
 
-                      {item.switchValue !== undefined ? (
-                        <Switch
-                          accessibilityLabel={item.label}
-                          value={item.switchValue}
-                          onValueChange={item.onSwitchChange}
-                          trackColor={{
-                            false: colors.border,
-                            true: colors.purple,
-                          }}
-                          thumbColor={colors.textPrimary}
-                          ios_backgroundColor={colors.border}
-                        />
-                      ) : item.value ? (
+                      {item.value ? (
                         <View style={styles.settingItemRight}>
                           <Text style={styles.settingItemValue}>{item.value}</Text>
                           <Ionicons
@@ -346,12 +267,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     color: colors.textPrimary,
-  },
-  settingItemHelper: {
-    fontSize: 12,
-    lineHeight: 16,
-    color: colors.warning,
-    marginTop: 3,
   },
   settingItemRight: {
     flexDirection: 'row',

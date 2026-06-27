@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, Text, TouchableOpacity } from 'react-native';
+import { Alert, Switch, Text } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 
 jest.mock('@expo/vector-icons', () => ({
@@ -12,6 +12,8 @@ const mockGetPrivateKey = jest.fn(async () => 'private-key-here');
 const mockCopyWithAutoClear = jest.fn(async (_value: string) => undefined);
 const mockGetTransactionAuthorizationMode = jest.fn(async () => 'always');
 const mockSetTransactionAuthorizationMode = jest.fn(async (_mode: string) => undefined);
+const mockIsSendConfirmationRequired = jest.fn(async () => true);
+const mockSetSendConfirmationRequired = jest.fn(async (_required: boolean) => undefined);
 const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
 
 jest.mock('@react-navigation/native', () => ({
@@ -67,19 +69,39 @@ jest.mock('../../services/transactionAuthorization', () => ({
   ],
 }));
 
+jest.mock('../../services/auth', () => ({
+  isSendConfirmationRequired: () => mockIsSendConfirmationRequired(),
+  setSendConfirmationRequired: (required: boolean) => mockSetSendConfirmationRequired(required),
+}));
+
+function collectRenderedText(renderer: TestRenderer.ReactTestRenderer): string[] {
+  return renderer.root.findAll((node) => String((node as TestRenderer.ReactTestInstance).type) === 'Text')
+    .map((node) => {
+      const children = Array.isArray(node.props.children)
+        ? node.props.children
+        : [node.props.children];
+      return children
+        .filter((child): child is string | number => typeof child === 'string' || typeof child === 'number')
+        .join('');
+    })
+    .filter(Boolean);
+}
+
 function findButtonByText(
   renderer: TestRenderer.ReactTestRenderer,
   label: string
 ): TestRenderer.ReactTestInstance {
-  const button = renderer.root.findAllByType(TouchableOpacity).find((node) =>
-    node.findAllByType(Text).some((textNode) => textNode.props.children === label)
+  const button = renderer.root.findAll(
+    (node) =>
+      typeof node.props.onPress === 'function' &&
+      node.findAllByType(Text).some((textNode) => textNode.props.children === label)
   );
 
-  if (!button) {
+  if (button.length === 0) {
     throw new Error(`Button not found: ${label}`);
   }
 
-  return button;
+  return button[0];
 }
 
 function getAlertButton(label: string) {
@@ -93,12 +115,24 @@ function getAlertButton(label: string) {
   return button.onPress;
 }
 
+function findSwitch(renderer: TestRenderer.ReactTestRenderer): TestRenderer.ReactTestInstance {
+  const switches = renderer.root.findAllByType(Switch);
+
+  if (switches.length !== 1) {
+    throw new Error(`Expected one Switch, found ${switches.length}`);
+  }
+
+  return switches[0];
+}
+
 describe('SecurityPrivacyScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetMnemonic.mockResolvedValue('seed words here');
     mockGetPrivateKey.mockResolvedValue('private-key-here');
     mockGetTransactionAuthorizationMode.mockResolvedValue('always');
+    mockIsSendConfirmationRequired.mockResolvedValue(true);
+    mockSetSendConfirmationRequired.mockResolvedValue(undefined);
   });
 
   afterAll(() => {
@@ -174,5 +208,69 @@ describe('SecurityPrivacyScreen', () => {
     });
 
     expect(mockSetTransactionAuthorizationMode).toHaveBeenCalledWith('five-minutes');
+  });
+
+  it('shows a clear biometric approval control for manual sends', async () => {
+    const { SecurityPrivacyScreen } = require('../SecurityPrivacyScreen');
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(<SecurityPrivacyScreen />);
+    });
+
+    const text = collectRenderedText(renderer!);
+
+    expect(text).toContain('Require biometrics for sends');
+    expect(text).toContain('Manual sends ask for device authentication before broadcasting.');
+    expect(findSwitch(renderer!).props.value).toBe(true);
+    expect(findSwitch(renderer!).props.accessibilityLabel).toBe('Require biometrics for sends');
+  });
+
+  it('warns before turning off manual send biometrics', async () => {
+    const { SecurityPrivacyScreen } = require('../SecurityPrivacyScreen');
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(<SecurityPrivacyScreen />);
+    });
+
+    await act(async () => {
+      findSwitch(renderer!).props.onValueChange(false);
+    });
+
+    const warning = alertSpy.mock.calls.at(-1);
+    expect(warning?.[0]).toBe('Turn Off Send Biometrics?');
+    expect(warning?.[1]).toContain('Anyone with access to your unlocked wallet can send tokens without biometric confirmation.');
+
+    const turnOff = warning?.[2]?.find((button) => button.text === 'Turn Off');
+    expect(turnOff?.onPress).toEqual(expect.any(Function));
+
+    await act(async () => {
+      await turnOff?.onPress?.();
+    });
+
+    expect(mockSetSendConfirmationRequired).toHaveBeenCalledWith(false);
+    expect(findSwitch(renderer!).props.value).toBe(false);
+    expect(collectRenderedText(renderer!)).toContain('Manual sends will skip device authentication.');
+  });
+
+  it('turns manual send biometrics back on without an extra warning', async () => {
+    mockIsSendConfirmationRequired.mockResolvedValue(false);
+    const { SecurityPrivacyScreen } = require('../SecurityPrivacyScreen');
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(<SecurityPrivacyScreen />);
+    });
+
+    expect(findSwitch(renderer!).props.value).toBe(false);
+    expect(collectRenderedText(renderer!)).toContain('Manual sends will skip device authentication.');
+
+    await act(async () => {
+      await findSwitch(renderer!).props.onValueChange(true);
+    });
+
+    expect(mockSetSendConfirmationRequired).toHaveBeenCalledWith(true);
+    expect(findSwitch(renderer!).props.value).toBe(true);
   });
 });
