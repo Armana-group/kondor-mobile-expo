@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useReducer, useRef } from 'react';
 import {
   Alert,
   ScrollView,
@@ -23,6 +23,39 @@ import { layout } from '../theme/layout';
 
 const DECIMALS_RE = /^\d+$/;
 
+type CustomTokenFormState = {
+  contractId: string;
+  symbol: string;
+  name: string;
+  decimals: string;
+  icon: string;
+};
+
+type CustomTokenFormField = keyof CustomTokenFormState;
+
+type CustomTokenFormAction = {
+  field: CustomTokenFormField;
+  value: string;
+};
+
+const initialFormState: CustomTokenFormState = {
+  contractId: '',
+  symbol: '',
+  name: '',
+  decimals: '8',
+  icon: '',
+};
+
+function customTokenFormReducer(
+  state: CustomTokenFormState,
+  action: CustomTokenFormAction
+): CustomTokenFormState {
+  return {
+    ...state,
+    [action.field]: action.value,
+  };
+}
+
 export const AddCustomTokenScreen = () => {
   const navigation = useNavigation<any>();
   const { address } = useWalletStore();
@@ -37,11 +70,7 @@ export const AddCustomTokenScreen = () => {
     syncManagedTokens,
   } = useTokenStore();
   const { addCustomToken } = useCustomTokenStore();
-  const [contractId, setContractId] = useState('');
-  const [symbol, setSymbol] = useState('');
-  const [name, setName] = useState('');
-  const [decimals, setDecimals] = useState('8');
-  const [icon, setIcon] = useState('');
+  const [form, dispatchForm] = useReducer(customTokenFormReducer, initialFormState);
   const requestedScopeRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -72,18 +101,22 @@ export const AddCustomTokenScreen = () => {
   const scopedTokens = expectedScope && cacheKey === expectedScope ? allTokens : [];
   const networkLabel = networkMode === 'harbinger' ? 'Harbinger' : 'Mainnet';
 
+  const setFormField = (field: CustomTokenFormField) => (value: string) => {
+    dispatchForm({ field, value });
+  };
+
   const handleAddCustomToken = async () => {
-    const trimmedContractId = contractId.trim();
-    const trimmedSymbol = symbol.trim().toUpperCase();
-    const trimmedName = name.trim();
-    const trimmedIcon = icon.trim();
+    const trimmedContractId = form.contractId.trim();
+    const trimmedSymbol = form.symbol.trim().toUpperCase();
+    const trimmedName = form.name.trim();
+    const trimmedIcon = form.icon.trim();
 
     if (!trimmedContractId || !trimmedSymbol || !trimmedName) {
       Alert.alert('Missing fields', 'Contract, symbol, and name are required.');
       return;
     }
 
-    if (!DECIMALS_RE.test(decimals)) {
+    if (!DECIMALS_RE.test(form.decimals)) {
       Alert.alert('Invalid decimals', 'Decimals must be a whole number.');
       return;
     }
@@ -97,7 +130,7 @@ export const AddCustomTokenScreen = () => {
       contractId: trimmedContractId,
       symbol: trimmedSymbol,
       name: trimmedName,
-      decimals: Number(decimals),
+      decimals: Number(form.decimals),
       icon: trimmedIcon || undefined,
     });
 
@@ -123,11 +156,11 @@ export const AddCustomTokenScreen = () => {
           </View>
 
           <View style={styles.formCard} testID="add-custom-token-form-card">
-            <Input label="Contract" value={contractId} onChangeText={setContractId} />
-            <Input label="Symbol" value={symbol} onChangeText={setSymbol} autoCapitalize="characters" />
-            <Input label="Name" value={name} onChangeText={setName} />
-            <Input label="Decimals" value={decimals} onChangeText={setDecimals} keyboardType="number-pad" />
-            <Input label="Icon URL (optional)" value={icon} onChangeText={setIcon} />
+            <Input label="Contract" value={form.contractId} onChangeText={setFormField('contractId')} />
+            <Input label="Symbol" value={form.symbol} onChangeText={setFormField('symbol')} autoCapitalize="characters" />
+            <Input label="Name" value={form.name} onChangeText={setFormField('name')} />
+            <Input label="Decimals" value={form.decimals} onChangeText={setFormField('decimals')} keyboardType="number-pad" />
+            <Input label="Icon URL (optional)" value={form.icon} onChangeText={setFormField('icon')} />
             <Button title="Add Token" onPress={() => void handleAddCustomToken()} />
           </View>
         </ScrollView>
