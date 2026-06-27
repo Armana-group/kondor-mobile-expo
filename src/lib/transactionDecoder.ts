@@ -13,7 +13,7 @@ export interface DecodedOperation {
 const KNOWN_CONTRACTS: Record<string, string> = {
   '19GYjDBVXU7keLbYvMLazsGQn3GTWHjHkK': 'Koinos (KOIN)',
   '15DJN4a8SgrbGhhGksSBASiSYjGnMU8dGL': 'Koinos (KOIN)',
-  '1FaSvLjQJsCJKq5ybmGsMMQs8RQYyVv8ju': 'Koinos Testnet (KOIN)',
+  '1FaSvLjQJsCJKq5ybmGsMMQs8RQYyVv8ju': 'Koinos Testnet (tKOIN)',
   '12Y5vW6gk8GceH53YfRkRre2Rrcsgw7Naq': 'Virtual Hash Power (VHP)',
   '18tWNU7E4yuQzz7hMVpceb9ixmaWLVyQsr': 'Virtual Hash Power (VHP)',
   '17n12ktwN79sR6ia9DDgCfmw77EgpbTyBi': 'Virtual Hash Power (VHP)',
@@ -24,7 +24,7 @@ const KNOWN_CONTRACTS: Record<string, string> = {
 const TOKEN_METADATA: Record<string, { symbol: string; name: string; decimals: number }> = {
   '19GYjDBVXU7keLbYvMLazsGQn3GTWHjHkK': { symbol: 'KOIN', name: 'Koinos', decimals: 8 },
   '15DJN4a8SgrbGhhGksSBASiSYjGnMU8dGL': { symbol: 'KOIN', name: 'Koinos', decimals: 8 },
-  '1FaSvLjQJsCJKq5ybmGsMMQs8RQYyVv8ju': { symbol: 'KOIN', name: 'Koinos Testnet', decimals: 8 },
+  '1FaSvLjQJsCJKq5ybmGsMMQs8RQYyVv8ju': { symbol: 'tKOIN', name: 'Koinos Testnet', decimals: 8 },
   '12Y5vW6gk8GceH53YfRkRre2Rrcsgw7Naq': { symbol: 'VHP', name: 'Virtual Hash Power', decimals: 8 },
   '18tWNU7E4yuQzz7hMVpceb9ixmaWLVyQsr': { symbol: 'VHP', name: 'Virtual Hash Power', decimals: 8 },
   '17n12ktwN79sR6ia9DDgCfmw77EgpbTyBi': { symbol: 'VHP', name: 'Virtual Hash Power', decimals: 8 },

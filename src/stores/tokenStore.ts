@@ -76,8 +76,8 @@ const MAINNET_SPECIAL_TOKENS: Partial<Token>[] = [
 const HARBINGER_SPECIAL_TOKENS: Partial<Token>[] = [
   {
     contractId: '1FaSvLjQJsCJKq5ybmGsMMQs8RQYyVv8ju', // Harbinger KOIN
-    symbol: 'KOIN',
-    name: 'Koinos',
+    symbol: 'tKOIN',
+    name: 'Koinos Testnet',
     decimals: 8,
     icon: 'https://raw.githubusercontent.com/koindx/token-list/main/src/images/mainnet/koin.png',
   },

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   ScrollView,
@@ -12,6 +12,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { useWalletStore } from '../stores/walletStore';
 import { useNetworkStore } from '../stores/networkStore';
+import {
+  isSendConfirmationRequired,
+  setSendConfirmationRequired as persistSendConfirmationRequired,
+} from '../services/auth';
 import colors from '../theme/colors';
 
 type SettingsItem = {
@@ -19,6 +23,7 @@ type SettingsItem = {
   icon: keyof typeof Ionicons.glyphMap;
   onPress: () => void;
   value?: string;
+  helperText?: string;
   destructive?: boolean;
 };
 
@@ -36,9 +41,59 @@ export const SettingsScreen = ({ onLockWallet }: SettingsScreenProps) => {
   const clearWallet = useWalletStore((state) => state.clearWallet);
   const networkMode = useNetworkStore((state) => state.mode);
   const hasHydrated = useNetworkStore((state) => state.hasHydrated);
+  const [sendConfirmationRequired, setSendConfirmationRequiredState] = useState(true);
   const networkLabel = hasHydrated
     ? networkMode === 'harbinger' ? 'Harbinger' : 'Mainnet'
     : 'Loading...';
+
+  useEffect(() => {
+    let mounted = true;
+
+    void isSendConfirmationRequired()
+      .then((required) => {
+        if (mounted) {
+          setSendConfirmationRequiredState(required);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setSendConfirmationRequiredState(true);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const updateSendConfirmationRequired = async (required: boolean) => {
+    try {
+      await persistSendConfirmationRequired(required);
+      setSendConfirmationRequiredState(required);
+    } catch {
+      Alert.alert('Error', 'Failed to update send confirmation setting.');
+    }
+  };
+
+  const handleSendConfirmationToggle = () => {
+    if (!sendConfirmationRequired) {
+      void updateSendConfirmationRequired(true);
+      return;
+    }
+
+    Alert.alert(
+      'Turn Off Send Confirmation?',
+      'Anyone with access to your unlocked wallet can send tokens without biometric confirmation. Keep this on for the strongest protection.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Turn Off',
+          style: 'destructive',
+          onPress: () => updateSendConfirmationRequired(false),
+        },
+      ]
+    );
+  };
 
   const handleRemoveWallet = () => {
     Alert.alert(
@@ -94,6 +149,15 @@ export const SettingsScreen = ({ onLockWallet }: SettingsScreenProps) => {
           label: 'Backup & Recovery',
           icon: 'cloud-upload-outline',
           onPress: () => navigation.navigate('BackupRecovery'),
+        },
+        {
+          label: 'Require confirmation before sending',
+          icon: 'shield-checkmark-outline',
+          value: sendConfirmationRequired ? 'On' : 'Off',
+          helperText: sendConfirmationRequired
+            ? undefined
+            : 'Less secure: sends will not ask for biometrics.',
+          onPress: handleSendConfirmationToggle,
         },
         {
           label: 'Lock Wallet',
@@ -155,9 +219,14 @@ export const SettingsScreen = ({ onLockWallet }: SettingsScreenProps) => {
                     <TouchableOpacity style={styles.settingItem} onPress={item.onPress}>
                       <View style={styles.settingItemLeft}>
                         <Ionicons name={item.icon} size={22} color={color} />
-                        <Text style={[styles.settingItemText, { color: textColor }]}>
-                          {item.label}
-                        </Text>
+                        <View style={styles.settingItemLabelWrap}>
+                          <Text style={[styles.settingItemText, { color: textColor }]}>
+                            {item.label}
+                          </Text>
+                          {item.helperText ? (
+                            <Text style={styles.settingItemHelper}>{item.helperText}</Text>
+                          ) : null}
+                        </View>
                       </View>
 
                       {item.value ? (
@@ -245,10 +314,19 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 12,
   },
+  settingItemLabelWrap: {
+    flex: 1,
+  },
   settingItemText: {
     fontSize: 16,
     fontWeight: '500',
     color: colors.textPrimary,
+  },
+  settingItemHelper: {
+    fontSize: 12,
+    lineHeight: 16,
+    color: colors.warning,
+    marginTop: 3,
   },
   settingItemRight: {
     flexDirection: 'row',

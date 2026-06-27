@@ -33,6 +33,7 @@ import { useTransactionStore } from '../stores/transactionStore';
 import { isValidAddress, calculateManaRegenTime, truncateAddress, formatKoinBalance } from '../lib/utils';
 import { requireBiometricAuth } from '../lib/biometrics';
 import { koinosLogger } from '../lib/logger';
+import { isSendConfirmationRequired } from '../services/auth';
 import colors from '../theme/colors';
 
 type SendRouteParams = {
@@ -127,6 +128,7 @@ export const SendScreen = () => {
   const [recipient, setRecipient] = useState('');
   const [amount, setAmount] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [sendConfirmationRequired, setSendConfirmationRequired] = useState(true);
   const [showContactPicker, setShowContactPicker] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
@@ -142,6 +144,26 @@ export const SendScreen = () => {
       setSelectedTokenPreference(getTokenSelectionPreference(route.params.token));
     }
   }, [route.params?.token?.contractId, route.params?.token?.symbol]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    void isSendConfirmationRequired()
+      .then((required) => {
+        if (mounted) {
+          setSendConfirmationRequired(required);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setSendConfirmationRequired(true);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!hasHydrated || !address) {
@@ -276,10 +298,12 @@ export const SendScreen = () => {
         {
           text: 'Send',
           onPress: async () => {
-            const authenticated = await requireBiometricAuth('send this transaction');
-            if (!authenticated) {
-              Alert.alert('Authentication Required', 'Biometric authentication is required to send transactions.');
-              return;
+            if (sendConfirmationRequired) {
+              const authenticated = await requireBiometricAuth('send this transaction');
+              if (!authenticated) {
+                Alert.alert('Authentication Required', 'Biometric authentication is required to send transactions.');
+                return;
+              }
             }
 
             setIsSending(true);
@@ -642,6 +666,14 @@ export const SendScreen = () => {
             compact
             onPress={handleBackupPress}
           />
+          {!sendConfirmationRequired && (
+            <View style={styles.sendConfirmationWarning}>
+              <Ionicons name="warning-outline" size={16} color={colors.warning} />
+              <Text style={styles.sendConfirmationWarningText}>
+                Send confirmation is off
+              </Text>
+            </View>
+          )}
           {isSending ? (
             <View style={styles.sendingContainer}>
               <ActivityIndicator size="large" color={colors.purple} />
@@ -852,6 +884,23 @@ const styles = StyleSheet.create({
   footer: {
     marginTop: 'auto',
     paddingTop: 16,
+  },
+  sendConfirmationWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.25)',
+    backgroundColor: 'rgba(245, 158, 11, 0.08)',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 12,
+  },
+  sendConfirmationWarningText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '500',
   },
   sendButton: {
     backgroundColor: colors.purple,

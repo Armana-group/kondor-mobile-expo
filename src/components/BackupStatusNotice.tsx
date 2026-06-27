@@ -3,9 +3,12 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
   getBackupHealthLabel,
-  isBackupHealthActionRequired,
   type BackupHealth,
 } from '../lib/backupHealth';
+import {
+  getBackupNoticeDismissalKey,
+  useBackupNoticeDismissalStore,
+} from '../stores/backupNoticeDismissalStore';
 import colors from '../theme/colors';
 
 type BackupStatusNoticeProps = {
@@ -19,7 +22,11 @@ export function BackupStatusNotice({
   onPress,
   compact = false,
 }: BackupStatusNoticeProps) {
-  if (!isBackupHealthActionRequired(backupHealth)) {
+  const dismissalKey = getBackupNoticeDismissalKey(backupHealth);
+  const isDismissed = useBackupNoticeDismissalStore((state) => state.isDismissed(dismissalKey));
+  const dismissNotice = useBackupNoticeDismissalStore((state) => state.dismissNotice);
+
+  if (!dismissalKey || isDismissed) {
     return null;
   }
 
@@ -37,18 +44,29 @@ export function BackupStatusNotice({
   const showBody = !compact || backupHealth.status === 'stale' || backupHealth.status === 'failed';
 
   return (
-    <Pressable style={[styles.container, compact && styles.compact]} onPress={onPress}>
-      <View style={styles.iconWrap}>
-        <Ionicons name="warning-outline" size={18} color={colors.warning} />
-      </View>
-      <View style={styles.textWrap}>
-        <Text style={styles.title}>
-          {backupHealth.status === 'none' ? 'Back up this wallet' : getBackupHealthLabel(backupHealth)}
-        </Text>
-        {showBody && <Text style={styles.body}>{body}</Text>}
-      </View>
-      <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-    </Pressable>
+    <View style={[styles.container, compact && styles.compact]}>
+      <Pressable style={styles.noticeAction} onPress={onPress}>
+        <View style={styles.iconWrap}>
+          <Ionicons name="warning-outline" size={18} color={colors.warning} />
+        </View>
+        <View style={styles.textWrap}>
+          <Text style={styles.title}>
+            {backupHealth.status === 'none' ? 'Back up this wallet' : getBackupHealthLabel(backupHealth)}
+          </Text>
+          {showBody && <Text style={styles.body}>{body}</Text>}
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+      </Pressable>
+      <Pressable
+        accessibilityLabel="Dismiss backup notice"
+        accessibilityRole="button"
+        hitSlop={8}
+        style={styles.dismissButton}
+        onPress={() => dismissNotice(dismissalKey)}
+      >
+        <Ionicons name="close" size={18} color={colors.textTertiary} />
+      </Pressable>
+    </View>
   );
 }
 
@@ -56,7 +74,6 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
     borderWidth: 1,
     borderColor: 'rgba(245, 158, 11, 0.35)',
     backgroundColor: 'rgba(245, 158, 11, 0.08)',
@@ -65,6 +82,12 @@ const styles = StyleSheet.create({
   },
   compact: {
     paddingVertical: 10,
+  },
+  noticeAction: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   iconWrap: {
     width: 28,
@@ -87,5 +110,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     marginTop: 3,
+  },
+  dismissButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 4,
   },
 });

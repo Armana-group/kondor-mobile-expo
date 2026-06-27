@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text, TouchableOpacity } from 'react-native';
+import { Alert, Text, TouchableOpacity } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 
 jest.mock('@expo/vector-icons', () => ({
@@ -16,6 +16,9 @@ const mockNavigation = {
     navigate: mockNavigate,
   })),
 };
+
+const mockIsSendConfirmationRequired = jest.fn(async () => true);
+const mockSetSendConfirmationRequired = jest.fn(async (_required: boolean) => undefined);
 
 let mockNetworkState = {
   mode: 'mainnet' as 'mainnet' | 'harbinger',
@@ -43,6 +46,11 @@ jest.mock('../../stores/walletStore', () => ({
 jest.mock('../../stores/networkStore', () => ({
   useNetworkStore: (selector?: (state: typeof mockNetworkState) => unknown) =>
     selector ? selector(mockNetworkState) : mockNetworkState,
+}));
+
+jest.mock('../../services/auth', () => ({
+  isSendConfirmationRequired: () => mockIsSendConfirmationRequired(),
+  setSendConfirmationRequired: (required: boolean) => mockSetSendConfirmationRequired(required),
 }));
 
 function collectRenderedText(renderer: TestRenderer.ReactTestRenderer): string[] {
@@ -74,12 +82,20 @@ function findButtonByText(
 }
 
 describe('SettingsScreen', () => {
+  const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+
   beforeEach(() => {
     jest.clearAllMocks();
+    mockIsSendConfirmationRequired.mockResolvedValue(true);
+    mockSetSendConfirmationRequired.mockResolvedValue(undefined);
     mockNetworkState = {
       mode: 'mainnet',
       hasHydrated: true,
     };
+  });
+
+  afterAll(() => {
+    alertSpy.mockRestore();
   });
 
   it('renders the consolidated settings index required for parity', async () => {
@@ -98,11 +114,13 @@ describe('SettingsScreen', () => {
       'Security & Privacy',
       'Connected Sites',
       'Backup & Recovery',
+      'Require confirmation before sending',
       'Network',
       'Contacts',
       'Lock Wallet',
       'Remove Wallet',
       'Mainnet',
+      'On',
     ]));
   });
 
@@ -176,5 +194,51 @@ describe('SettingsScreen', () => {
 
     expect(onLockWallet).toHaveBeenCalledTimes(1);
     expect(mockNavigate).not.toHaveBeenCalledWith('LockWallet');
+  });
+
+  it('warns before turning off manual send confirmation', async () => {
+    const { SettingsScreen } = require('../SettingsScreen');
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(<SettingsScreen />);
+    });
+
+    await act(async () => {
+      findButtonByText(renderer!, 'Require confirmation before sending').props.onPress();
+    });
+
+    const warning = alertSpy.mock.calls.at(-1);
+    expect(warning?.[0]).toBe('Turn Off Send Confirmation?');
+    expect(warning?.[1]).toContain('Anyone with access to your unlocked wallet can send tokens without biometric confirmation.');
+
+    const turnOff = warning?.[2]?.find((button) => button.text === 'Turn Off');
+    expect(turnOff?.onPress).toEqual(expect.any(Function));
+
+    await act(async () => {
+      await turnOff?.onPress?.();
+    });
+
+    expect(mockSetSendConfirmationRequired).toHaveBeenCalledWith(false);
+    expect(collectRenderedText(renderer!)).toContain('Off');
+  });
+
+  it('turns manual send confirmation back on without an extra warning', async () => {
+    mockIsSendConfirmationRequired.mockResolvedValue(false);
+    const { SettingsScreen } = require('../SettingsScreen');
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(<SettingsScreen />);
+    });
+
+    expect(collectRenderedText(renderer!)).toContain('Off');
+
+    await act(async () => {
+      await findButtonByText(renderer!, 'Require confirmation before sending').props.onPress();
+    });
+
+    expect(mockSetSendConfirmationRequired).toHaveBeenCalledWith(true);
+    expect(collectRenderedText(renderer!)).toContain('On');
   });
 });

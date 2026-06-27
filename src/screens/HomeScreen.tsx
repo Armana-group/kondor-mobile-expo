@@ -32,6 +32,7 @@ import { tokenPriceService } from '../lib/tokenPrices';
 import { truncateAddress, formatKoinBalance } from '../lib/utils';
 import { HapticFeedback } from '../lib/haptics';
 import { koinosLogger, sanitizeErrorForUser } from '../lib/logger';
+import { MAINNET, TESTNET } from '../lib/constants';
 import colors from '../theme/colors';
 
 const USD_FORMATTER = new Intl.NumberFormat('en-US', {
@@ -240,9 +241,17 @@ export const HomeScreen = () => {
   };
 
   // Calculate total portfolio value (for now just sum of balances, no USD)
-  // Get KOIN balance for display
-  const koinToken = scopedTokens.find((t) => t.symbol === 'KOIN');
-  const koinBalance = koinToken?.balance || '0';
+  // Get native token balance for display.
+  const nativeTokenContractId = networkMode === 'harbinger'
+    ? TESTNET.koinContract
+    : MAINNET.koinContract;
+  const nativeTokenSymbol = networkMode === 'harbinger' ? 'tKOIN' : 'KOIN';
+  const nativeToken = scopedTokens.find((token) => token.contractId === nativeTokenContractId)
+    || scopedTokens.find((token) => token.symbol.toLowerCase() === nativeTokenSymbol.toLowerCase())
+    || (networkMode === 'mainnet'
+      ? scopedTokens.find((token) => token.symbol === 'KOIN')
+      : undefined);
+  const nativeTokenBalance = nativeToken?.balance || '0';
 
   // Handle token press - navigate to token detail
   const handleTokenPress = (token: Token) => {
@@ -379,7 +388,7 @@ export const HomeScreen = () => {
           <Text style={styles.portfolioLabel}>Portfolio</Text>
           <Text style={styles.portfolioSubLabel}>Total Balance</Text>
           <Text style={styles.portfolioValue}>
-            {formatKoinBalance(koinBalance)} KOIN
+            {formatKoinBalance(nativeTokenBalance)} {nativeTokenSymbol}
           </Text>
           {portfolioValueUsd != null && (
             <Text style={styles.portfolioUsdValue}>

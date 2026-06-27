@@ -53,13 +53,14 @@ describe('tokenStore network token helpers', () => {
     expect(getTokenListUrlForNetwork(TESTNET)).toBeNull();
   });
 
-  it('builds a minimal Harbinger token set with the Harbinger KOIN contract', () => {
+  it('builds a minimal Harbinger token set with the Harbinger tKOIN contract', () => {
     const tokens = buildTokensForNetwork(TESTNET, mainnetList) as Token[];
 
     expect(tokens).toEqual([
       expect.objectContaining({
         contractId: TESTNET.koinContract,
-        symbol: 'KOIN',
+        symbol: 'tKOIN',
+        name: 'Koinos Testnet',
         balance: '0',
       }),
     ]);

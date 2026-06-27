@@ -1,6 +1,7 @@
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
 import type { BackupHealth } from '../../lib/backupHealth';
+import { TESTNET } from '../../lib/constants';
 
 jest.mock('@expo/vector-icons', () => ({
   Ionicons: 'Ionicons',
@@ -423,10 +424,46 @@ describe('HomeScreen network initialization', () => {
     });
 
     const renderedText = collectRenderedText(renderer!);
-    expect(renderedText).toContain('0.00 KOIN');
+    expect(renderedText).toContain('0.00 tKOIN');
     expect(renderedText).toContain('Loading tokens...');
     expect(renderedText).not.toContain('12.34 KOIN');
     expect(renderedText).not.toContain('99.00 KOIN');
+  });
+
+  it('labels the Harbinger native balance as tKOIN', async () => {
+    mockNetworkState = {
+      mode: 'harbinger',
+      hasHydrated: true,
+    };
+    mockTokenState = {
+      tokens: [
+        {
+          contractId: TESTNET.koinContract,
+          symbol: 'tKOIN',
+          name: 'Koinos Testnet',
+          decimals: 8,
+          icon: '',
+          balance: '12.34000000',
+          isLoading: false,
+        },
+      ],
+      isLoading: false,
+      cacheKey: `harbinger:${mockAddress}`,
+    };
+
+    const { HomeScreen } = require('../HomeScreen');
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<HomeScreen />);
+    });
+    await flushEffects();
+
+    const renderedText = collectRenderedText(renderer!);
+    expect(renderedText).toEqual(
+      expect.arrayContaining(['12.34 tKOIN', 'Koinos Testnet', 'tKOIN'])
+    );
+    expect(renderedText).not.toContain('12.34 KOIN');
   });
 
   it('ignores stale mana responses from the previous network scope', async () => {

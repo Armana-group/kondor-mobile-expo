@@ -60,6 +60,30 @@ describe('transactionDecoder', () => {
     });
   });
 
+  it('labels Harbinger native transfers as tKOIN', () => {
+    const operation = decodeKnownOperation({
+      call_contract: {
+        contract_id: '1FaSvLjQJsCJKq5ybmGsMMQs8RQYyVv8ju',
+        entry_point: 0x27f576ca,
+        args: encodeTransferArgs({
+          from: owner,
+          to: receiver,
+          value: '123456789',
+        }),
+      },
+    });
+
+    expect(operation.title).toBe('Transfer tKOIN');
+    expect(operation.details).toContainEqual({
+      label: 'Token',
+      value: 'Koinos Testnet (tKOIN)',
+    });
+    expect(operation.details).toContainEqual({
+      label: 'Amount',
+      value: '1.23456789 tKOIN',
+    });
+  });
+
   it('labels token approve operations for KoinDX periphery', () => {
     const operation = decodeKnownOperation({
       call_contract: {

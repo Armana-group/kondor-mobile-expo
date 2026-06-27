@@ -9,6 +9,8 @@ import {
   getFailedAttempts,
   setBiometricUnlock,
   isBiometricUnlockEnabled,
+  isSendConfirmationRequired,
+  setSendConfirmationRequired,
 } from '../auth';
 
 // Access the mock store directly for cleanup
@@ -146,5 +148,28 @@ describe('biometric unlock setting', () => {
 
     await removePin();
     expect(await isBiometricUnlockEnabled()).toBe(false);
+  });
+});
+
+describe('send confirmation setting', () => {
+  it('defaults to required', async () => {
+    expect(await isSendConfirmationRequired()).toBe(true);
+  });
+
+  it('can be disabled and re-enabled', async () => {
+    await setSendConfirmationRequired(false);
+    expect(await isSendConfirmationRequired()).toBe(false);
+
+    await setSendConfirmationRequired(true);
+    expect(await isSendConfirmationRequired()).toBe(true);
+  });
+
+  it('resets to required when PIN is removed', async () => {
+    await setPin('123456');
+    await setSendConfirmationRequired(false);
+    expect(await isSendConfirmationRequired()).toBe(false);
+
+    await removePin();
+    expect(await isSendConfirmationRequired()).toBe(true);
   });
 });

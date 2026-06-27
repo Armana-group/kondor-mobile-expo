@@ -3,6 +3,7 @@ import { Text } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import { BackupStatusNotice } from '../BackupStatusNotice';
 import type { BackupHealth } from '../../lib/backupHealth';
+import { useBackupNoticeDismissalStore } from '../../stores/backupNoticeDismissalStore';
 
 jest.mock('@expo/vector-icons', () => ({
   Ionicons: 'Ionicons',
@@ -28,6 +29,12 @@ function text(renderer: TestRenderer.ReactTestRenderer): string {
 }
 
 describe('BackupStatusNotice', () => {
+  beforeEach(async () => {
+    await act(async () => {
+      useBackupNoticeDismissalStore.getState().clearDismissals();
+    });
+  });
+
   it('renders nothing when backup is verified', async () => {
     let renderer: TestRenderer.ReactTestRenderer;
     await act(async () => {
@@ -153,5 +160,55 @@ describe('BackupStatusNotice', () => {
     });
 
     expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  it('dismisses the current notice without opening backup recovery', async () => {
+    const onPress = jest.fn();
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <BackupStatusNotice backupHealth={baseHealth} onPress={onPress} />
+      );
+    });
+
+    await act(async () => {
+      renderer!.root.findByProps({ accessibilityLabel: 'Dismiss backup notice' }).props.onPress();
+    });
+
+    expect(onPress).not.toHaveBeenCalled();
+    expect(renderer!.root.findAllByType(Text)).toHaveLength(0);
+  });
+
+  it('shows a dismissed notice again when backup health changes', async () => {
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <BackupStatusNotice backupHealth={baseHealth} onPress={jest.fn()} />
+      );
+    });
+
+    await act(async () => {
+      renderer!.root.findByProps({ accessibilityLabel: 'Dismiss backup notice' }).props.onPress();
+    });
+
+    expect(renderer!.root.findAllByType(Text)).toHaveLength(0);
+
+    await act(async () => {
+      renderer!.update(
+        <BackupStatusNotice
+          backupHealth={{
+            ...baseHealth,
+            status: 'stale',
+            provider: 'manual-file',
+            walletFingerprint: 'wallet-1',
+            accountSetHash: 'accounts-2',
+            failureReason: 'Account set changed',
+          }}
+          onPress={jest.fn()}
+        />
+      );
+    });
+
+    expect(text(renderer!)).toContain('Backup stale');
   });
 });

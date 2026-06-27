@@ -5,6 +5,7 @@ const PIN_HASH_KEY = 'kondor_pin_hash';
 const PIN_SALT_KEY = 'kondor_pin_salt';
 const PIN_ENABLED_KEY = 'kondor_pin_enabled';
 const BIOMETRICS_UNLOCK_KEY = 'kondor_biometrics_unlock';
+const SEND_CONFIRMATION_REQUIRED_KEY = 'kondor_send_confirmation_required';
 const FAILED_ATTEMPTS_KEY = 'kondor_failed_attempts';
 const LOCKOUT_UNTIL_KEY = 'kondor_lockout_until';
 
@@ -32,6 +33,15 @@ export async function isBiometricUnlockEnabled(): Promise<boolean> {
 
 export async function setBiometricUnlock(enabled: boolean): Promise<void> {
   await SecureStore.setItemAsync(BIOMETRICS_UNLOCK_KEY, enabled ? 'true' : 'false');
+}
+
+export async function isSendConfirmationRequired(): Promise<boolean> {
+  const required = await SecureStore.getItemAsync(SEND_CONFIRMATION_REQUIRED_KEY);
+  return required !== 'false';
+}
+
+export async function setSendConfirmationRequired(required: boolean): Promise<void> {
+  await SecureStore.setItemAsync(SEND_CONFIRMATION_REQUIRED_KEY, required ? 'true' : 'false');
 }
 
 export async function setPin(pin: string): Promise<void> {
@@ -82,6 +92,7 @@ export async function removePin(): Promise<void> {
   await SecureStore.deleteItemAsync(PIN_SALT_KEY);
   await SecureStore.deleteItemAsync(PIN_ENABLED_KEY);
   await SecureStore.deleteItemAsync(BIOMETRICS_UNLOCK_KEY);
+  await SecureStore.deleteItemAsync(SEND_CONFIRMATION_REQUIRED_KEY);
   await resetFailedAttempts();
 }
 
