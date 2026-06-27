@@ -224,6 +224,9 @@ describe('SecurityPrivacyScreen', () => {
     expect(text).toContain('Manual sends ask for device authentication before broadcasting.');
     expect(findSwitch(renderer!).props.value).toBe(true);
     expect(findSwitch(renderer!).props.accessibilityLabel).toBe('Require biometrics for sends');
+    expect(renderer!.root.findByProps({ testID: 'app-header' })).toBeTruthy();
+    expect(renderer!.root.findByProps({ testID: 'settings-row-Require biometrics for sends' })).toBeTruthy();
+    expect(renderer!.root.findByProps({ testID: 'settings-row-trailing-control' })).toBeTruthy();
   });
 
   it('warns before turning off manual send biometrics', async () => {
@@ -252,6 +255,7 @@ describe('SecurityPrivacyScreen', () => {
     expect(mockSetSendConfirmationRequired).toHaveBeenCalledWith(false);
     expect(findSwitch(renderer!).props.value).toBe(false);
     expect(collectRenderedText(renderer!)).toContain('Manual sends will skip device authentication.');
+    expect(renderer!.root.findByProps({ testID: 'warning-inline' })).toBeTruthy();
   });
 
   it('turns manual send biometrics back on without an extra warning', async () => {
