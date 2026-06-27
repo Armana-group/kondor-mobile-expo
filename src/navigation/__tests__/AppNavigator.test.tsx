@@ -107,6 +107,22 @@ describe('AppNavigator', () => {
     jest.clearAllMocks();
   });
 
+  it('shows the branded startup splash while wallet state is hydrating', () => {
+    mockLoadWallet.mockImplementationOnce(() => new Promise<boolean>(() => {}));
+
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    act(() => {
+      renderer = TestRenderer.create(<AppNavigator />);
+    });
+
+    expect(renderer!.root.findByProps({ testID: 'startup-splash' })).toBeTruthy();
+
+    act(() => {
+      renderer!.unmount();
+    });
+  });
+
   it('re-locks the entire app when the shared lock action is triggered', async () => {
     let renderer: TestRenderer.ReactTestRenderer;
 
