@@ -58,6 +58,47 @@ let mockNetworkState = {
   mode: 'mainnet',
   hasHydrated: true,
 };
+const mockProviderRpcNodes: string[][] = [];
+
+const mockMainnetNetworkConfig = {
+  chainId: 'mainnet-chain',
+  name: 'Mainnet',
+  rpcNodes: ['https://mainnet.rpc.koinos.test'],
+  koinContract: '15DJN4a8SgrbGhhGksSBASiSYjGnMU8dGL',
+  explorer: {
+    base: 'https://explorer.koinos.test',
+    tx: '/tx/',
+    address: '/address/',
+    contract: '/contract/',
+    block: '/block/',
+  },
+  rest: {
+    history: 'https://rest.koinos.test/history',
+    transaction: 'https://rest.koinos.test/tx',
+  },
+  freeManaSharer: '1FreeManaSharer',
+  isTestnet: false,
+};
+
+const mockHarbingerNetworkConfig = {
+  chainId: 'harbinger-chain',
+  name: 'Harbinger',
+  rpcNodes: ['https://harbinger.rpc.koinos.test'],
+  koinContract: '1FaSvLjQJsCJKq5ybmGsMMQs8RQYyVv8ju',
+  explorer: {
+    base: 'https://testnet.koinosfoundation.org',
+    tx: '/v1/transactions/',
+    address: '/v1/account/',
+    contract: '/v1/contract/',
+    block: '/v1/blocks/',
+  },
+  rest: {
+    history: 'https://testnet.koinosfoundation.org/v1/account',
+    transaction: 'https://testnet.koinosfoundation.org/v1/transaction',
+  },
+  freeManaSharer: '1NDqFZLVJUtuY3FNii8ZAJ4kAiUnESur1n',
+  isTestnet: true,
+};
 
 jest.mock('@react-navigation/native', () => ({
   useNavigation: () => mockNavigation,
@@ -92,7 +133,24 @@ jest.mock('react-native-webview', () => {
 
 jest.mock('koilib', () => ({
   Provider: class Provider {
-    constructor(_rpcNodes: string[]) {}
+    private rpcNodes: string[];
+
+    constructor(rpcNodes: string[]) {
+      this.rpcNodes = rpcNodes;
+      mockProviderRpcNodes.push(rpcNodes);
+    }
+
+    async getChainId() {
+      return this.rpcNodes.includes(mockHarbingerNetworkConfig.rpcNodes[0])
+        ? mockHarbingerNetworkConfig.chainId
+        : mockMainnetNetworkConfig.chainId;
+    }
+
+    async getHeadInfo() {
+      return {
+        chain_id: await this.getChainId(),
+      };
+    }
   },
   Signer: class Signer {
     constructor() {
@@ -125,25 +183,9 @@ jest.mock('../../components/DAppMessageSigningModal', () => ({
 jest.mock('../../stores/networkStore', () => ({
   useNetworkStore: (selector?: (state: typeof mockNetworkState) => unknown) =>
     selector ? selector(mockNetworkState) : mockNetworkState,
-  getActiveNetworkConfig: () => ({
-    chainId: 'mainnet',
-    name: 'Mainnet',
-    rpcNodes: ['https://rpc.koinos.test'],
-    koinContract: '15DJN4a8SgrbGhhGksSBASiSYjGnMU8dGL',
-    explorer: {
-      base: 'https://explorer.koinos.test',
-      tx: '/tx/',
-      address: '/address/',
-      contract: '/contract/',
-      block: '/block/',
-    },
-    rest: {
-      history: 'https://rest.koinos.test/history',
-      transaction: 'https://rest.koinos.test/tx',
-    },
-    freeManaSharer: '1FreeManaSharer',
-    isTestnet: false,
-  }),
+  getActiveNetworkConfig: () => mockMainnetNetworkConfig,
+  getNetworkConfigForMode: (mode: 'mainnet' | 'harbinger') =>
+    mode === 'harbinger' ? mockHarbingerNetworkConfig : mockMainnetNetworkConfig,
 }));
 
 jest.mock('../../stores/walletStore', () => ({
@@ -359,6 +401,7 @@ describe('DAppWebViewScreen getAccounts grants', () => {
       mode: 'mainnet',
       hasHydrated: true,
     };
+    mockProviderRpcNodes.length = 0;
     mockSecureStoreGetItemAsync.mockReset();
     mockSecureStoreGetItemAsync.mockResolvedValue(null);
   });
@@ -572,7 +615,7 @@ describe('DAppWebViewScreen getAccounts grants', () => {
           operations: [],
           header: {
             payer: mockAccount.address,
-            chain_id: 'mainnet',
+            chain_id: 'mainnet-chain',
             nonce: '0xprepared',
             rc_limit: '100000000',
           },
@@ -631,6 +674,45 @@ describe('DAppWebViewScreen getAccounts grants', () => {
         type: 'kondor-response',
         id: 'sign-message-2',
         error: 'User rejected the message signing request',
+      },
+    ]);
+  });
+
+  it('routes explicit provider commands through the requested network', async () => {
+    await renderScreen();
+
+    await act(async () => {
+      await emitCommand('chain-1', 'provider:getChainId', {
+        network: 'harbinger',
+      });
+    });
+    await flushEffects();
+
+    expect(mockProviderRpcNodes).toContainEqual(mockHarbingerNetworkConfig.rpcNodes);
+    expect(parseInjectedResponses()).toEqual([
+      {
+        type: 'kondor-response',
+        id: 'chain-1',
+        result: mockHarbingerNetworkConfig.chainId,
+      },
+    ]);
+  });
+
+  it('fails closed when a dApp requests an unsupported provider network', async () => {
+    await renderScreen();
+
+    await act(async () => {
+      await emitCommand('chain-unsupported', 'provider:getHeadInfo', {
+        network: 'unknown-network',
+      });
+    });
+    await flushEffects();
+
+    expect(parseInjectedResponses()).toEqual([
+      {
+        type: 'kondor-response',
+        id: 'chain-unsupported',
+        error: 'Unsupported network: unknown-network',
       },
     ]);
   });

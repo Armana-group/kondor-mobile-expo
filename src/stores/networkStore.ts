@@ -86,6 +86,10 @@ export function getActiveNetworkConfig(): NetworkConfig {
   return NETWORK_CONFIGS[normalizeNetworkMode(mode)];
 }
 
+export function getNetworkConfigForMode(mode: NetworkMode): NetworkConfig {
+  return NETWORK_CONFIGS[mode];
+}
+
 export async function setNetworkMode(mode: NetworkMode): Promise<void> {
   await useNetworkStore.getState().setMode(mode);
 }

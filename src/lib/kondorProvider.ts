@@ -114,30 +114,34 @@ export const KONDOR_PROVIDER_SCRIPT = `
   });
 
   // Create Provider object (compatible with koilib)
-  const provider = {
-    call: (method, params) => sendToNative('provider:call', { method, params }),
-    getNonce: (account) => sendToNative('provider:getNonce', { account }),
-    getNextNonce: (account) => sendToNative('provider:getNextNonce', { account }),
-    getAccountRc: (account) => sendToNative('provider:getAccountRc', { account }),
-    getTransactionsById: (transactionIds) => sendToNative('provider:getTransactionsById', { transactionIds }),
-    getBlocksById: (blockIds) => sendToNative('provider:getBlocksById', { blockIds }),
-    getHeadInfo: () => sendToNative('provider:getHeadInfo', {}),
-    getChainId: () => sendToNative('provider:getChainId', {}),
-    getBlocks: (height, numBlocks, idRef, opts) => sendToNative('provider:getBlocks', { height, numBlocks, idRef, opts }),
-    getBlock: (height, opts) => sendToNative('provider:getBlock', { height, opts }),
-    wait: (txId, type, timeout) => sendToNative('provider:wait', { txId, type, timeout }),
-    sendTransaction: (transaction, broadcast) => sendToNative('provider:sendTransaction', { transaction, broadcast }),
-    submitBlock: (block) => sendToNative('provider:submitBlock', { block }),
-    readContract: (operation) => sendToNative('provider:readContract', { operation }),
-    getForkHeads: () => sendToNative('provider:getForkHeads', {}),
-    getResourceLimits: () => sendToNative('provider:getResourceLimits', {}),
-    invokeGetContractMetadata: (contractId) => sendToNative('provider:invokeGetContractMetadata', { contractId }),
-  };
+  function createProvider(network) {
+    return {
+      call: (method, params) => sendToNative('provider:call', { network: network, method, params }),
+      getNonce: (account) => sendToNative('provider:getNonce', { network: network, account }),
+      getNextNonce: (account) => sendToNative('provider:getNextNonce', { network: network, account }),
+      getAccountRc: (account) => sendToNative('provider:getAccountRc', { network: network, account }),
+      getTransactionsById: (transactionIds) => sendToNative('provider:getTransactionsById', { network: network, transactionIds }),
+      getBlocksById: (blockIds) => sendToNative('provider:getBlocksById', { network: network, blockIds }),
+      getHeadInfo: () => sendToNative('provider:getHeadInfo', { network: network }),
+      getChainId: () => sendToNative('provider:getChainId', { network: network }),
+      getBlocks: (height, numBlocks, idRef, opts) => sendToNative('provider:getBlocks', { network: network, height, numBlocks, idRef, opts }),
+      getBlock: (height, opts) => sendToNative('provider:getBlock', { network: network, height, opts }),
+      wait: (txId, type, timeout) => sendToNative('provider:wait', { network: network, txId, type, timeout }),
+      sendTransaction: (transaction, broadcast) => sendToNative('provider:sendTransaction', { network: network, transaction, broadcast }),
+      submitBlock: (block) => sendToNative('provider:submitBlock', { network: network, block }),
+      readContract: (operation) => sendToNative('provider:readContract', { network: network, operation }),
+      getForkHeads: () => sendToNative('provider:getForkHeads', { network: network }),
+      getResourceLimits: () => sendToNative('provider:getResourceLimits', { network: network }),
+      invokeGetContractMetadata: (contractId) => sendToNative('provider:invokeGetContractMetadata', { network: network, contractId }),
+    };
+  }
+
+  const provider = createProvider();
 
   // getProvider function
   function getProvider(network) {
     _log('getProvider called:', network);
-    return provider;
+    return createProvider(network);
   }
 
   // KondorSigner class (matches kondor-js API)

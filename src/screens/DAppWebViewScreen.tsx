@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  SafeAreaView,
   Platform,
   Alert,
   Modal,
@@ -14,6 +13,7 @@ import {
 } from 'react-native';
 import { WebView, WebViewNavigation, WebViewMessageEvent } from 'react-native-webview';
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { Provider, Transaction, TransactionJson } from 'koilib';
@@ -42,7 +42,12 @@ import {
   DAppMessageSigningModal,
   DAppMessageSigningRequest,
 } from '../components/DAppMessageSigningModal';
-import { getActiveNetworkConfig, useNetworkStore } from '../stores/networkStore';
+import {
+  getActiveNetworkConfig,
+  getNetworkConfigForMode,
+  type NetworkMode,
+  useNetworkStore,
+} from '../stores/networkStore';
 import {
   handleWebViewProviderCall,
   handleWebViewProviderSendTransaction,
@@ -116,6 +121,56 @@ function toConnectedAccount(account: Account): KondorConnectedAccount {
     address: account.address,
     signers: [],
   };
+}
+
+function getProviderNetworkToken(value: unknown): string | null {
+  if (typeof value === 'string') {
+    return value.trim().toLowerCase();
+  }
+
+  if (typeof value === 'object' && value !== null) {
+    const candidate = (value as Record<string, unknown>).tag
+      ?? (value as Record<string, unknown>).network
+      ?? (value as Record<string, unknown>).name;
+    if (typeof candidate === 'string') {
+      return candidate.trim().toLowerCase();
+    }
+  }
+
+  return null;
+}
+
+function resolveProviderNetworkMode(value: unknown): NetworkMode | null | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  const token = getProviderNetworkToken(value);
+  if (!token) {
+    return null;
+  }
+
+  if (token === 'mainnet') {
+    return 'mainnet';
+  }
+
+  if (token === 'harbinger' || token === 'testnet') {
+    return 'harbinger';
+  }
+
+  return null;
+}
+
+function getUnsupportedNetworkLabel(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }
 
 export const DAppWebViewScreen = () => {
@@ -209,9 +264,22 @@ export const DAppWebViewScreen = () => {
     }
   }, []);
 
+  const getProviderForCommand = useCallback((args: Record<string, unknown>): Provider => {
+    const requestedNetworkMode = resolveProviderNetworkMode(args.network);
+    if (requestedNetworkMode === null) {
+      throw new Error(`Unsupported network: ${getUnsupportedNetworkLabel(args.network)}`);
+    }
+
+    if (!requestedNetworkMode) {
+      return providerRef.current!;
+    }
+
+    return new Provider(getNetworkConfigForMode(requestedNetworkMode).rpcNodes);
+  }, []);
+
   // Handle provider commands (no user approval needed)
   const handleProviderCommand = useCallback(async (command: string, args: Record<string, unknown>): Promise<unknown> => {
-    const provider = providerRef.current!;
+    const provider = getProviderForCommand(args);
 
     switch (command) {
       case 'provider:call':
@@ -277,7 +345,7 @@ export const DAppWebViewScreen = () => {
       default:
         throw new Error(`Unknown provider command: ${command}`);
     }
-  }, []);
+  }, [getProviderForCommand]);
 
   // Handle signer:prepareTransaction command
   const handlePrepareTransaction = useCallback(async (args: Record<string, unknown>): Promise<TransactionJson> => {
