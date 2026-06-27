@@ -662,6 +662,7 @@ describe('SendScreen balance scoping', () => {
     });
 
     expect(collectRenderedText(renderer!).join(' ')).toContain('Send biometrics are off');
+    expect(renderer!.root.findByProps({ testID: 'warning-inline' })).toBeTruthy();
 
     const [recipientInput, amountInput] = renderer!.root.findAllByType(TextInput);
 

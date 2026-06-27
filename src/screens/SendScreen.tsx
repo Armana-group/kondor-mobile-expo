@@ -19,6 +19,7 @@ import { Button } from '../components/Button';
 import { Input } from '../components/Input';
 import { ContactPicker } from '../components/ContactPicker';
 import { QRScannerModal, ParsedQRData } from '../components/QRScannerModal';
+import { WarningInline } from '../components/WarningInline';
 import { useKoinosStore } from '../stores/koinosStore';
 import { useWalletStore } from '../stores/walletStore';
 import { useContactStore, Contact } from '../stores/contactStore';
@@ -807,12 +808,11 @@ export const SendScreen = () => {
             onPress={handleBackupPress}
           />
           {!sendConfirmationRequired && (
-            <View style={styles.sendConfirmationWarning}>
-              <Ionicons name="warning-outline" size={16} color={colors.warning} />
-              <Text style={styles.sendConfirmationWarningText}>
-                Send biometrics are off
-              </Text>
-            </View>
+            <WarningInline
+              text="Send biometrics are off"
+              style={styles.sendConfirmationWarning}
+              textStyle={styles.sendConfirmationWarningText}
+            />
           )}
           {isSending ? (
             <View style={styles.sendingContainer}>
@@ -1071,21 +1071,10 @@ const styles = StyleSheet.create({
     paddingTop: 16,
   },
   sendConfirmationWarning: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.25)',
-    backgroundColor: 'rgba(245, 158, 11, 0.08)',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
     marginBottom: 12,
   },
   sendConfirmationWarningText: {
     color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '500',
   },
   sendButton: {
     backgroundColor: colors.purple,
