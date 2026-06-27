@@ -50,8 +50,8 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/splash-icon.png",
-          "imageWidth": 240,
+          "image": "./assets/kondor-native-splash.png",
+          "imageWidth": 320,
           "resizeMode": "contain",
           "backgroundColor": "#181818"
         }
