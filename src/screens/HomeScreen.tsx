@@ -10,6 +10,7 @@ import {
   Platform,
   Image,
   FlatList,
+  Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
@@ -41,6 +42,11 @@ const USD_FORMATTER = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 2,
 });
 
+function hasPositiveTokenBalance(token: Token): boolean {
+  const balance = Number.parseFloat(token.balance);
+  return Number.isFinite(balance) && balance > 0;
+}
+
 export const HomeScreen = () => {
   const navigation = useNavigation<any>();
   const { address, updateBalance, accounts, getActiveAccount, backupHealth } = useWalletStore();
@@ -58,6 +64,7 @@ export const HomeScreen = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [manaPercentage, setManaPercentage] = useState<number>(0);
   const [showAccountSwitcher, setShowAccountSwitcher] = useState(false);
+  const [hideZeroBalanceTokens, setHideZeroBalanceTokens] = useState(false);
   const [portfolioValueUsd, setPortfolioValueUsd] = useState<number | null>(null);
   const [portfolioPricingCycle, setPortfolioPricingCycle] = useState<{
     scope: string;
@@ -81,6 +88,12 @@ export const HomeScreen = () => {
   const visibleTokens = useMemo(
     () => getVisibleTokens(scopedTokens),
     [scopedTokens]
+  );
+  const displayedTokens = useMemo(
+    () => hideZeroBalanceTokens
+      ? visibleTokens.filter(hasPositiveTokenBalance)
+      : visibleTokens,
+    [hideZeroBalanceTokens, visibleTokens]
   );
   const tokenScopeLoading = isTokenScopeLoading({
     hasHydrated,
@@ -456,8 +469,26 @@ export const HomeScreen = () => {
         {/* Tokens Section */}
         <View style={styles.tokensSection}>
           <View style={styles.tokensSectionHeader}>
-            <Text style={styles.sectionTitle}>Tokens</Text>
-            <Text style={styles.tokenCount}>{visibleTokens.length}</Text>
+            <View style={styles.tokensTitleRow}>
+              <Text style={styles.sectionTitle}>Tokens</Text>
+              <Text style={styles.tokenCount}>{displayedTokens.length}</Text>
+            </View>
+            <View style={styles.zeroBalanceToggle}>
+              <Text style={styles.zeroBalanceToggleText} numberOfLines={1}>
+                Hide 0 balances
+              </Text>
+              <Switch
+                accessibilityLabel="Hide zero balance tokens"
+                value={hideZeroBalanceTokens}
+                onValueChange={setHideZeroBalanceTokens}
+                trackColor={{
+                  false: colors.border,
+                  true: colors.purple,
+                }}
+                thumbColor={colors.textPrimary}
+                ios_backgroundColor={colors.border}
+              />
+            </View>
           </View>
           {visibleTokens.length === 0 && tokenScopeLoading ? (
             <View style={styles.loadingContainer}>
@@ -465,7 +496,7 @@ export const HomeScreen = () => {
             </View>
           ) : (
             <FlatList
-              data={visibleTokens}
+              data={displayedTokens}
               keyExtractor={(item) => item.contractId}
               renderItem={renderTokenItem}
               scrollEnabled={false}
@@ -475,9 +506,13 @@ export const HomeScreen = () => {
                   <View style={styles.emptyIconContainer}>
                     <Ionicons name="wallet-outline" size={32} color={colors.textTertiary} />
                   </View>
-                  <Text style={styles.emptyTitle}>No Tokens Yet</Text>
+                  <Text style={styles.emptyTitle}>
+                    {hideZeroBalanceTokens ? 'No Token Balances' : 'No Tokens Yet'}
+                  </Text>
                   <Text style={styles.emptyText}>
-                    Tokens will appear here once you receive them
+                    {hideZeroBalanceTokens
+                      ? 'Turn off the filter to view tokens with 0 balance'
+                      : 'Tokens will appear here once you receive them'}
                   </Text>
                 </View>
               }
@@ -697,8 +732,15 @@ const styles = StyleSheet.create({
   },
   tokensSectionHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
+    gap: 12,
+  },
+  tokensTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 0,
   },
   sectionTitle: {
     fontSize: 18,
@@ -714,6 +756,19 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 10,
     overflow: 'hidden',
+  },
+  zeroBalanceToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 8,
+    flexShrink: 1,
+  },
+  zeroBalanceToggleText: {
+    flexShrink: 1,
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.textSecondary,
   },
   tokenItem: {
     flexDirection: 'row',

@@ -1,4 +1,5 @@
 import React from 'react';
+import { Switch } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import type { BackupHealth } from '../../lib/backupHealth';
 import { TESTNET } from '../../lib/constants';
@@ -649,6 +650,61 @@ describe('HomeScreen network initialization', () => {
       expect.arrayContaining(['12.34 KOIN', 'Virtual Hash Power'])
     );
     expect(renderedText).not.toContain('Koinos');
+  });
+
+  it('hides zero balance token rows when the Home filter is enabled', async () => {
+    mockNetworkState = {
+      mode: 'mainnet',
+      hasHydrated: true,
+    };
+    mockTokenState = {
+      tokens: [
+        {
+          contractId: 'koin-contract',
+          symbol: 'KOIN',
+          name: 'Koinos',
+          decimals: 8,
+          icon: '',
+          balance: '12.34000000',
+          isLoading: false,
+        },
+        {
+          contractId: 'zero-token',
+          symbol: 'ZERO',
+          name: 'Zero Token',
+          decimals: 8,
+          icon: '',
+          balance: '0.00000000',
+          isLoading: false,
+        },
+      ],
+      isLoading: false,
+      cacheKey: `mainnet:${mockAddress}`,
+    };
+
+    const { HomeScreen } = require('../HomeScreen');
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<HomeScreen />);
+    });
+    await flushEffects();
+
+    expect(collectRenderedText(renderer!)).toEqual(
+      expect.arrayContaining(['2', 'Koinos', 'Zero Token'])
+    );
+
+    const hideZeroBalanceSwitch = renderer!.root.findByType(Switch);
+    expect(hideZeroBalanceSwitch.props.accessibilityLabel).toBe('Hide zero balance tokens');
+    expect(hideZeroBalanceSwitch.props.value).toBe(false);
+
+    await act(async () => {
+      hideZeroBalanceSwitch.props.onValueChange(true);
+    });
+
+    const renderedText = collectRenderedText(renderer!);
+    expect(renderedText).toEqual(expect.arrayContaining(['1', 'Koinos']));
+    expect(renderedText).not.toContain('Zero Token');
   });
 
   it('prices only once after the real initialization refresh settles', async () => {
