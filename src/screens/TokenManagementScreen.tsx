@@ -13,6 +13,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
 import { Screen } from '../components/Screen';
+import { AppHeader } from '../components/AppHeader';
 import { useWalletStore } from '../stores/walletStore';
 import { useNetworkStore } from '../stores/networkStore';
 import {
@@ -21,6 +22,7 @@ import {
 } from '../stores/tokenStore';
 import { useCustomTokenStore } from '../stores/customTokenStore';
 import colors from '../theme/colors';
+import { layout } from '../theme/layout';
 
 const DECIMALS_RE = /^\d+$/;
 
@@ -149,37 +151,41 @@ export const TokenManagementScreen = () => {
   return (
     <Screen scroll={false}>
       <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-            <Ionicons name="chevron-back" size={28} color={colors.purple} />
-          </TouchableOpacity>
-          <View style={styles.headerCopy}>
-            <Text style={styles.title}>Manage Tokens</Text>
-            <Text style={styles.subtitle}>{networkLabel}</Text>
-          </View>
-          <View style={styles.headerSpacer} />
-        </View>
+        <AppHeader title="Manage Tokens" onBack={() => navigation.goBack()} />
 
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          <View style={styles.summaryCard}>
-            <View>
-              <Text style={styles.summaryLabel}>Visible</Text>
-              <Text style={styles.summaryValue}>{visibleCount}</Text>
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={styles.contentContainer}
+          showsVerticalScrollIndicator={false}
+          testID="token-management-scroll"
+        >
+          <View style={styles.summaryCard} testID="token-management-summary-card">
+            <View style={styles.summaryHeader}>
+              <Text style={styles.summaryNetworkLabel}>Network</Text>
+              <Text style={styles.summaryNetworkValue}>{networkLabel}</Text>
             </View>
-            <View>
-              <Text style={styles.summaryLabel}>Hidden</Text>
-              <Text style={styles.summaryValue}>{hiddenCount}</Text>
+            <View style={styles.summaryStats}>
+              <View>
+                <Text style={styles.summaryLabel}>Visible</Text>
+                <Text style={styles.summaryValue}>{visibleCount}</Text>
+              </View>
+              <View style={styles.summaryStatRight}>
+                <Text style={styles.summaryLabel}>Hidden</Text>
+                <Text style={styles.summaryValue}>{hiddenCount}</Text>
+              </View>
             </View>
           </View>
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Add Custom Token</Text>
-            <Input label="Contract" value={contractId} onChangeText={setContractId} />
-            <Input label="Symbol" value={symbol} onChangeText={setSymbol} autoCapitalize="characters" />
-            <Input label="Name" value={name} onChangeText={setName} />
-            <Input label="Decimals" value={decimals} onChangeText={setDecimals} keyboardType="number-pad" />
-            <Input label="Icon URL (optional)" value={icon} onChangeText={setIcon} />
-            <Button title="Add Token" onPress={() => void handleAddCustomToken()} />
+            <View style={styles.formCard} testID="token-management-form-card">
+              <Input label="Contract" value={contractId} onChangeText={setContractId} />
+              <Input label="Symbol" value={symbol} onChangeText={setSymbol} autoCapitalize="characters" />
+              <Input label="Name" value={name} onChangeText={setName} />
+              <Input label="Decimals" value={decimals} onChangeText={setDecimals} keyboardType="number-pad" />
+              <Input label="Icon URL (optional)" value={icon} onChangeText={setIcon} />
+              <Button title="Add Token" onPress={() => void handleAddCustomToken()} />
+            </View>
           </View>
 
           <View style={styles.section}>
@@ -262,44 +268,41 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 12,
-  },
-  backButton: {
-    padding: 4,
-    marginRight: 8,
-  },
-  headerCopy: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: colors.textPrimary,
-  },
-  subtitle: {
-    marginTop: 4,
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  headerSpacer: {
-    width: 36,
-  },
   content: {
     flex: 1,
+    paddingHorizontal: layout.screen.gutter,
+  },
+  contentContainer: {
+    paddingBottom: layout.screen.bottomPadding + 96,
   },
   summaryCard: {
+    backgroundColor: colors.card,
+    borderRadius: layout.card.radius,
+    padding: layout.card.padding,
+    marginBottom: layout.section.gap,
+  },
+  summaryHeader: {
+    paddingBottom: layout.row.verticalPadding,
+    marginBottom: layout.row.verticalPadding,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  summaryNetworkLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: 4,
+  },
+  summaryNetworkValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  summaryStats: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginHorizontal: 20,
-    marginTop: 12,
-    padding: 18,
-    borderRadius: 12,
-    backgroundColor: colors.card,
+  },
+  summaryStatRight: {
+    alignItems: 'flex-end',
   },
   summaryLabel: {
     fontSize: 13,
@@ -312,8 +315,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   section: {
-    marginTop: 24,
-    paddingHorizontal: 20,
+    marginBottom: layout.section.gap,
   },
   sectionTitle: {
     fontSize: 13,
@@ -321,12 +323,16 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     textTransform: 'uppercase',
     marginBottom: 12,
-    letterSpacing: 0.5,
+  },
+  formCard: {
+    backgroundColor: colors.card,
+    borderRadius: layout.card.radius,
+    padding: layout.card.padding,
   },
   emptyState: {
     backgroundColor: colors.card,
-    borderRadius: 12,
-    padding: 18,
+    borderRadius: layout.card.radius,
+    padding: layout.card.padding,
   },
   emptyTitle: {
     fontSize: 16,
