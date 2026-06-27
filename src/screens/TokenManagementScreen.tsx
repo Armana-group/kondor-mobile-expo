@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   Alert,
   Image,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,8 +11,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { Button } from '../components/Button';
-import { Input } from '../components/Input';
 import { Screen } from '../components/Screen';
 import { AppHeader } from '../components/AppHeader';
 import { useWalletStore } from '../stores/walletStore';
@@ -23,8 +22,6 @@ import {
 import { useCustomTokenStore } from '../stores/customTokenStore';
 import colors from '../theme/colors';
 import { layout } from '../theme/layout';
-
-const DECIMALS_RE = /^\d+$/;
 
 export const TokenManagementScreen = () => {
   const navigation = useNavigation<any>();
@@ -40,15 +37,9 @@ export const TokenManagementScreen = () => {
     syncManagedTokens,
   } = useTokenStore();
   const {
-    addCustomToken,
     removeCustomToken,
     setSystemTokenHidden,
   } = useCustomTokenStore();
-  const [contractId, setContractId] = useState('');
-  const [symbol, setSymbol] = useState('');
-  const [name, setName] = useState('');
-  const [decimals, setDecimals] = useState('8');
-  const [icon, setIcon] = useState('');
   const requestedScopeRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -84,46 +75,21 @@ export const TokenManagementScreen = () => {
   );
   const networkLabel = networkMode === 'harbinger' ? 'Harbinger' : 'Mainnet';
 
-  const resetForm = () => {
-    setContractId('');
-    setSymbol('');
-    setName('');
-    setDecimals('8');
-    setIcon('');
-  };
+  const handleOpenAddCustomToken = useCallback(() => {
+    navigation.navigate('AddCustomToken');
+  }, [navigation]);
 
-  const handleAddCustomToken = async () => {
-    const trimmedContractId = contractId.trim();
-    const trimmedSymbol = symbol.trim().toUpperCase();
-    const trimmedName = name.trim();
-    const trimmedIcon = icon.trim();
-
-    if (!trimmedContractId || !trimmedSymbol || !trimmedName) {
-      Alert.alert('Missing fields', 'Contract, symbol, and name are required.');
-      return;
-    }
-
-    if (!DECIMALS_RE.test(decimals)) {
-      Alert.alert('Invalid decimals', 'Decimals must be a whole number.');
-      return;
-    }
-
-    if (scopedTokens.some((token) => token.contractId === trimmedContractId)) {
-      Alert.alert('Token exists', 'That contract is already in your token list.');
-      return;
-    }
-
-    addCustomToken(networkMode, {
-      contractId: trimmedContractId,
-      symbol: trimmedSymbol,
-      name: trimmedName,
-      decimals: Number(decimals),
-      icon: trimmedIcon || undefined,
-    });
-
-    await syncManagedTokens(address);
-    resetForm();
-  };
+  const addCustomTokenAction = useMemo(() => (
+    <Pressable
+      style={({ pressed }) => [styles.addButton, pressed ? styles.pressed : null]}
+      onPress={handleOpenAddCustomToken}
+      accessibilityRole="button"
+      accessibilityLabel="Add custom token"
+      hitSlop={8}
+    >
+      <Ionicons name="add" size={layout.header.iconSize} color={colors.purple} />
+    </Pressable>
+  ), [handleOpenAddCustomToken]);
 
   const handleToggleSystemToken = async (token: (typeof scopedTokens)[number]) => {
     setSystemTokenHidden(networkMode, token.contractId, !token.isHidden);
@@ -151,7 +117,11 @@ export const TokenManagementScreen = () => {
   return (
     <Screen scroll={false}>
       <View style={styles.container}>
-        <AppHeader title="Manage Tokens" onBack={() => navigation.goBack()} />
+        <AppHeader
+          title="Manage Tokens"
+          onBack={() => navigation.goBack()}
+          rightAccessory={addCustomTokenAction}
+        />
 
         <ScrollView
           style={styles.content}
@@ -177,18 +147,6 @@ export const TokenManagementScreen = () => {
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Add Custom Token</Text>
-            <View style={styles.formCard} testID="token-management-form-card">
-              <Input label="Contract" value={contractId} onChangeText={setContractId} />
-              <Input label="Symbol" value={symbol} onChangeText={setSymbol} autoCapitalize="characters" />
-              <Input label="Name" value={name} onChangeText={setName} />
-              <Input label="Decimals" value={decimals} onChangeText={setDecimals} keyboardType="number-pad" />
-              <Input label="Icon URL (optional)" value={icon} onChangeText={setIcon} />
-              <Button title="Add Token" onPress={() => void handleAddCustomToken()} />
-            </View>
-          </View>
-
-          <View style={styles.section}>
             <Text style={styles.sectionTitle}>Tokens</Text>
             {scopedTokens.length === 0 ? (
               <View style={styles.emptyState}>
@@ -198,6 +156,14 @@ export const TokenManagementScreen = () => {
                 <Text style={styles.emptyText}>
                   Add a custom token or return after balances finish loading.
                 </Text>
+                <Pressable
+                  style={({ pressed }) => [styles.emptyAction, pressed ? styles.pressed : null]}
+                  onPress={handleOpenAddCustomToken}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add custom token"
+                >
+                  <Text style={styles.emptyActionText}>Add Custom Token</Text>
+                </Pressable>
               </View>
             ) : (
               scopedTokens.map((token) => (
@@ -273,7 +239,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: layout.screen.gutter,
   },
   contentContainer: {
-    paddingBottom: layout.screen.bottomPadding + 96,
+    paddingBottom: layout.screen.bottomPadding + layout.section.gap,
   },
   summaryCard: {
     backgroundColor: colors.card,
@@ -324,11 +290,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: 12,
   },
-  formCard: {
-    backgroundColor: colors.card,
-    borderRadius: layout.card.radius,
-    padding: layout.card.padding,
-  },
   emptyState: {
     backgroundColor: colors.card,
     borderRadius: layout.card.radius,
@@ -343,6 +304,19 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontSize: 14,
     color: colors.textSecondary,
+  },
+  emptyAction: {
+    alignSelf: 'flex-start',
+    marginTop: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: colors.elevated,
+  },
+  emptyActionText: {
+    color: colors.purple,
+    fontSize: 14,
+    fontWeight: '600',
   },
   tokenRow: {
     flexDirection: 'row',
@@ -425,5 +399,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.elevated,
+  },
+  addButton: {
+    width: layout.header.sideButtonWidth,
+    minHeight: layout.header.sideButtonWidth,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  pressed: {
+    opacity: 0.65,
   },
 });

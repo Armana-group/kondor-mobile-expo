@@ -16,6 +16,7 @@ import { NetworkSettingsScreen } from '../screens/NetworkSettingsScreen';
 import { BackupRecoveryScreen } from '../screens/BackupRecoveryScreen';
 import { CreateBackupScreen } from '../screens/CreateBackupScreen';
 import { TokenManagementScreen } from '../screens/TokenManagementScreen';
+import { AddCustomTokenScreen } from '../screens/AddCustomTokenScreen';
 import { ConnectedSitesScreen } from '../screens/ConnectedSitesScreen';
 import { CollectiblesScreen } from '../screens/CollectiblesScreen';
 import { NFTDetailScreen } from '../screens/NFTDetailScreen';
@@ -46,6 +47,7 @@ export type SettingsStackParamList = {
   BackupRecovery: undefined;
   CreateBackup: undefined;
   NetworkSettings: undefined;
+  AddCustomToken: undefined;
 };
 
 export type HomeStackParamList = {
@@ -112,6 +114,7 @@ const SettingsStackNavigator = ({ onLockWallet }: SettingsStackNavigatorProps) =
     </SettingsStack.Screen>
     <SettingsStack.Screen name="ManageAccounts" component={ManageAccountsScreen} />
     <SettingsStack.Screen name="TokenManagement" component={TokenManagementScreen} />
+    <SettingsStack.Screen name="AddCustomToken" component={AddCustomTokenScreen} />
     <SettingsStack.Screen name="SecurityPrivacy" component={SecurityPrivacyScreen} />
     <SettingsStack.Screen name="ConnectedSites" component={ConnectedSitesScreen} />
     <SettingsStack.Screen name="BackupRecovery" component={BackupRecoveryScreen} />

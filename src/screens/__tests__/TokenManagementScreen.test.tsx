@@ -8,15 +8,16 @@ jest.mock('@expo/vector-icons', () => ({
 }));
 
 const mockGoBack = jest.fn();
+const mockNavigate = jest.fn();
 const mockInitialize = jest.fn(async () => undefined);
 const mockSyncManagedTokens = jest.fn(async () => undefined);
-const mockAddCustomToken = jest.fn();
 const mockRemoveCustomToken = jest.fn();
 const mockSetSystemTokenHidden = jest.fn();
 
 jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({
     goBack: mockGoBack,
+    navigate: mockNavigate,
   }),
 }));
 
@@ -86,7 +87,6 @@ jest.mock('../../stores/tokenStore', () => ({
 
 jest.mock('../../stores/customTokenStore', () => ({
   useCustomTokenStore: () => ({
-    addCustomToken: mockAddCustomToken,
     removeCustomToken: mockRemoveCustomToken,
     setSystemTokenHidden: mockSetSystemTokenHidden,
   }),
@@ -110,7 +110,7 @@ describe('TokenManagementScreen', () => {
     jest.clearAllMocks();
   });
 
-  it('uses the shared settings layout rhythm for token management', async () => {
+  it('keeps token management list-first and moves custom tokens out of the scroll path', async () => {
     const { TokenManagementScreen } = require('../TokenManagementScreen');
     let renderer: TestRenderer.ReactTestRenderer;
 
@@ -122,7 +122,8 @@ describe('TokenManagementScreen', () => {
 
     expect(renderer!.root.findByProps({ testID: 'app-header' })).toBeTruthy();
     expect(renderer!.root.findByProps({ testID: 'token-management-summary-card' })).toBeTruthy();
-    expect(renderer!.root.findByProps({ testID: 'token-management-form-card' })).toBeTruthy();
+    expect(renderer!.root.findAllByProps({ testID: 'token-management-form-card' })).toHaveLength(0);
+    expect(renderer!.root.findByProps({ accessibilityLabel: 'Add custom token' })).toBeTruthy();
     expect(renderer!.root.findByProps({ testID: 'token-management-scroll' }).props.contentContainerStyle)
       .toEqual(expect.objectContaining({ paddingBottom: expect.any(Number) }));
     expect(renderer!.root.findByProps({ testID: 'token-management-scroll' }).props.contentContainerStyle.paddingBottom)
@@ -134,8 +135,6 @@ describe('TokenManagementScreen', () => {
       '2',
       'Hidden',
       '1',
-      'Add Custom Token',
-      'Add Token',
       'Tokens',
       'KOIN',
       'VHP',
@@ -155,5 +154,20 @@ describe('TokenManagementScreen', () => {
     });
 
     expect(mockGoBack).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the dedicated add custom token screen from the header action', async () => {
+    const { TokenManagementScreen } = require('../TokenManagementScreen');
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(<TokenManagementScreen />);
+    });
+
+    await act(async () => {
+      renderer!.root.findByProps({ accessibilityLabel: 'Add custom token' }).props.onPress();
+    });
+
+    expect(mockNavigate).toHaveBeenCalledWith('AddCustomToken');
   });
 });
