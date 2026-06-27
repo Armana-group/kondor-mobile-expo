@@ -112,6 +112,11 @@ describe('SettingsScreen', () => {
       'Remove Wallet',
       'Mainnet',
     ]));
+    expect(renderer!.root.findByProps({ testID: 'app-header' })).toBeTruthy();
+    expect(renderer!.root.findByProps({ testID: 'settings-section-Wallet' })).toBeTruthy();
+    expect(renderer!.root.findByProps({ testID: 'settings-section-Security' })).toBeTruthy();
+    expect(renderer!.root.findByProps({ testID: 'settings-row-Security & Privacy' })).toBeTruthy();
+    expect(renderer!.root.findByProps({ testID: 'settings-row-Network' })).toBeTruthy();
     expect(text).not.toContain('Send confirmation');
     expect(text).not.toContain('Require biometrics for sends');
     expect(text).not.toContain('Less secure: sends will not ask for biometrics.');

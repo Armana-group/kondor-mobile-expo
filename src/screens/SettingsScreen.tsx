@@ -1,18 +1,19 @@
 import React from 'react';
 import {
   Alert,
-  Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
+import { AppHeader } from '../components/AppHeader';
+import { SettingsRow, SettingsSection } from '../components/settings';
 import { useWalletStore } from '../stores/walletStore';
 import { useNetworkStore } from '../stores/networkStore';
 import colors from '../theme/colors';
+import { layout } from '../theme/layout';
 
 type SettingsItem = {
   label: string;
@@ -22,7 +23,7 @@ type SettingsItem = {
   destructive?: boolean;
 };
 
-type SettingsSection = {
+type SettingsGroup = {
   title: string;
   items: SettingsItem[];
 };
@@ -61,7 +62,7 @@ export const SettingsScreen = ({ onLockWallet }: SettingsScreenProps) => {
     );
   };
 
-  const sections: SettingsSection[] = [
+  const sections: SettingsGroup[] = [
     {
       title: 'Wallet',
       items: [
@@ -134,66 +135,32 @@ export const SettingsScreen = ({ onLockWallet }: SettingsScreenProps) => {
   return (
     <Screen scroll={false}>
       <View style={styles.container}>
-        <View style={styles.header}>
-          <Pressable
-            style={({ pressed }) => [styles.backButton, pressed ? styles.pressed : null]}
-            onPress={() => navigation.goBack()}
-          >
-            <Ionicons name="chevron-back" size={28} color={colors.purple} />
-          </Pressable>
-          <Text style={styles.title}>Settings</Text>
-          <View style={styles.headerSpacer} />
-        </View>
+        <AppHeader title="Settings" onBack={() => navigation.goBack()} />
 
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={styles.contentContainer}
+          showsVerticalScrollIndicator={false}
+        >
           {sections.map((section) => (
-            <View key={section.title} style={styles.section}>
-              <Text style={styles.sectionTitle}>{section.title}</Text>
+            <SettingsSection key={section.title} title={section.title}>
               {section.items.map((item, index) => {
                 const color = item.destructive ? colors.error : colors.purple;
-                const textColor = item.destructive ? colors.error : colors.textPrimary;
 
                 return (
-                  <React.Fragment key={item.label}>
-                    <Pressable
-                      style={({ pressed }) => [
-                        styles.settingItem,
-                        item.onPress && pressed ? styles.pressed : null,
-                      ]}
-                      onPress={item.onPress}
-                      accessibilityRole={item.onPress ? 'button' : undefined}
-                    >
-                      <View style={styles.settingItemLeft}>
-                        <Ionicons name={item.icon} size={22} color={color} />
-                        <View style={styles.settingItemLabelWrap}>
-                          <Text style={[styles.settingItemText, { color: textColor }]}>
-                            {item.label}
-                          </Text>
-                        </View>
-                      </View>
-
-                      {item.value ? (
-                        <View style={styles.settingItemRight}>
-                          <Text style={styles.settingItemValue}>{item.value}</Text>
-                          <Ionicons
-                            name="chevron-forward"
-                            size={20}
-                            color={colors.textTertiary}
-                          />
-                        </View>
-                      ) : (
-                        <Ionicons
-                          name="chevron-forward"
-                          size={20}
-                          color={colors.textTertiary}
-                        />
-                      )}
-                    </Pressable>
-                    {index < section.items.length - 1 && <View style={styles.separator} />}
-                  </React.Fragment>
+                  <SettingsRow
+                    key={item.label}
+                    label={item.label}
+                    icon={item.icon}
+                    iconColor={color}
+                    value={item.value}
+                    destructive={item.destructive}
+                    onPress={item.onPress}
+                    showSeparator={index < section.items.length - 1}
+                  />
                 );
               })}
-            </View>
+            </SettingsSection>
           ))}
         </ScrollView>
       </View>
@@ -206,81 +173,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 16,
-  },
-  backButton: {
-    width: 40,
-  },
-  headerSpacer: {
-    width: 40,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: colors.textPrimary,
-  },
   content: {
     flex: 1,
-    paddingHorizontal: 20,
+    paddingHorizontal: layout.screen.gutter,
   },
-  section: {
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    marginBottom: 16,
-    overflow: 'hidden',
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
-    textTransform: 'uppercase',
-  },
-  settingItem: {
-    minHeight: 58,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  pressed: {
-    opacity: 0.65,
-  },
-  settingItemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    gap: 12,
-  },
-  settingItemLabelWrap: {
-    flex: 1,
-  },
-  settingItemText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: colors.textPrimary,
-  },
-  settingItemRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  settingItemValue: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: colors.textSecondary,
-  },
-  separator: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.border,
-    marginLeft: 50,
+  contentContainer: {
+    paddingBottom: layout.screen.bottomPadding,
   },
 });
