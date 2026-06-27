@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
+  Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -21,9 +22,11 @@ import colors from '../theme/colors';
 type SettingsItem = {
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
-  onPress: () => void;
+  onPress?: () => void;
   value?: string;
   helperText?: string;
+  switchValue?: boolean;
+  onSwitchChange?: (value: boolean) => void;
   destructive?: boolean;
 };
 
@@ -75,8 +78,8 @@ export const SettingsScreen = ({ onLockWallet }: SettingsScreenProps) => {
     }
   };
 
-  const handleSendConfirmationToggle = () => {
-    if (!sendConfirmationRequired) {
+  const handleSendConfirmationToggle = (nextRequired = !sendConfirmationRequired) => {
+    if (nextRequired) {
       void updateSendConfirmationRequired(true);
       return;
     }
@@ -151,13 +154,10 @@ export const SettingsScreen = ({ onLockWallet }: SettingsScreenProps) => {
           onPress: () => navigation.navigate('BackupRecovery'),
         },
         {
-          label: 'Require confirmation before sending',
+          label: 'Send confirmation',
           icon: 'shield-checkmark-outline',
-          value: sendConfirmationRequired ? 'On' : 'Off',
-          helperText: sendConfirmationRequired
-            ? undefined
-            : 'Less secure: sends will not ask for biometrics.',
-          onPress: handleSendConfirmationToggle,
+          switchValue: sendConfirmationRequired,
+          onSwitchChange: handleSendConfirmationToggle,
         },
         {
           label: 'Lock Wallet',
@@ -199,9 +199,12 @@ export const SettingsScreen = ({ onLockWallet }: SettingsScreenProps) => {
     <Screen scroll={false}>
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <Pressable
+            style={({ pressed }) => [styles.backButton, pressed ? styles.pressed : null]}
+            onPress={() => navigation.goBack()}
+          >
             <Ionicons name="chevron-back" size={28} color={colors.purple} />
-          </TouchableOpacity>
+          </Pressable>
           <Text style={styles.title}>Settings</Text>
           <View style={styles.headerSpacer} />
         </View>
@@ -216,7 +219,14 @@ export const SettingsScreen = ({ onLockWallet }: SettingsScreenProps) => {
 
                 return (
                   <React.Fragment key={item.label}>
-                    <TouchableOpacity style={styles.settingItem} onPress={item.onPress}>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.settingItem,
+                        item.onPress && pressed ? styles.pressed : null,
+                      ]}
+                      onPress={item.onPress}
+                      accessibilityRole={item.onPress ? 'button' : undefined}
+                    >
                       <View style={styles.settingItemLeft}>
                         <Ionicons name={item.icon} size={22} color={color} />
                         <View style={styles.settingItemLabelWrap}>
@@ -229,7 +239,19 @@ export const SettingsScreen = ({ onLockWallet }: SettingsScreenProps) => {
                         </View>
                       </View>
 
-                      {item.value ? (
+                      {item.switchValue !== undefined ? (
+                        <Switch
+                          accessibilityLabel={item.label}
+                          value={item.switchValue}
+                          onValueChange={item.onSwitchChange}
+                          trackColor={{
+                            false: colors.border,
+                            true: colors.purple,
+                          }}
+                          thumbColor={colors.textPrimary}
+                          ios_backgroundColor={colors.border}
+                        />
+                      ) : item.value ? (
                         <View style={styles.settingItemRight}>
                           <Text style={styles.settingItemValue}>{item.value}</Text>
                           <Ionicons
@@ -245,7 +267,7 @@ export const SettingsScreen = ({ onLockWallet }: SettingsScreenProps) => {
                           color={colors.textTertiary}
                         />
                       )}
-                    </TouchableOpacity>
+                    </Pressable>
                     {index < section.items.length - 1 && <View style={styles.separator} />}
                   </React.Fragment>
                 );
@@ -307,6 +329,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  pressed: {
+    opacity: 0.65,
   },
   settingItemLeft: {
     flexDirection: 'row',

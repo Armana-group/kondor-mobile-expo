@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, Text, TouchableOpacity } from 'react-native';
+import { Alert, Switch, Text } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 
 jest.mock('@expo/vector-icons', () => ({
@@ -70,15 +70,27 @@ function findButtonByText(
   renderer: TestRenderer.ReactTestRenderer,
   label: string
 ): TestRenderer.ReactTestInstance {
-  const button = renderer.root.findAllByType(TouchableOpacity).find((node) =>
-    node.findAllByType(Text).some((textNode) => textNode.props.children === label)
+  const button = renderer.root.findAll(
+    (node) =>
+      typeof node.props.onPress === 'function' &&
+      node.findAllByType(Text).some((textNode) => textNode.props.children === label)
   );
 
-  if (!button) {
+  if (button.length === 0) {
     throw new Error(`Button not found: ${label}`);
   }
 
-  return button;
+  return button[0];
+}
+
+function findSwitch(renderer: TestRenderer.ReactTestRenderer): TestRenderer.ReactTestInstance {
+  const switches = renderer.root.findAllByType(Switch);
+
+  if (switches.length !== 1) {
+    throw new Error(`Expected one Switch, found ${switches.length}`);
+  }
+
+  return switches[0];
 }
 
 describe('SettingsScreen', () => {
@@ -114,14 +126,16 @@ describe('SettingsScreen', () => {
       'Security & Privacy',
       'Connected Sites',
       'Backup & Recovery',
-      'Require confirmation before sending',
+      'Send confirmation',
       'Network',
       'Contacts',
       'Lock Wallet',
       'Remove Wallet',
       'Mainnet',
-      'On',
     ]));
+    expect(text).not.toContain('Less secure: sends will not ask for biometrics.');
+    expect(findSwitch(renderer!).props.value).toBe(true);
+    expect(findSwitch(renderer!).props.accessibilityLabel).toBe('Send confirmation');
   });
 
   it('routes new settings shell entries through the dedicated settings flow', async () => {
@@ -205,7 +219,7 @@ describe('SettingsScreen', () => {
     });
 
     await act(async () => {
-      findButtonByText(renderer!, 'Require confirmation before sending').props.onPress();
+      findSwitch(renderer!).props.onValueChange(false);
     });
 
     const warning = alertSpy.mock.calls.at(-1);
@@ -220,7 +234,7 @@ describe('SettingsScreen', () => {
     });
 
     expect(mockSetSendConfirmationRequired).toHaveBeenCalledWith(false);
-    expect(collectRenderedText(renderer!)).toContain('Off');
+    expect(findSwitch(renderer!).props.value).toBe(false);
   });
 
   it('turns manual send confirmation back on without an extra warning', async () => {
@@ -232,13 +246,13 @@ describe('SettingsScreen', () => {
       renderer = TestRenderer.create(<SettingsScreen />);
     });
 
-    expect(collectRenderedText(renderer!)).toContain('Off');
+    expect(findSwitch(renderer!).props.value).toBe(false);
 
     await act(async () => {
-      await findButtonByText(renderer!, 'Require confirmation before sending').props.onPress();
+      await findSwitch(renderer!).props.onValueChange(true);
     });
 
     expect(mockSetSendConfirmationRequired).toHaveBeenCalledWith(true);
-    expect(collectRenderedText(renderer!)).toContain('On');
+    expect(findSwitch(renderer!).props.value).toBe(true);
   });
 });
