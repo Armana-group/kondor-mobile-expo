@@ -5,9 +5,8 @@ import {
   StyleSheet,
   Alert,
   ScrollView,
-  TouchableOpacity,
+  Pressable,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
 import { Screen } from '../components/Screen';
 import { Button } from '../components/Button';
 import { useWalletStore } from '../stores/walletStore';
@@ -17,7 +16,6 @@ import { sanitizeErrorForUser } from '../lib/logger';
 import { colors } from '../theme/colors';
 
 export const CreateWalletScreen = () => {
-  const navigation = useNavigation<any>();
   const createWallet = useWalletStore(state => state.createWallet);
   const [mnemonic, setMnemonic] = useState('');
   const [isRevealed, setIsRevealed] = useState(false);
@@ -46,10 +44,6 @@ export const CreateWalletScreen = () => {
             setIsLoading(true);
             try {
               await createWallet(mnemonic);
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'Home' }],
-              });
             } catch (error: any) {
               Alert.alert('Error', sanitizeErrorForUser(error, 'Failed to create wallet'));
             } finally {
@@ -99,18 +93,18 @@ export const CreateWalletScreen = () => {
               <ScrollView style={styles.mnemonicScroll}>
                 <View style={styles.mnemonicBox}>
                   {mnemonic.split(' ').map((word, index) => (
-                    <View key={index} style={styles.wordContainer}>
+                    <View key={`${index + 1}-${word}`} style={styles.wordContainer}>
                       <Text style={styles.wordNumber}>{index + 1}.</Text>
                       <Text style={styles.word}>{word}</Text>
                     </View>
                   ))}
                 </View>
               </ScrollView>
-              <TouchableOpacity
+              <Pressable
                 style={styles.copyButton}
                 onPress={handleCopyMnemonic}>
                 <Text style={styles.copyButtonText}>Copy to Clipboard</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
 
             <Button

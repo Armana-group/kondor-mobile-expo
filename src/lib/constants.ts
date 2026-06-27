@@ -24,12 +24,10 @@ export const KOINOS_REST = {
   transaction: 'https://seed.koinosfoundation.org', // GET /v1/transaction/{id} (has timestamp)
 };
 
-// Harbinger metadata mirrors the mobile testnet RPC defaults plus the explorer
-// and REST fields that parity consumers need. The RPC base currently doubles as
-// the best-known public testnet history/transaction host for mobile.
+// Testnet metadata mirrors the current Koinos Foundation public endpoint.
 export const HARBINGER_REST = {
-  history: 'https://harbinger-api.koinos.io',
-  transaction: 'https://harbinger-api.koinos.io',
+  history: 'https://testnet.koinosfoundation.org',
+  transaction: 'https://testnet.koinosfoundation.org',
 };
 
 // BIP44 path for Koinos (SLIP44: 659)
@@ -60,11 +58,10 @@ export const MAINNET = {
 };
 
 export const TESTNET = {
-  chainId: 'EiBncD4pKRIQWco_WRqo5Q-xnXR7JuO3PtZv983mKdKHSQ==',
+  chainId: 'EiAIKVvm6-V2qmsmUvPJy09vCCLbtn9lHFpwrJbcTIEWRQ==',
   name: 'Harbinger (testnet)',
   rpcNodes: [
-    'https://harbinger-api.koinos.io',
-    'https://testnet.koinosblocks.com'
+    'https://testnet.koinosfoundation.org/jsonrpc'
   ],
   koinContract: '1FaSvLjQJsCJKq5ybmGsMMQs8RQYyVv8ju',
   explorer: TESTNET_EXPLORER,

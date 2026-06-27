@@ -24,7 +24,7 @@ const WALLETCONNECT_ENABLED = true;
 // Koinos chain IDs from @armana/walletconnect-koinos-sdk-js
 export const KOINOS_CHAIN_IDS = {
   Mainnet: 'koinos:EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3e',
-  Harbinger: 'koinos:EiBncD4pKRIQWco_WRqo5Q-xnXR7JuO3',
+  Harbinger: 'koinos:EiAIKVvm6-V2qmsmUvPJy09vCCLbtn9l',
 } as const;
 
 function getActiveWalletConnectChainId() {

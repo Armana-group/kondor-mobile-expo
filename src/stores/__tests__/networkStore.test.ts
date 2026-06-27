@@ -72,4 +72,21 @@ describe('networkStore', () => {
       })
     );
   });
+
+  it('uses the current Koinos Foundation testnet endpoint for Harbinger mode', async () => {
+    const { getActiveNetworkConfig, setNetworkMode } = await loadNetworkStore();
+
+    await setNetworkMode('harbinger');
+
+    expect(getActiveNetworkConfig()).toEqual(
+      expect.objectContaining({
+        chainId: 'EiAIKVvm6-V2qmsmUvPJy09vCCLbtn9lHFpwrJbcTIEWRQ==',
+        rpcNodes: ['https://testnet.koinosfoundation.org/jsonrpc'],
+        rest: {
+          history: 'https://testnet.koinosfoundation.org',
+          transaction: 'https://testnet.koinosfoundation.org',
+        },
+      })
+    );
+  });
 });

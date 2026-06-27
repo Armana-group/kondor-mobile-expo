@@ -493,8 +493,7 @@ describe('TransactionApprovalModal', () => {
     await flushEffects();
 
     expect(mockProvider).toHaveBeenCalledWith([
-      'https://harbinger-api.koinos.io',
-      'https://testnet.koinosblocks.com',
+      'https://testnet.koinosfoundation.org/jsonrpc',
     ]);
     expect(mockSignTransaction).toHaveBeenCalled();
     expect(onApprove).toHaveBeenCalledWith(
@@ -503,7 +502,7 @@ describe('TransactionApprovalModal', () => {
           header: expect.objectContaining({
             payer: '17mzHQmfp3qNWQpvJLvNgFXqoW4HoS7Xbj',
             payee: OWNER,
-            chain_id: 'EiBncD4pKRIQWco_WRqo5Q-xnXR7JuO3PtZv983mKdKHSQ==',
+            chain_id: 'EiAIKVvm6-V2qmsmUvPJy09vCCLbtn9lHFpwrJbcTIEWRQ==',
           }),
         }),
       })

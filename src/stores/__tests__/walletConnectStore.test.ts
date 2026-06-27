@@ -64,6 +64,12 @@ describe('walletConnectStore network reconciliation', () => {
     jest.clearAllMocks();
   });
 
+  it('uses the current Koinos Foundation testnet chain id for Harbinger WalletConnect sessions', async () => {
+    const { KOINOS_CHAIN_IDS } = await loadStores();
+
+    expect(KOINOS_CHAIN_IDS.Harbinger).toBe('koinos:EiAIKVvm6-V2qmsmUvPJy09vCCLbtn9l');
+  });
+
   it('defers session-topic validation until the network store hydrates', async () => {
     const {
       KOINOS_CHAIN_IDS,

@@ -4,7 +4,7 @@ import {
   Text,
   StyleSheet,
   FlatList,
-  TouchableOpacity,
+  Pressable,
   Alert,
   ActivityIndicator,
   RefreshControl,
@@ -85,88 +85,41 @@ function getAmountDisplay(tx: ParsedTransaction): string {
   return `${prefix}${tx.amount}`;
 }
 
-export const ActivityScreen = () => {
-  const route = useRoute<RouteProp<HomeStackParamList, 'Activity'>>();
-  const { transactions, loading, error, refetch } = useTransactionHistory();
-  const [activeFilter, setActiveFilter] = useState<ActivityFilter>(
-    route.params?.initialFilter ?? 'all'
-  );
+function handleTransactionPress(tx: ParsedTransaction) {
+  const detail =
+    tx.type === 'swap'
+      ? `Pay: ${tx.amount} ${tx.tokenSymbol}\n` +
+        `Route: ${tx.swapRoute || `${tx.tokenSymbol} swap`}\n` +
+        (tx.swapAmountOutMin && tx.swapTokenOutSymbol
+          ? `Minimum received: ${tx.swapAmountOutMin} ${tx.swapTokenOutSymbol}\n`
+          : '') +
+        `Receiver: ${tx.to}\n`
+      : `Amount: ${tx.amount} ${tx.tokenSymbol}\n` +
+        `${tx.type === 'send' ? 'To' : 'From'}: ${tx.type === 'send' ? tx.to : tx.from}\n`;
 
-  useEffect(() => {
-    if (route.params?.initialFilter) {
-      setActiveFilter(route.params.initialFilter);
-    }
-  }, [route.params?.initialFilter]);
-
-  const filteredTransactions = useMemo(() => {
-    if (activeFilter === 'all') {
-      return transactions;
-    }
-    if (activeFilter === 'pending') {
-      return transactions.filter((transaction) => transaction.status === 'pending');
-    }
-    return transactions.filter((transaction) => transaction.type === activeFilter);
-  }, [activeFilter, transactions]);
-
-  const renderFilterChip = useCallback(
-    ({ item }: { item: { value: ActivityFilter; label: string } }) => {
-      const isActive = item.value === activeFilter;
-      return (
-        <TouchableOpacity
-          style={[
-            styles.filterChip,
-            isActive ? styles.filterChipActive : null,
-          ]}
-          onPress={() => setActiveFilter(item.value)}
-        >
-          <Text
-            style={[
-              styles.filterChipText,
-              isActive ? styles.filterChipTextActive : null,
-            ]}
-          >
-            {item.label}
-          </Text>
-        </TouchableOpacity>
-      );
-    },
-    [activeFilter]
-  );
-
-  const handleTransactionPress = (tx: ParsedTransaction) => {
-    const detail =
-      tx.type === 'swap'
-        ? `Pay: ${tx.amount} ${tx.tokenSymbol}\n` +
-          `Route: ${tx.swapRoute || `${tx.tokenSymbol} swap`}\n` +
-          (tx.swapAmountOutMin && tx.swapTokenOutSymbol
-            ? `Minimum received: ${tx.swapAmountOutMin} ${tx.swapTokenOutSymbol}\n`
-            : '') +
-          `Receiver: ${tx.to}\n`
-        : `Amount: ${tx.amount} ${tx.tokenSymbol}\n` +
-          `${tx.type === 'send' ? 'To' : 'From'}: ${tx.type === 'send' ? tx.to : tx.from}\n`;
-
-    Alert.alert(
-      'Transaction Details',
-      `Type: ${getTransactionLabel(tx)}\n` +
-      detail +
-      `Status: ${tx.status === 'pending' ? 'Pending' : 'Confirmed'}\n` +
-      `Block: ${tx.blockHeight || 'N/A'}\n` +
-      `Time: ${tx.timestamp ? new Date(tx.timestamp).toLocaleString() : 'N/A'}`,
-      [
-        {
-          text: 'View on Explorer',
-          onPress: () => {
-            const url = getTransactionExplorerUrl(tx.id);
-            Linking.openURL(url);
-          },
+  Alert.alert(
+    'Transaction Details',
+    `Type: ${getTransactionLabel(tx)}\n` +
+    detail +
+    `Status: ${tx.status === 'pending' ? 'Pending' : 'Confirmed'}\n` +
+    `Block: ${tx.blockHeight || 'N/A'}\n` +
+    `Time: ${tx.timestamp ? new Date(tx.timestamp).toLocaleString() : 'N/A'}`,
+    [
+      {
+        text: 'View on Explorer',
+        onPress: () => {
+          const url = getTransactionExplorerUrl(tx.id);
+          Linking.openURL(url);
         },
-        { text: 'Close', style: 'cancel' },
-      ]
-    );
-  };
+      },
+      { text: 'Close', style: 'cancel' },
+    ]
+  );
+}
 
-  const renderTransaction = ({ item: tx }: { item: ParsedTransaction }) => (
-    <TouchableOpacity
+function renderTransaction({ item: tx }: { item: ParsedTransaction }) {
+  return (
+    <Pressable
       style={styles.transactionItem}
       onPress={() => handleTransactionPress(tx)}
     >
@@ -219,7 +172,56 @@ export const ActivityScreen = () => {
           {formatTransactionTime(tx)}
         </Text>
       </View>
-    </TouchableOpacity>
+    </Pressable>
+  );
+}
+
+export const ActivityScreen = () => {
+  const route = useRoute<RouteProp<HomeStackParamList, 'Activity'>>();
+  const { transactions, loading, error, refetch } = useTransactionHistory();
+  const [activeFilter, setActiveFilter] = useState<ActivityFilter>(
+    route.params?.initialFilter ?? 'all'
+  );
+
+  useEffect(() => {
+    if (route.params?.initialFilter) {
+      setActiveFilter(route.params.initialFilter);
+    }
+  }, [route.params?.initialFilter]);
+
+  const filteredTransactions = useMemo(() => {
+    if (activeFilter === 'all') {
+      return transactions;
+    }
+    if (activeFilter === 'pending') {
+      return transactions.filter((transaction) => transaction.status === 'pending');
+    }
+    return transactions.filter((transaction) => transaction.type === activeFilter);
+  }, [activeFilter, transactions]);
+
+  const renderFilterChip = useCallback(
+    ({ item }: { item: { value: ActivityFilter; label: string } }) => {
+      const isActive = item.value === activeFilter;
+      return (
+        <Pressable
+          style={[
+            styles.filterChip,
+            isActive ? styles.filterChipActive : null,
+          ]}
+          onPress={() => setActiveFilter(item.value)}
+        >
+          <Text
+            style={[
+              styles.filterChipText,
+              isActive ? styles.filterChipTextActive : null,
+            ]}
+          >
+            {item.label}
+          </Text>
+        </Pressable>
+      );
+    },
+    [activeFilter]
   );
 
   const renderEmpty = () => {
@@ -245,10 +247,21 @@ export const ActivityScreen = () => {
   const renderError = () => (
     <View style={styles.errorState}>
       <Text style={styles.errorText}>Failed to load transactions</Text>
-      <TouchableOpacity style={styles.retryButton} onPress={refetch}>
+      <Pressable style={styles.retryButton} onPress={refetch}>
         <Text style={styles.retryText}>Retry</Text>
-      </TouchableOpacity>
+      </Pressable>
     </View>
+  );
+
+  const transactionRefreshControl = useMemo(
+    () => (
+      <RefreshControl
+        refreshing={loading}
+        onRefresh={refetch}
+        tintColor={colors.purple}
+      />
+    ),
+    [loading, refetch]
   );
 
   return (
@@ -263,6 +276,7 @@ export const ActivityScreen = () => {
           data={FILTER_OPTIONS}
           keyExtractor={(item) => item.value}
           renderItem={renderFilterChip}
+          style={styles.filterList}
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.filterRow}
         />
@@ -283,13 +297,7 @@ export const ActivityScreen = () => {
             contentContainerStyle={
               filteredTransactions.length === 0 ? styles.emptyContainer : styles.listContainer
             }
-            refreshControl={
-              <RefreshControl
-                refreshing={loading}
-                onRefresh={refetch}
-                tintColor={colors.purple}
-              />
-            }
+            refreshControl={transactionRefreshControl}
             ItemSeparatorComponent={() => <View style={styles.separator} />}
           />
         )}
@@ -316,14 +324,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 8,
     gap: 8,
+    alignItems: 'center',
+  },
+  filterList: {
+    flexGrow: 0,
+    maxHeight: 56,
+    minHeight: 56,
   },
   filterChip: {
+    height: 44,
+    minHeight: 44,
     paddingHorizontal: 14,
-    paddingVertical: 8,
     borderRadius: 999,
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.border,
+    alignSelf: 'flex-start',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   filterChipActive: {
     backgroundColor: colors.purple,

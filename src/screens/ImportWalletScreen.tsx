@@ -44,10 +44,6 @@ export const ImportWalletScreen = () => {
     setIsLoading(true);
     try {
       await importWallet(mnemonic.trim());
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Home' }],
-      });
     } catch (error: any) {
       Alert.alert('Error', sanitizeErrorForUser(error, 'Failed to import wallet'));
     } finally {

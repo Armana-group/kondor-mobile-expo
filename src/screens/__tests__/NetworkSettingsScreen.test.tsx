@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, Text, TouchableOpacity } from 'react-native';
+import { Alert, Text } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 
 jest.mock('@expo/vector-icons', () => ({
@@ -8,7 +8,51 @@ jest.mock('@expo/vector-icons', () => ({
 
 const mockGoBack = jest.fn();
 const mockSetMode = jest.fn(async () => undefined);
+const mockCheckNetworkHealth = jest.fn();
 const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+
+type MockHealthSummary = {
+  status: 'online' | 'degraded' | 'unavailable';
+  healthyCount: number;
+  totalCount: number;
+  title: string;
+  detail: string;
+  checkedAt: number;
+  bestHeight?: number;
+};
+
+const onlineSummary: MockHealthSummary = {
+  status: 'online',
+  healthyCount: 2,
+  totalCount: 2,
+  title: 'Network online',
+  detail: 'Kondor can reach this Koinos network.',
+  checkedAt: 1_718_910_000_000,
+  bestHeight: 12345,
+};
+
+const unavailableSummary: MockHealthSummary = {
+  status: 'unavailable',
+  healthyCount: 0,
+  totalCount: 2,
+  title: 'Network unavailable',
+  detail: 'Kondor cannot reach this Koinos network right now.',
+  checkedAt: 1_718_910_000_000,
+};
+
+let mockHealthByNetwork: Record<'mainnet' | 'harbinger', MockHealthSummary> = {
+  mainnet: onlineSummary,
+  harbinger: onlineSummary,
+};
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolver) => {
+    resolve = resolver;
+  });
+
+  return { promise, resolve };
+}
 
 let mockNetworkState = {
   mode: 'mainnet' as 'mainnet' | 'harbinger',
@@ -31,6 +75,10 @@ jest.mock('../../stores/networkStore', () => ({
     selector ? selector(mockNetworkState) : mockNetworkState,
 }));
 
+jest.mock('../../services/networkHealth', () => ({
+  checkNetworkHealth: (urls: string[]) => mockCheckNetworkHealth(urls),
+}));
+
 function collectRenderedText(renderer: TestRenderer.ReactTestRenderer): string[] {
   return renderer.root.findAll((node) => String((node as TestRenderer.ReactTestInstance).type) === 'Text')
     .map((node) => {
@@ -48,9 +96,8 @@ function findButtonByText(
   renderer: TestRenderer.ReactTestRenderer,
   label: string
 ): TestRenderer.ReactTestInstance {
-  const button = renderer.root.findAllByType(TouchableOpacity).find((node) =>
-    node.findAllByType(Text).some((textNode) => textNode.props.children === label)
-  );
+  const button = renderer.root.findAll((node) => typeof node.props.onPress === 'function')
+    .find((node) => node.findAllByType(Text).some((textNode) => textNode.props.children === label));
 
   if (!button) {
     throw new Error(`Button not found: ${label}`);
@@ -67,13 +114,23 @@ describe('NetworkSettingsScreen', () => {
       hasHydrated: true,
       setMode: mockSetMode,
     };
+    mockHealthByNetwork = {
+      mainnet: onlineSummary,
+      harbinger: onlineSummary,
+    };
+    mockCheckNetworkHealth.mockImplementation(async (urls: string[]) => ({
+      nodes: [],
+      summary: urls.some((url) => url.includes('harbinger') || url.includes('testnet'))
+        ? mockHealthByNetwork.harbinger
+        : mockHealthByNetwork.mainnet,
+    }));
   });
 
   afterAll(() => {
     alertSpy.mockRestore();
   });
 
-  it('shows both supported networks and the current status', async () => {
+  it('shows both supported networks with health status and selected status', async () => {
     const { NetworkSettingsScreen } = require('../NetworkSettingsScreen');
     let renderer: TestRenderer.ReactTestRenderer;
 
@@ -86,7 +143,9 @@ describe('NetworkSettingsScreen', () => {
     expect(text).toEqual(expect.arrayContaining([
       'Mainnet',
       'Harbinger',
-      'Current',
+      'Selected',
+      'Online',
+      '2 of 2 nodes reachable',
     ]));
   });
 
@@ -106,7 +165,7 @@ describe('NetworkSettingsScreen', () => {
     const text = collectRenderedText(renderer!);
 
     expect(text).toContain('Loading...');
-    expect(text).not.toContain('Current');
+    expect(text).not.toContain('Selected');
     expect(text).not.toContain('Available');
 
     await act(async () => {
@@ -133,18 +192,74 @@ describe('NetworkSettingsScreen', () => {
     const text = collectRenderedText(renderer!);
 
     expect(text).toContain('Harbinger');
-    expect(text).toContain('Current');
-    expect(text).toContain('Available');
+    expect(text).toContain('Selected');
+    expect(text).toContain('Online');
+    expect(text).not.toContain('Available');
     expect(text).not.toContain('Loading...');
   });
 
-  it('confirms before switching the active network', async () => {
+  it('keeps network choices disabled until health checks complete', async () => {
+    const mainnetHealth = createDeferred<{ nodes: never[]; summary: MockHealthSummary }>();
+    const harbingerHealth = createDeferred<{ nodes: never[]; summary: MockHealthSummary }>();
+    mockCheckNetworkHealth
+      .mockImplementationOnce(async () => mainnetHealth.promise)
+      .mockImplementationOnce(async () => harbingerHealth.promise);
     const { NetworkSettingsScreen } = require('../NetworkSettingsScreen');
     let renderer: TestRenderer.ReactTestRenderer;
 
     await act(async () => {
       renderer = TestRenderer.create(<NetworkSettingsScreen />);
     });
+
+    expect(findButtonByText(renderer!, 'Harbinger').props.disabled).toBe(true);
+    expect(collectRenderedText(renderer!)).toContain('Checking network health...');
+
+    await act(async () => {
+      mainnetHealth.resolve({ nodes: [], summary: onlineSummary });
+      harbingerHealth.resolve({ nodes: [], summary: onlineSummary });
+      await Promise.all([mainnetHealth.promise, harbingerHealth.promise]);
+    });
+
+    expect(findButtonByText(renderer!, 'Harbinger').props.disabled).toBe(false);
+  });
+
+  it('blocks unavailable network switching with a direct alert', async () => {
+    mockHealthByNetwork = {
+      mainnet: onlineSummary,
+      harbinger: unavailableSummary,
+    };
+    const { NetworkSettingsScreen } = require('../NetworkSettingsScreen');
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(<NetworkSettingsScreen />);
+    });
+
+    const harbingerButton = findButtonByText(renderer!, 'Harbinger');
+
+    expect(harbingerButton.props.disabled).toBe(false);
+
+    await act(async () => {
+      harbingerButton.props.onPress();
+    });
+
+    expect(mockSetMode).not.toHaveBeenCalled();
+    expect(alertSpy).toHaveBeenCalledWith(
+      'Network Unavailable',
+      'Kondor cannot reach Harbinger right now. Try again after the network is reachable.',
+      [{ text: 'OK' }]
+    );
+  });
+
+  it('confirms before switching to an online network', async () => {
+    const { NetworkSettingsScreen } = require('../NetworkSettingsScreen');
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(<NetworkSettingsScreen />);
+    });
+
+    expect(findButtonByText(renderer!, 'Harbinger').props.disabled).toBe(false);
 
     await act(async () => {
       findButtonByText(renderer!, 'Harbinger').props.onPress();
@@ -160,5 +275,22 @@ describe('NetworkSettingsScreen', () => {
     });
 
     expect(mockSetMode).toHaveBeenCalledWith('harbinger');
+  });
+
+  it('refreshes network health on request', async () => {
+    const { NetworkSettingsScreen } = require('../NetworkSettingsScreen');
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(<NetworkSettingsScreen />);
+    });
+
+    expect(mockCheckNetworkHealth).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      findButtonByText(renderer!, 'Refresh health').props.onPress();
+    });
+
+    expect(mockCheckNetworkHealth).toHaveBeenCalledTimes(4);
   });
 });
