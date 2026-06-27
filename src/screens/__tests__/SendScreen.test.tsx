@@ -17,13 +17,17 @@ const mockGetMana = jest.fn();
 const mockGetBalance = jest.fn();
 const mockAddPendingTransaction = jest.fn();
 const mockIsSendConfirmationRequired = jest.fn(async () => true);
+const mockResolveRecipient = jest.fn();
+const mockShouldAuthenticateTransaction = jest.fn(async (_address: string) => true);
+const mockRememberTransactionAuthorization = jest.fn(async (_address: string) => undefined);
 const mockRouteParams: { token?: { contractId: string; symbol: string } } = {};
+let mockContacts: Array<{ id: string; name: string; address: string; createdAt: number }> = [];
 
 const mockAddress = '1BoatSLRHtKNngkdXEeobR76b53LETtpyT';
 const recipientAddress = '14eKAYooeMEPi2G1hYxof7Ud8r7cRk67Q6';
 
-let mockNetworkState = {
-  mode: 'harbinger' as const,
+let mockNetworkState: { mode: 'harbinger' | 'mainnet'; hasHydrated: boolean } = {
+  mode: 'harbinger',
   hasHydrated: true,
 };
 
@@ -84,6 +88,11 @@ jest.mock('../../services/auth', () => ({
   isSendConfirmationRequired: () => mockIsSendConfirmationRequired(),
 }));
 
+jest.mock('../../services/transactionAuthorization', () => ({
+  shouldAuthenticateTransaction: (address: string) => mockShouldAuthenticateTransaction(address),
+  rememberTransactionAuthorization: (address: string) => mockRememberTransactionAuthorization(address),
+}));
+
 jest.mock('../../stores/networkStore', () => ({
   useNetworkStore: (selector?: (state: typeof mockNetworkState) => unknown) =>
     selector ? selector(mockNetworkState) : mockNetworkState,
@@ -100,8 +109,14 @@ jest.mock('../../stores/walletStore', () => ({
 
 jest.mock('../../stores/contactStore', () => ({
   useContactStore: () => ({
-    getContactByAddress: () => null,
+    contacts: mockContacts,
+    getContactByAddress: (address: string) =>
+      mockContacts.find((contact) => contact.address.toLowerCase() === address.toLowerCase()) || null,
   }),
+}));
+
+jest.mock('../../lib/recipient', () => ({
+  resolveRecipient: (...args: unknown[]) => mockResolveRecipient(...args),
 }));
 
 jest.mock('../../stores/koinosStore', () => ({
@@ -217,6 +232,7 @@ describe('SendScreen balance scoping', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsSendConfirmationRequired.mockResolvedValue(true);
+    mockShouldAuthenticateTransaction.mockResolvedValue(true);
     mockNetworkState = {
       mode: 'harbinger',
       hasHydrated: true,
@@ -237,6 +253,7 @@ describe('SendScreen balance scoping', () => {
       isInitialized: true,
       cacheKey: `mainnet:${mockAddress}`,
     };
+    mockContacts = [];
     mockBackupHealth = {
       status: 'verified',
       provider: 'manual-file',
@@ -254,6 +271,19 @@ describe('SendScreen balance scoping', () => {
       availablePercentage: 100,
     });
     mockGetBalance.mockResolvedValue('98.00000000');
+    mockResolveRecipient.mockImplementation(async (value: string) => {
+      const input = value.trim();
+      if (input === recipientAddress) {
+        return {
+          input,
+          address: recipientAddress,
+          source: 'address',
+          label: 'Valid Koinos address',
+        };
+      }
+
+      return null;
+    });
   });
 
   afterAll(() => {
@@ -427,6 +457,7 @@ describe('SendScreen balance scoping', () => {
 
     const { requireBiometricAuth } = require('../../lib/biometrics');
     expect(requireBiometricAuth).toHaveBeenCalledWith('send this transaction');
+    expect(mockRememberTransactionAuthorization).toHaveBeenCalledWith(mockAddress);
     expect(mockTransferToken).toHaveBeenCalledWith(
       'mainnet-koin-contract',
       recipientAddress,
@@ -462,6 +493,144 @@ describe('SendScreen balance scoping', () => {
       resolveTransfer?.('0xsend-accepted');
       await Promise.resolve();
     });
+  });
+
+  it('resolves a nickname recipient and sends an optional memo', async () => {
+    mockNetworkState = {
+      mode: 'mainnet',
+      hasHydrated: true,
+    };
+    mockTokenState = {
+      tokens: [
+        {
+          contractId: 'mainnet-koin-contract',
+          symbol: 'KOIN',
+          name: 'Koinos',
+          decimals: 8,
+          icon: '',
+          balance: '12.34000000',
+          isLoading: false,
+        },
+      ],
+      isLoading: false,
+      isInitialized: true,
+      cacheKey: `mainnet:${mockAddress}`,
+    };
+    mockResolveRecipient.mockResolvedValue({
+      input: 'alice',
+      address: recipientAddress,
+      source: 'nickname',
+      label: `@alice resolves to ${recipientAddress}`,
+    });
+    mockTransferToken.mockImplementation(
+      async (
+        _contractId: string,
+        _to: string,
+        _amount: string,
+        _decimals: number,
+        options?: {
+          onBroadcastAccepted?: (details: { transactionId: string; timestamp: number }) => void;
+        }
+      ) => {
+        options?.onBroadcastAccepted?.({
+          transactionId: '0xsend-with-memo',
+          timestamp: 123456,
+        });
+        return '0xsend-with-memo';
+      }
+    );
+
+    const { SendScreen } = require('../SendScreen');
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<SendScreen />);
+    });
+
+    const [recipientInput, amountInput, memoInput] = renderer!.root.findAllByType(TextInput);
+
+    await act(async () => {
+      recipientInput.props.onChangeText('@alice');
+      amountInput.props.onChangeText('1');
+      memoInput.props.onChangeText('Invoice 42');
+    });
+
+    await act(async () => {
+      findSendButton(renderer!).props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(mockResolveRecipient).toHaveBeenCalledWith('@alice', 'mainnet');
+    const confirmationButtons = alertSpy.mock.calls.at(-1)?.[2];
+    const confirmButton = confirmationButtons?.find((button) => button.text === 'Send');
+
+    await act(async () => {
+      await confirmButton?.onPress?.();
+      await Promise.resolve();
+    });
+
+    expect(mockTransferToken).toHaveBeenCalledWith(
+      'mainnet-koin-contract',
+      recipientAddress,
+      '1',
+      8,
+      expect.objectContaining({
+        memo: 'Invoice 42',
+        onBroadcastAccepted: expect.any(Function),
+      })
+    );
+    expect(mockAddPendingTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transaction: expect.objectContaining({
+          to: recipientAddress,
+          memo: 'Invoice 42',
+        }),
+      })
+    );
+  });
+
+  it('selects a saved recipient from inline chips', async () => {
+    mockTokenState = {
+      tokens: [
+        {
+          contractId: 'mainnet-koin-contract',
+          symbol: 'KOIN',
+          name: 'Koinos',
+          decimals: 8,
+          icon: '',
+          balance: '12.34000000',
+          isLoading: false,
+        },
+      ],
+      isLoading: false,
+      isInitialized: true,
+      cacheKey: `harbinger:${mockAddress}`,
+    };
+    mockContacts = [
+      {
+        id: 'alice',
+        name: 'Alice',
+        address: recipientAddress,
+        createdAt: 1,
+      },
+    ];
+
+    const { SendScreen } = require('../SendScreen');
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<SendScreen />);
+    });
+
+    expect(collectRenderedText(renderer!).join(' ')).toContain('Saved recipients');
+
+    await act(async () => {
+      findPressableByText(renderer!, 'Alice').props.onPress();
+    });
+
+    const renderedText = collectRenderedText(renderer!).join(' ');
+    expect(renderedText).toContain('Alice');
+    expect(renderedText).toContain('14eKAY...67Q6');
   });
 
   it('skips biometric authentication for manual sends when confirmation is turned off', async () => {
@@ -523,5 +692,57 @@ describe('SendScreen balance scoping', () => {
         onBroadcastAccepted: expect.any(Function),
       })
     );
+  });
+
+  it('uses remembered manual transaction authorization while confirmation remains enabled', async () => {
+    mockShouldAuthenticateTransaction.mockResolvedValue(false);
+    mockTokenState = {
+      tokens: [
+        {
+          contractId: 'mainnet-koin-contract',
+          symbol: 'KOIN',
+          name: 'Koinos',
+          decimals: 8,
+          icon: '',
+          balance: '12.34000000',
+          isLoading: false,
+        },
+      ],
+      isLoading: false,
+      isInitialized: true,
+      cacheKey: `harbinger:${mockAddress}`,
+    };
+    mockTransferToken.mockResolvedValue('0xsend-complete');
+
+    const { SendScreen } = require('../SendScreen');
+    const { requireBiometricAuth } = require('../../lib/biometrics');
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<SendScreen />);
+    });
+
+    const [recipientInput, amountInput] = renderer!.root.findAllByType(TextInput);
+
+    await act(async () => {
+      recipientInput.props.onChangeText(recipientAddress);
+      amountInput.props.onChangeText('1');
+    });
+
+    await act(async () => {
+      findSendButton(renderer!).props.onPress();
+    });
+
+    const confirmationButtons = alertSpy.mock.calls.at(-1)?.[2];
+    const confirmButton = confirmationButtons?.find((button) => button.text === 'Send');
+
+    await act(async () => {
+      await confirmButton?.onPress?.();
+      await Promise.resolve();
+    });
+
+    expect(mockShouldAuthenticateTransaction).toHaveBeenCalledWith(mockAddress);
+    expect(requireBiometricAuth).not.toHaveBeenCalled();
+    expect(mockTransferToken).toHaveBeenCalled();
   });
 });

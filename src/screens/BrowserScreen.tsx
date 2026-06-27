@@ -22,6 +22,7 @@ import { AppsStackParamList } from '../navigation/TabNavigator';
 import { WalletConnectQRModal } from '../components/WalletConnectQRModal';
 import { useWalletStore } from '../stores/walletStore';
 import { useWalletConnectStore, WCSession } from '../stores/walletConnectStore';
+import { useCustomDappStore } from '../stores/customDappStore';
 import { HapticFeedback } from '../lib/haptics';
 import { validateDAppUrl } from '../lib/urlValidation';
 import { browserLogger, sanitizeErrorForUser } from '../lib/logger';
@@ -42,6 +43,11 @@ export const BrowserScreen = () => {
   const [customUrl, setCustomUrl] = useState('');
   const [showWCScanner, setShowWCScanner] = useState(false);
   const urlInputRef = useRef<TextInput>(null);
+  const {
+    customDapps,
+    addCustomDapp,
+    removeCustomDapp,
+  } = useCustomDappStore();
 
   // Wallet and WalletConnect state
   const { address, isWalletCreated } = useWalletStore();
@@ -99,7 +105,8 @@ export const BrowserScreen = () => {
   }, [disconnectSession]);
 
   // Filter apps based on search
-  const filteredApps = CURATED_DAPPS.filter(app => {
+  const allApps = [...CURATED_DAPPS, ...customDapps];
+  const filteredApps = allApps.filter(app => {
     if (searchQuery === '') return true;
     return app.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       app.description.toLowerCase().includes(searchQuery.toLowerCase());
@@ -129,13 +136,32 @@ export const BrowserScreen = () => {
     navigation.navigate('DAppWebView', { app });
   };
 
+  const handleCustomAppLongPress = (app: DApp) => {
+    if (app.isCurated) {
+      return;
+    }
+
+    Alert.alert(
+      app.name,
+      'Remove this saved app?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => removeCustomDapp(app.id),
+        },
+      ]
+    );
+  };
+
   const handleAddApp = () => {
     setCustomUrl('https://');
     setShowUrlModal(true);
     setTimeout(() => urlInputRef.current?.focus(), 100);
   };
 
-  const handleOpenCustomUrl = () => {
+  const handleSaveCustomUrl = () => {
     const result = validateDAppUrl(customUrl);
 
     if (!result) {
@@ -150,9 +176,6 @@ export const BrowserScreen = () => {
 
     const url = result.url;
 
-    setShowUrlModal(false);
-    setCustomUrl('');
-
     // Extract domain for app name
     let name = 'Custom App';
     try {
@@ -160,17 +183,20 @@ export const BrowserScreen = () => {
       name = urlObj.hostname.replace('www.', '');
     } catch {}
 
-    // Navigate with custom app
-    const customApp: DApp = {
-      id: 'custom-' + Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join(''),
+    const saveResult = addCustomDapp({
       name: name,
-      description: 'Custom URL',
       url: url,
-      icon: '', // Will use default icon
       category: 'other',
-    };
+    });
 
-    navigation.navigate('DAppWebView', { app: customApp });
+    if (!saveResult.ok) {
+      Alert.alert('Could Not Save App', saveResult.error);
+      return;
+    }
+
+    setShowUrlModal(false);
+    setCustomUrl('');
+    navigation.navigate('DAppWebView', { app: saveResult.dapp });
   };
 
   const renderAppCard = (app: DApp) => (
@@ -178,6 +204,7 @@ export const BrowserScreen = () => {
       key={app.id}
       style={styles.appCard}
       onPress={() => handleAppPress(app)}
+      onLongPress={() => handleCustomAppLongPress(app)}
       activeOpacity={0.7}
     >
       <View style={styles.appIconContainer}>
@@ -352,7 +379,7 @@ export const BrowserScreen = () => {
                 autoCorrect={false}
                 keyboardType="url"
                 returnKeyType="go"
-                onSubmitEditing={handleOpenCustomUrl}
+                onSubmitEditing={handleSaveCustomUrl}
                 selectTextOnFocus
               />
               {customUrl.length > 0 && (
@@ -371,9 +398,9 @@ export const BrowserScreen = () => {
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.openButton}
-                onPress={handleOpenCustomUrl}
+                onPress={handleSaveCustomUrl}
               >
-                <Text style={styles.openButtonText}>Open</Text>
+                <Text style={styles.openButtonText}>Save</Text>
               </TouchableOpacity>
             </View>
           </View>

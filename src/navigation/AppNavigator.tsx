@@ -19,6 +19,7 @@ import { useWalletStore } from '../stores/walletStore';
 
 // Services
 import { isPinEnabled } from '../services/auth';
+import { clearTransactionAuthorization } from '../services/transactionAuthorization';
 import { walletLogger } from '../lib/logger';
 
 // Theme
@@ -61,6 +62,7 @@ export const AppNavigator = () => {
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'background' && pinEnabled) {
+        clearTransactionAuthorization();
         setIsLocked(true);
       }
     });
@@ -72,6 +74,7 @@ export const AppNavigator = () => {
   };
 
   const handleLock = () => {
+    clearTransactionAuthorization();
     setIsLocked(true);
   };
 

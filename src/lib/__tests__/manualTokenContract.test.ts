@@ -1,4 +1,6 @@
 import { ManualTokenContract } from '../manualTokenContract';
+import * as protobuf from 'protobufjs/minimal';
+import { utils } from 'koilib';
 
 let mockSend = jest.fn();
 let mockWait = jest.fn();
@@ -69,5 +71,39 @@ describe('ManualTokenContract transfer broadcast hook', () => {
 
     expect(settled).toBe(false);
     expect(mockWait).toHaveBeenCalledTimes(1);
+  });
+
+  it('encodes an optional transfer memo as token transfer field 4', async () => {
+    mockWait = jest.fn(async () => undefined);
+    const contract = new ManualTokenContract('15DJN4a8SgrbGhhGksSBASiSYjGnMU8dGL', {
+      call: jest.fn(),
+    } as any);
+
+    await contract.transfer(
+      {
+        getAddress: () => '1BoatSLRHtKNngkdXEeobR76b53LETtpyT',
+      } as any,
+      '14eKAYooeMEPi2G1hYxof7Ud8r7cRk67Q6',
+      '1',
+      {
+        rcLimit: 123,
+        memo: 'Invoice 42',
+      }
+    );
+
+    const encodedArgs = (utils.encodeBase64url as jest.Mock).mock.calls[0][0];
+    const reader = protobuf.Reader.create(encodedArgs);
+    let decodedMemo: string | null = null;
+
+    while (reader.pos < reader.len) {
+      const tag = reader.uint32();
+      if (tag >>> 3 === 4) {
+        decodedMemo = reader.string();
+      } else {
+        reader.skipType(tag & 7);
+      }
+    }
+
+    expect(decodedMemo).toBe('Invoice 42');
   });
 });

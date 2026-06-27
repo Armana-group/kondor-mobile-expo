@@ -76,4 +76,23 @@ describe('ensureProviderForActiveNetwork', () => {
     await expect(ensureSwapTokenScopeForActiveNetwork('1WalletAddress')).resolves.toBeUndefined();
     expect(initialize).toHaveBeenCalledWith('1WalletAddress');
   });
+
+  it('requests private-key access with native transaction authorization memory', async () => {
+    const getPrivateKey = jest.fn(async () => 'private-key');
+
+    jest.doMock('../../stores/walletStore', () => ({
+      useWalletStore: {
+        getState: () => ({
+          getPrivateKey,
+        }),
+      },
+    }));
+
+    const { getPrivateKeyForNativeSwap } = require('../useNativeSwap');
+
+    await expect(getPrivateKeyForNativeSwap()).resolves.toBe('private-key');
+    expect(getPrivateKey).toHaveBeenCalledWith({
+      allowTransactionAuthorizationMemory: true,
+    });
+  });
 });

@@ -19,6 +19,7 @@ export interface TransferOptions {
   rcLimit?: number;
   decimals?: number;
   maxRc?: number;
+  memo?: string;
   onBroadcastAccepted?: (details: TransferBroadcastAcceptedDetails) => void;
 }
 
@@ -91,7 +92,7 @@ export class ManualTokenContract {
   /**
    * Manually encode transfer arguments using protobufjs
    */
-  private encodeTransferArgs(from: string, to: string, value: string): Uint8Array {
+  private encodeTransferArgs(from: string, to: string, value: string, memo?: string): Uint8Array {
     try {
       // Decode addresses to bytes
       const fromBytes = utils.decodeBase58(from);
@@ -111,6 +112,12 @@ export class ManualTokenContract {
 
       writer.uint32(0x18); // field 3, wire type 0 (varint)
       writer.uint64(value);
+
+      const trimmedMemo = memo?.trim();
+      if (trimmedMemo) {
+        writer.uint32(0x22); // field 4, wire type 2 (length-delimited)
+        writer.string(trimmedMemo);
+      }
 
       return writer.finish();
     } catch (error) {
@@ -177,7 +184,7 @@ export class ManualTokenContract {
       log.debug(' Parsed amount:', value);
 
       // Encode transfer arguments
-      const encodedArgs = this.encodeTransferArgs(from, to, value);
+      const encodedArgs = this.encodeTransferArgs(from, to, value, options.memo);
       log.debug(' Encoded transfer args');
 
       let rcLimit = options.rcLimit;

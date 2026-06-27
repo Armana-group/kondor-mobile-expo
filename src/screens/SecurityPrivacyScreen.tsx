@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   ScrollView,
@@ -14,6 +14,12 @@ import { HapticFeedback } from '../lib/haptics';
 import { copyWithAutoClear } from '../lib/clipboard';
 import { sanitizeErrorForUser } from '../lib/logger';
 import { useWalletStore } from '../stores/walletStore';
+import {
+  getTransactionAuthorizationMode,
+  getTransactionAuthorizationOptions,
+  setTransactionAuthorizationMode,
+  type TransactionAuthorizationMode,
+} from '../services/transactionAuthorization';
 import colors from '../theme/colors';
 
 type SecretAction = {
@@ -28,6 +34,28 @@ export const SecurityPrivacyScreen = () => {
   const getMnemonic = useWalletStore((state) => state.getMnemonic);
   const getPrivateKey = useWalletStore((state) => state.getPrivateKey);
   const [isLoading, setIsLoading] = useState(false);
+  const [transactionAuthorizationMode, setSelectedTransactionAuthorizationMode] =
+    useState<TransactionAuthorizationMode>('always');
+
+  useEffect(() => {
+    let mounted = true;
+
+    void getTransactionAuthorizationMode()
+      .then((mode) => {
+        if (mounted) {
+          setSelectedTransactionAuthorizationMode(mode);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setSelectedTransactionAuthorizationMode('always');
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const handleCopySecret = async (action: SecretAction) => {
     setIsLoading(true);
@@ -44,6 +72,18 @@ export const SecurityPrivacyScreen = () => {
       Alert.alert('Error', sanitizeErrorForUser(error, action.failureMessage));
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleTransactionAuthorizationModePress = async (
+    mode: TransactionAuthorizationMode
+  ) => {
+    setSelectedTransactionAuthorizationMode(mode);
+    try {
+      await setTransactionAuthorizationMode(mode);
+    } catch (error: any) {
+      setSelectedTransactionAuthorizationMode(await getTransactionAuthorizationMode());
+      Alert.alert('Error', sanitizeErrorForUser(error, 'Failed to update transaction authorization'));
     }
   };
 
@@ -113,6 +153,32 @@ export const SecurityPrivacyScreen = () => {
             <Text style={styles.summaryBody}>
               Each reveal and copy action requires device authentication before the data is shown or moved to the clipboard.
             </Text>
+          </View>
+
+          <View style={styles.authorizationCard}>
+            <Text style={styles.summaryTitle}>Transaction Authorization</Text>
+            <Text style={styles.summaryBody}>
+              Remember manual send and native swap authorization briefly in memory. dApp and WalletConnect approvals still require confirmation.
+            </Text>
+            <View style={styles.authorizationOptions}>
+              {getTransactionAuthorizationOptions().map((option, index, options) => (
+                <React.Fragment key={option.mode}>
+                  <TouchableOpacity
+                    style={styles.authorizationOption}
+                    onPress={() => void handleTransactionAuthorizationModePress(option.mode)}
+                  >
+                    <View style={styles.authorizationOptionCopy}>
+                      <Text style={styles.settingItemText}>{option.label}</Text>
+                      <Text style={styles.settingHint}>{option.detail}</Text>
+                    </View>
+                    {transactionAuthorizationMode === option.mode && (
+                      <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+                    )}
+                  </TouchableOpacity>
+                  {index < options.length - 1 && <View style={styles.authorizationSeparator} />}
+                </React.Fragment>
+              ))}
+            </View>
           </View>
 
           <View style={styles.section}>
@@ -186,6 +252,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     color: colors.textSecondary,
+  },
+  authorizationCard: {
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+  },
+  authorizationOptions: {
+    marginTop: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  authorizationOption: {
+    minHeight: 66,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  authorizationOptionCopy: {
+    flex: 1,
+  },
+  authorizationSeparator: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.border,
   },
   section: {
     backgroundColor: colors.card,

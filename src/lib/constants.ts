@@ -51,6 +51,8 @@ export const MAINNET = {
     'https://api.koinosblocks.com'
   ],
   koinContract: '19GYjDBVXU7keLbYvMLazsGQn3GTWHjHkK',
+  nicknamesContractId: '1KD9Es7LBBjA1FY3ViCgQJ7e6WH1ipKbhz',
+  kapNameServiceContractId: '13tmzDmfqCsbYT26C4CmKxq86d33senqH3',
   explorer: MAINNET_EXPLORER,
   rest: KOINOS_REST,
   freeManaSharer: FREE_MANA_SHARER.mainnet,

@@ -17,6 +17,7 @@ export interface ParsedTransaction {
   blockHeight?: number;
   fee: string;
   payer: string;
+  memo?: string;
   seqNum?: string;
   swapTokenOut?: string;
   swapTokenOutSymbol?: string;
@@ -184,6 +185,7 @@ function parseTransferTransaction(
       tokenIcon: token.icon,
       from,
       to,
+      ...(stringArg(args.memo) ? { memo: stringArg(args.memo) } : {}),
     };
   }
 

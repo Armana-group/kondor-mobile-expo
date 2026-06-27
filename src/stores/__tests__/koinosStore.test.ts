@@ -2,6 +2,7 @@ const mockProviderConstructor = jest.fn();
 const mockSignerFromWif = jest.fn();
 const mockManualTokenContractConstructor = jest.fn();
 const mockManualGetBalance = jest.fn();
+const mockManualTransfer = jest.fn();
 
 jest.mock('koilib', () => ({
   Provider: jest.fn(function MockProvider(this: any, rpcNodes: string[]) {
@@ -34,6 +35,7 @@ jest.mock('../../lib/manualTokenContract', () => ({
     this.contractId = contractId;
     this.provider = provider;
     this.getBalance = mockManualGetBalance;
+    this.transfer = mockManualTransfer;
     mockManualTokenContractConstructor(contractId, provider);
   }),
 }));
@@ -73,6 +75,7 @@ describe('koinosStore provider initialization', () => {
     const secureStore = require('expo-secure-store');
     secureStore.__store.clear();
     mockManualGetBalance.mockResolvedValue('42.00000000');
+    mockManualTransfer.mockResolvedValue({ transactionId: '0xsend' });
     mockSignerFromWif.mockReturnValue({
       provider: null,
       getAddress: jest.fn(() => '1MockSignerAddress'),
@@ -105,5 +108,35 @@ describe('koinosStore provider initialization', () => {
     await expect(
       useKoinosStore.getState().transfer('14eKAYooeMEPi2G1hYxof7Ud8r7cRk67Q6', '1')
     ).rejects.toThrow('No private key found');
+  });
+
+  it('passes memo through token transfers without caching the signer', async () => {
+    const secureStore = require('expo-secure-store');
+    secureStore.__store.set('kondor_pk_account-1', 'test-wif');
+    const { useKoinosStore } = require('../koinosStore');
+
+    await expect(
+      useKoinosStore.getState().transferToken(
+        'token-contract',
+        '14eKAYooeMEPi2G1hYxof7Ud8r7cRk67Q6',
+        '1',
+        8,
+        {
+          memo: 'Invoice 42',
+        }
+      )
+    ).resolves.toBe('0xsend');
+
+    expect(mockManualTransfer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: expect.objectContaining({ rpcNodes: ['https://api.koinos.io'] }),
+      }),
+      '14eKAYooeMEPi2G1hYxof7Ud8r7cRk67Q6',
+      '1',
+      expect.objectContaining({
+        decimals: 8,
+        memo: 'Invoice 42',
+      })
+    );
   });
 });

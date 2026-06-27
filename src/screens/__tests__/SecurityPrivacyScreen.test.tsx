@@ -10,6 +10,8 @@ const mockGoBack = jest.fn();
 const mockGetMnemonic = jest.fn(async () => 'seed words here');
 const mockGetPrivateKey = jest.fn(async () => 'private-key-here');
 const mockCopyWithAutoClear = jest.fn(async (_value: string) => undefined);
+const mockGetTransactionAuthorizationMode = jest.fn(async () => 'always');
+const mockSetTransactionAuthorizationMode = jest.fn(async (_mode: string) => undefined);
 const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
 
 jest.mock('@react-navigation/native', () => ({
@@ -48,6 +50,23 @@ jest.mock('../../lib/haptics', () => ({
   },
 }));
 
+jest.mock('../../services/transactionAuthorization', () => ({
+  getTransactionAuthorizationMode: () => mockGetTransactionAuthorizationMode(),
+  setTransactionAuthorizationMode: (mode: string) => mockSetTransactionAuthorizationMode(mode),
+  getTransactionAuthorizationOptions: () => [
+    {
+      mode: 'always',
+      label: 'Every transaction',
+      detail: 'Authenticate before each manual send or native swap.',
+    },
+    {
+      mode: 'five-minutes',
+      label: 'Remember for 5 minutes',
+      detail: 'Skip repeated manual send or native swap prompts for five minutes.',
+    },
+  ],
+}));
+
 function findButtonByText(
   renderer: TestRenderer.ReactTestRenderer,
   label: string
@@ -79,6 +98,7 @@ describe('SecurityPrivacyScreen', () => {
     jest.clearAllMocks();
     mockGetMnemonic.mockResolvedValue('seed words here');
     mockGetPrivateKey.mockResolvedValue('private-key-here');
+    mockGetTransactionAuthorizationMode.mockResolvedValue('always');
   });
 
   afterAll(() => {
@@ -135,5 +155,24 @@ describe('SecurityPrivacyScreen', () => {
 
     expect(mockGetPrivateKey).toHaveBeenCalledTimes(2);
     expect(mockCopyWithAutoClear).toHaveBeenCalledWith('private-key-here');
+  });
+
+  it('lets users choose a manual transaction authorization memory window', async () => {
+    const { SecurityPrivacyScreen } = require('../SecurityPrivacyScreen');
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(<SecurityPrivacyScreen />);
+    });
+
+    expect(mockGetTransactionAuthorizationMode).toHaveBeenCalledTimes(1);
+    expect(renderer!.root.findAllByType(Text).some((node) => node.props.children === 'Transaction Authorization')).toBe(true);
+
+    await act(async () => {
+      findButtonByText(renderer!, 'Remember for 5 minutes').props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(mockSetTransactionAuthorizationMode).toHaveBeenCalledWith('five-minutes');
   });
 });

@@ -73,9 +73,17 @@ async function loadWalletStore(options?: {
     options?.restoreWalletBackup ?? (async () => RESTORED_SNAPSHOT)
   );
   const requireBiometricAuth = jest.fn(async () => true);
+  const shouldAuthenticateTransaction = jest.fn(async () => true);
+  const rememberTransactionAuthorization = jest.fn(async () => undefined);
+  const clearTransactionAuthorization = jest.fn();
 
   jest.doMock('../../services/auth', () => ({
     verifyPin,
+  }));
+  jest.doMock('../../services/transactionAuthorization', () => ({
+    shouldAuthenticateTransaction,
+    rememberTransactionAuthorization,
+    clearTransactionAuthorization,
   }));
   jest.doMock('../../lib/biometrics', () => ({
     requireBiometricAuth,
@@ -116,6 +124,9 @@ async function loadWalletStore(options?: {
     verifyPin,
     restoreWalletBackup,
     requireBiometricAuth,
+    shouldAuthenticateTransaction,
+    rememberTransactionAuthorization,
+    clearTransactionAuthorization,
   };
 }
 
@@ -197,6 +208,38 @@ describe('walletStore backup restore hardening', () => {
     await expect(useWalletStore.getState().getPrivateKey()).rejects.toThrow(
       MISSING_RECOVERY_PHRASE_MESSAGE
     );
+  });
+
+  it('uses remembered manual transaction authorization for native private-key access', async () => {
+    const {
+      useWalletStore,
+      secureStoreState,
+      requireBiometricAuth,
+      shouldAuthenticateTransaction,
+    } = await loadWalletStore();
+
+    useWalletStore.setState(EXISTING_STATE);
+    secureStoreState.set(MNEMONIC_KEY, 'old mnemonic');
+    shouldAuthenticateTransaction.mockResolvedValue(false);
+
+    await expect(
+      useWalletStore.getState().getPrivateKey({
+        allowTransactionAuthorizationMemory: true,
+      })
+    ).resolves.toBe('hd-private-key-0');
+
+    expect(shouldAuthenticateTransaction).toHaveBeenCalledWith('1OldHdAddress');
+    expect(requireBiometricAuth).not.toHaveBeenCalled();
+  });
+
+  it('clears remembered transaction authorization when switching accounts', async () => {
+    const { useWalletStore, clearTransactionAuthorization } = await loadWalletStore();
+
+    useWalletStore.setState(EXISTING_STATE);
+    useWalletStore.getState().switchAccount('old-imported');
+
+    expect(useWalletStore.getState().activeAccountId).toBe('old-imported');
+    expect(clearTransactionAuthorization).toHaveBeenCalledTimes(1);
   });
 
   it('uses the actionable recovery phrase error when HD accounts cannot be backed up', async () => {

@@ -155,6 +155,35 @@ describe('transactionStore', () => {
     expect(JSON.stringify(persisted[0])).not.toContain('secret-signature');
   });
 
+  it('preserves optional pending transaction memos for local activity display', async () => {
+    const { useTransactionStore } = await loadStore();
+
+    useTransactionStore.getState().addPendingTransaction(createPendingInput({
+      transaction: {
+        ...createPendingInput().transaction,
+        memo: 'Invoice 42',
+      },
+    }));
+
+    expect(useTransactionStore.getState().getPendingTransactions({
+      address: '1WalletAddress',
+      networkMode: 'mainnet',
+    })).toEqual([
+      expect.objectContaining({
+        id: '0xchain-tx-1',
+        memo: 'Invoice 42',
+      }),
+    ]);
+
+    await flushPersistedWrites();
+    const stored = JSON.parse((await getAsyncStorage().getItem(STORAGE_KEY)) ?? '{}');
+    expect(stored.state?.pendingTransactions?.[0]).toEqual(
+      expect.objectContaining({
+        memo: 'Invoice 42',
+      })
+    );
+  });
+
   it('confirms a pending transaction by local id', async () => {
     const { useTransactionStore } = await loadStore();
 

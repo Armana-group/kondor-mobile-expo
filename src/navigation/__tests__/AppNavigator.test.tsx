@@ -5,6 +5,7 @@ import { AppNavigator } from '../AppNavigator';
 
 const mockLoadWallet = jest.fn(async () => true);
 const mockIsPinEnabled = jest.fn(async () => true);
+const mockClearTransactionAuthorization = jest.fn();
 
 jest.mock('@react-navigation/native', () => ({
   NavigationContainer: ({ children }: { children: React.ReactNode }) => children,
@@ -96,6 +97,10 @@ jest.mock('../../services/auth', () => ({
   isPinEnabled: () => mockIsPinEnabled(),
 }));
 
+jest.mock('../../services/transactionAuthorization', () => ({
+  clearTransactionAuthorization: () => mockClearTransactionAuthorization(),
+}));
+
 jest.mock('../../lib/logger', () => ({
   walletLogger: {
     error: jest.fn(),
@@ -143,5 +148,6 @@ describe('AppNavigator', () => {
     });
 
     expect(renderer!.root.findByType(Text).props.children).toBe('Lock Screen');
+    expect(mockClearTransactionAuthorization).toHaveBeenCalledTimes(1);
   });
 });

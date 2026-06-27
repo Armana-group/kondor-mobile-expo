@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { MAINNET, STORAGE_KEYS, TESTNET } from '../lib/constants';
+import { clearTransactionAuthorization } from '../services/transactionAuthorization';
 
 export type NetworkMode = 'mainnet' | 'harbinger';
 
@@ -10,6 +11,8 @@ export interface NetworkConfig {
   name: string;
   rpcNodes: string[];
   koinContract: string;
+  nicknamesContractId?: string;
+  kapNameServiceContractId?: string;
   explorer: {
     base: string;
     tx: string;
@@ -48,7 +51,14 @@ export const useNetworkStore = create<NetworkState>()(
       hasHydrated: false,
 
       setMode: async (mode: NetworkMode) => {
-        set({ mode: normalizeNetworkMode(mode) });
+        set((state) => {
+          const nextMode = normalizeNetworkMode(mode);
+          if (nextMode !== state.mode) {
+            clearTransactionAuthorization();
+          }
+
+          return { mode: nextMode };
+        });
       },
 
       setHasHydrated: (hydrated: boolean) => {

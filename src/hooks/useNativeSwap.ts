@@ -526,6 +526,12 @@ export async function ensureSwapTokenScopeForActiveNetwork(
   await tokenStore.initialize(address);
 }
 
+export async function getPrivateKeyForNativeSwap(): Promise<string | null> {
+  return getWalletStoreModule().useWalletStore.getState().getPrivateKey({
+    allowTransactionAuthorizationMemory: true,
+  });
+}
+
 function createTemporarySigner(privateKey: string, provider: Provider): Signer {
   if (privateKey.length === 64) {
     return new Signer({ privateKey, provider });
@@ -639,7 +645,7 @@ export function useNativeSwap(): UseNativeSwapResult {
         }
 
         const provider = await ensureProviderForActiveNetwork();
-        const privateKey = await getWalletStoreModule().useWalletStore.getState().getPrivateKey();
+        const privateKey = await getPrivateKeyForNativeSwap();
         if (!privateKey) {
           throw new Error('Authentication required to swap');
         }

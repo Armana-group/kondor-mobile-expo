@@ -4,9 +4,13 @@ jest.mock(
 );
 
 const AsyncStorage = require('@react-native-async-storage/async-storage');
+const mockClearTransactionAuthorization = jest.fn();
 
 async function loadNetworkStore() {
   jest.resetModules();
+  jest.doMock('../../services/transactionAuthorization', () => ({
+    clearTransactionAuthorization: () => mockClearTransactionAuthorization(),
+  }));
   const mod = require('../networkStore');
   await mod.useNetworkStore.persist.rehydrate();
   return mod;
@@ -32,6 +36,14 @@ describe('networkStore', () => {
     await useNetworkStore.persist.rehydrate();
 
     expect(useNetworkStore.getState().mode).toBe('harbinger');
+  });
+
+  it('clears remembered transaction authorization when switching networks', async () => {
+    const { setNetworkMode } = await loadNetworkStore();
+
+    await setNetworkMode('harbinger');
+
+    expect(mockClearTransactionAuthorization).toHaveBeenCalledTimes(1);
   });
 
   it('normalizes invalid persisted values to mainnet', async () => {

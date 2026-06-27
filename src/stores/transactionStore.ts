@@ -31,6 +31,7 @@ export interface PendingTransactionRecord {
   timestamp: number;
   fee: string;
   payer: string;
+  memo?: string;
   blockHeight?: number;
   seqNum?: string;
   swapTokenOut?: string;
@@ -141,6 +142,7 @@ function sanitizePendingTransactionRecord(
     timestamp,
     fee,
     payer,
+    memo,
     blockHeight,
     seqNum,
     swapTokenOut,
@@ -180,6 +182,7 @@ function sanitizePendingTransactionRecord(
     timestamp: sanitizeTimestamp(timestamp),
     fee,
     payer,
+    ...(sanitizeOptionalString(memo) ? { memo } : {}),
     ...(typeof blockHeight === 'number' && Number.isFinite(blockHeight) ? { blockHeight } : {}),
     ...(sanitizeOptionalString(seqNum) ? { seqNum } : {}),
     ...(sanitizeOptionalString(swapTokenOut) ? { swapTokenOut } : {}),
@@ -235,6 +238,7 @@ function sanitizePendingTransactions(value: unknown): PendingTransactionRecord[]
       timestamp: sanitizeTimestamp(record.timestamp),
       fee: record.fee,
       payer: record.payer,
+      ...(sanitizeOptionalString(record.memo) ? { memo: record.memo } : {}),
       ...(typeof record.blockHeight === 'number' && Number.isFinite(record.blockHeight) ? { blockHeight: record.blockHeight } : {}),
       ...(sanitizeOptionalString(record.seqNum) ? { seqNum: record.seqNum } : {}),
       ...(sanitizeOptionalString(record.swapTokenOut) ? { swapTokenOut: record.swapTokenOut } : {}),
@@ -272,6 +276,7 @@ function toParsedTransaction(record: PendingTransactionRecord): ParsedTransactio
     ...(typeof record.blockHeight === 'number' ? { blockHeight: record.blockHeight } : {}),
     fee: record.fee,
     payer: record.payer,
+    ...(record.memo ? { memo: record.memo } : {}),
     ...(record.seqNum ? { seqNum: record.seqNum } : {}),
     ...(record.swapTokenOut ? { swapTokenOut: record.swapTokenOut } : {}),
     ...(record.swapTokenOutSymbol ? { swapTokenOutSymbol: record.swapTokenOutSymbol } : {}),

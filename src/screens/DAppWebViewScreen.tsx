@@ -115,6 +115,15 @@ function truncateAddress(address: string): string {
   return `${address.slice(0, 10)}...${address.slice(-6)}`;
 }
 
+function getDomain(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    return urlObj.hostname;
+  } catch {
+    return url;
+  }
+}
+
 function toConnectedAccount(account: Account): KondorConnectedAccount {
   return {
     name: account.name,
@@ -172,6 +181,39 @@ function getUnsupportedNetworkLabel(value: unknown): string {
     return String(value);
   }
 }
+
+type ConnectionAccountRowProps = {
+  account: Account;
+  selected: boolean;
+  onToggle: (address: string) => void;
+};
+
+const ConnectionAccountRow = React.memo(function ConnectionAccountRow({
+  account,
+  selected,
+  onToggle,
+}: ConnectionAccountRowProps) {
+  const handlePress = useCallback(() => {
+    onToggle(account.address);
+  }, [account.address, onToggle]);
+
+  return (
+    <TouchableOpacity
+      style={selected ? styles.accountRowSelected : styles.accountRow}
+      onPress={handlePress}
+    >
+      <View style={styles.accountCopy}>
+        <Text style={styles.accountName}>{account.name}</Text>
+        <Text style={styles.accountAddress}>{truncateAddress(account.address)}</Text>
+      </View>
+      <Ionicons
+        name={selected ? 'checkbox' : 'square-outline'}
+        size={22}
+        color={selected ? colors.purple : colors.textTertiary}
+      />
+    </TouchableOpacity>
+  );
+});
 
 export const DAppWebViewScreen = () => {
   const navigation = useNavigation();
@@ -722,6 +764,16 @@ export const DAppWebViewScreen = () => {
     ));
   }, []);
 
+  const selectedAddressSet = useMemo(() => new Set(selectedAddresses), [selectedAddresses]);
+
+  const renderConnectionAccount = useCallback(({ item: account }: { item: Account }) => (
+    <ConnectionAccountRow
+      account={account}
+      selected={selectedAddressSet.has(account.address)}
+      onToggle={toggleSelectedAddress}
+    />
+  ), [selectedAddressSet, toggleSelectedAddress]);
+
   // Handle messages from WebView
   const handleMessage = useCallback(async (event: WebViewMessageEvent) => {
     try {
@@ -866,16 +918,6 @@ export const DAppWebViewScreen = () => {
     setIsLoading(true);
     if (webViewRef.current) {
       webViewRef.current.reload();
-    }
-  };
-
-  // Extract domain from URL for display
-  const getDomain = (url: string) => {
-    try {
-      const urlObj = new URL(url);
-      return urlObj.hostname;
-    } catch {
-      return url;
     }
   };
 
@@ -1066,26 +1108,7 @@ export const DAppWebViewScreen = () => {
               data={accounts}
               keyExtractor={(account) => account.id}
               showsVerticalScrollIndicator={false}
-              renderItem={({ item: account }) => {
-                const selected = selectedAddresses.includes(account.address);
-
-                return (
-                  <TouchableOpacity
-                    style={[styles.accountRow, selected && styles.accountRowSelected]}
-                    onPress={() => toggleSelectedAddress(account.address)}
-                  >
-                    <View style={styles.accountCopy}>
-                      <Text style={styles.accountName}>{account.name}</Text>
-                      <Text style={styles.accountAddress}>{truncateAddress(account.address)}</Text>
-                    </View>
-                    <Ionicons
-                      name={selected ? 'checkbox' : 'square-outline'}
-                      size={22}
-                      color={selected ? colors.purple : colors.textTertiary}
-                    />
-                  </TouchableOpacity>
-                );
-              }}
+              renderItem={renderConnectionAccount}
             />
 
             <View style={styles.rememberRow}>
@@ -1342,8 +1365,16 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   accountRowSelected: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     borderColor: colors.purple,
+    borderRadius: 8,
+    borderWidth: 1,
     backgroundColor: colors.purpleLight,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginBottom: 10,
   },
   accountCopy: {
     flex: 1,

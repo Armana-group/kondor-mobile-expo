@@ -23,6 +23,11 @@ import {
   type MarkBackupVerifiedInput,
 } from '../lib/backupHealth';
 import { verifyPin } from '../services/auth';
+import {
+  clearTransactionAuthorization,
+  rememberTransactionAuthorization,
+  shouldAuthenticateTransaction,
+} from '../services/transactionAuthorization';
 
 // Keys for secure storage
 const MNEMONIC_KEY = 'kondor_wallet_mnemonic';
@@ -69,7 +74,9 @@ interface WalletState {
   loadWallet: () => Promise<boolean>;
   clearWallet: () => Promise<void>;
   updateBalance: (balance: string) => void;
-  getPrivateKey: () => Promise<string | null>;
+  getPrivateKey: (options?: {
+    allowTransactionAuthorizationMemory?: boolean;
+  }) => Promise<string | null>;
   getMnemonic: () => Promise<string | null>;
 
   // Multi-account actions
@@ -318,16 +325,29 @@ export const useWalletStore = create<WalletState>()(
 
       updateBalance: (balance: string) => set({ balance }),
 
-      getPrivateKey: async () => {
+      getPrivateKey: async (options) => {
         try {
-          const authenticated = await requireBiometricAuth('access your private key');
-          if (!authenticated) {
-            log.debug('Biometric authentication failed or was cancelled');
-            return null;
-          }
-
           const { activeAccountId, accounts } = get();
           const activeAccount = accounts.find(a => a.id === activeAccountId);
+          const canUseTransactionAuthorizationMemory = Boolean(
+            options?.allowTransactionAuthorizationMemory && activeAccount?.address
+          );
+
+          const authenticationRequired = canUseTransactionAuthorizationMemory
+            ? await shouldAuthenticateTransaction(activeAccount?.address)
+            : true;
+
+          if (authenticationRequired) {
+            const authenticated = await requireBiometricAuth('access your private key');
+            if (!authenticated) {
+              log.debug('Biometric authentication failed or was cancelled');
+              return null;
+            }
+
+            if (canUseTransactionAuthorizationMemory && activeAccount?.address) {
+              await rememberTransactionAuthorization(activeAccount.address);
+            }
+          }
 
           if (!activeAccount) {
             // Fallback to legacy key
@@ -598,10 +618,13 @@ export const useWalletStore = create<WalletState>()(
       },
 
       switchAccount: (accountId: string) => {
-        const { accounts } = get();
+        const { accounts, activeAccountId } = get();
         const account = accounts.find(a => a.id === accountId);
 
         if (account) {
+          if (accountId !== activeAccountId) {
+            clearTransactionAuthorization();
+          }
           set({
             activeAccountId: accountId,
             address: account.address,

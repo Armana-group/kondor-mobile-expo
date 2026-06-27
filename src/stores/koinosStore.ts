@@ -12,6 +12,7 @@ import { getActiveNetworkConfig } from './networkStore';
 import { useWalletStore } from './walletStore';
 
 interface TransferExecutionOptions {
+  memo?: string;
   onBroadcastAccepted?: (details: TransferBroadcastAcceptedDetails) => void;
 }
 
@@ -252,7 +253,11 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
         signer,
         to,
         amount,
-        { maxRc, onBroadcastAccepted: options?.onBroadcastAccepted }
+        {
+          maxRc,
+          memo: options?.memo,
+          onBroadcastAccepted: options?.onBroadcastAccepted,
+        }
       );
 
       log.debug(' Transfer complete, transaction ID:', transactionId);
@@ -306,7 +311,12 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
         signer,
         to,
         amount,
-        { decimals, maxRc, onBroadcastAccepted: options?.onBroadcastAccepted }
+        {
+          decimals,
+          maxRc,
+          memo: options?.memo,
+          onBroadcastAccepted: options?.onBroadcastAccepted,
+        }
       );
 
       log.debug(' Token transfer complete, transaction ID:', transactionId);
