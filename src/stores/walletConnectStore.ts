@@ -16,6 +16,7 @@ import { Core } from '@walletconnect/core';
 import { WalletKit } from '@reown/walletkit';
 import { buildApprovedNamespaces, getSdkError } from '@walletconnect/utils';
 import { wcLogger } from '../lib/logger';
+import { useNetworkStore } from './networkStore';
 
 // WalletConnect feature flag
 const WALLETCONNECT_ENABLED = true;
@@ -23,8 +24,50 @@ const WALLETCONNECT_ENABLED = true;
 // Koinos chain IDs from @armana/walletconnect-koinos-sdk-js
 export const KOINOS_CHAIN_IDS = {
   Mainnet: 'koinos:EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3e',
-  Harbinger: 'koinos:EiBncD4pKRIQWco_WRqo5Q-xnXR7JuO3',
+  Harbinger: 'koinos:EiAIKVvm6-V2qmsmUvPJy09vCCLbtn9l',
 } as const;
+
+function getActiveWalletConnectChainId() {
+  const { mode, hasHydrated } = useNetworkStore.getState();
+  const activeMode = hasHydrated ? mode : 'mainnet';
+  return activeMode === 'harbinger'
+    ? KOINOS_CHAIN_IDS.Harbinger
+    : KOINOS_CHAIN_IDS.Mainnet;
+}
+
+export const WALLETCONNECT_NETWORK_MISMATCH_ERROR =
+  'WalletConnect session no longer matches the active network';
+export const WALLETCONNECT_NETWORK_NOT_READY_ERROR =
+  'WalletConnect is waiting for the active network to finish loading';
+export const WALLETCONNECT_SEND_TRANSACTION_UNSUPPORTED_ERROR =
+  'WalletConnect transaction broadcasting requires manual approval. Use koinos_signAndSendTransaction instead.';
+
+type WalletConnectTopicValidation =
+  | { status: 'ready' }
+  | { status: 'defer'; message: string }
+  | { status: 'reject'; message: string };
+
+function getSessionChains(session: any): string[] {
+  return Object.values(session?.namespaces || {}).flatMap(
+    (namespace: any) => namespace?.chains || []
+  );
+}
+
+function getSessionAccounts(session: any): string[] {
+  return Object.values(session?.namespaces || {}).flatMap(
+    (namespace: any) => namespace?.accounts || []
+  );
+}
+
+function sessionMatchesChain(session: any, activeChainId: string): boolean {
+  const chains = getSessionChains(session);
+  const accounts = getSessionAccounts(session);
+
+  return (
+    chains.includes(activeChainId) &&
+    accounts.some((account: string) => account.startsWith(`${activeChainId}:`))
+  );
+}
 
 // Koinos methods from @armana/walletconnect-koinos-sdk-js
 export const KOINOS_METHODS = {
@@ -49,8 +92,25 @@ export const KOINOS_METHODS = {
   SubmitBlock: 'koinos_submitBlock',
 } as const;
 
-// All supported methods
-const SUPPORTED_METHODS = Object.values(KOINOS_METHODS);
+// Methods we can honestly advertise during session approval.
+const APPROVED_METHODS: string[] = [
+  KOINOS_METHODS.SignMessage,
+  KOINOS_METHODS.SignHash,
+  KOINOS_METHODS.SignTransaction,
+  KOINOS_METHODS.SignAndSendTransaction,
+  KOINOS_METHODS.PrepareTransaction,
+  KOINOS_METHODS.WaitForTransaction,
+  KOINOS_METHODS.GetNonce,
+  KOINOS_METHODS.GetNextNonce,
+  KOINOS_METHODS.GetAccountRc,
+  KOINOS_METHODS.GetTransactionsById,
+  KOINOS_METHODS.GetBlocksById,
+  KOINOS_METHODS.GetHeadInfo,
+  KOINOS_METHODS.GetChainId,
+  KOINOS_METHODS.GetBlocks,
+  KOINOS_METHODS.GetBlock,
+  KOINOS_METHODS.ReadContract,
+];
 
 // Events (none for now, but required by WalletConnect)
 const SUPPORTED_EVENTS: string[] = [];
@@ -109,6 +169,19 @@ export interface WCTransactionRequest {
   };
 }
 
+export interface WCSigningRequest {
+  id: number;
+  topic: string;
+  method: typeof KOINOS_METHODS.SignMessage | typeof KOINOS_METHODS.SignHash;
+  signerAddress: string;
+  message?: unknown;
+  hash?: unknown;
+  peerMeta: {
+    name: string;
+    url: string;
+  };
+}
+
 interface WalletConnectState {
   // State
   initialized: boolean;
@@ -116,6 +189,7 @@ interface WalletConnectState {
   pendingProposal: WCSessionProposal | null;
   pendingRequest: WCPendingRequest | null;
   pendingTransaction: WCTransactionRequest | null;
+  pendingSigningRequest: WCSigningRequest | null;
 
   // Actions
   initialize: (address: string) => Promise<void>;
@@ -127,6 +201,7 @@ interface WalletConnectState {
   respondToRequest: (id: number, topic: string, result: unknown) => Promise<void>;
   rejectRequest: (id: number, topic: string, message?: string) => Promise<void>;
   clearPendingTransaction: () => void;
+  clearPendingSigningRequest: () => void;
 
   // Internal (using any for WalletKit since it's dynamically imported)
   _walletKit: any | null;
@@ -134,7 +209,11 @@ interface WalletConnectState {
   _setPendingProposal: (proposal: WCSessionProposal | null) => void;
   _setPendingRequest: (request: WCPendingRequest | null) => void;
   _setPendingTransaction: (request: WCTransactionRequest | null) => void;
+  _setPendingSigningRequest: (request: WCSigningRequest | null) => void;
   _updateSessions: () => void;
+  isSessionTopicApprovedForActiveNetwork: (topic: string) => boolean;
+  getSessionTopicValidationForActiveNetwork: (topic: string) => WalletConnectTopicValidation;
+  reconcileSessionsForActiveNetwork: () => Promise<void>;
 }
 
 export const useWalletConnectStore = create<WalletConnectState>()(
@@ -145,6 +224,7 @@ export const useWalletConnectStore = create<WalletConnectState>()(
       pendingProposal: null,
       pendingRequest: null,
       pendingTransaction: null,
+      pendingSigningRequest: null,
       _walletKit: null,
 
       _setWalletKit: (kit) => set({ _walletKit: kit }),
@@ -155,7 +235,11 @@ export const useWalletConnectStore = create<WalletConnectState>()(
 
       _setPendingTransaction: (request) => set({ pendingTransaction: request }),
 
+      _setPendingSigningRequest: (request) => set({ pendingSigningRequest: request }),
+
       clearPendingTransaction: () => set({ pendingTransaction: null }),
+
+      clearPendingSigningRequest: () => set({ pendingSigningRequest: null }),
 
       _updateSessions: () => {
         const { _walletKit } = get();
@@ -183,6 +267,95 @@ export const useWalletConnectStore = create<WalletConnectState>()(
         } catch (error) {
           wcLogger.error('Failed to update sessions:', error);
         }
+      },
+
+      isSessionTopicApprovedForActiveNetwork: (topic: string) => {
+        return get().getSessionTopicValidationForActiveNetwork(topic).status === 'ready';
+      },
+
+      getSessionTopicValidationForActiveNetwork: (topic: string) => {
+        const { hasHydrated } = useNetworkStore.getState();
+        if (!hasHydrated) {
+          return {
+            status: 'defer',
+            message: WALLETCONNECT_NETWORK_NOT_READY_ERROR,
+          };
+        }
+
+        const { _walletKit } = get();
+        if (!_walletKit) {
+          return {
+            status: 'reject',
+            message: 'WalletConnect session is no longer available',
+          };
+        }
+
+        const session = _walletKit.getActiveSessions()?.[topic];
+        if (!session) {
+          return {
+            status: 'reject',
+            message: 'WalletConnect session is no longer available',
+          };
+        }
+
+        if (!sessionMatchesChain(session, getActiveWalletConnectChainId())) {
+          return {
+            status: 'reject',
+            message: WALLETCONNECT_NETWORK_MISMATCH_ERROR,
+          };
+        }
+
+        return { status: 'ready' };
+      },
+
+      reconcileSessionsForActiveNetwork: async () => {
+        const { _walletKit, pendingRequest, pendingTransaction, pendingSigningRequest } = get();
+        if (!_walletKit) {
+          set({ sessions: [] });
+          return;
+        }
+
+        const activeChainId = getActiveWalletConnectChainId();
+        const activeSessions = _walletKit.getActiveSessions();
+        const mismatchedTopics = Object.entries(activeSessions)
+          .filter(([, session]) => !sessionMatchesChain(session, activeChainId))
+          .map(([topic]) => topic);
+
+        if (!mismatchedTopics.length) {
+          get()._updateSessions();
+          return;
+        }
+
+        wcLogger.debug('Disconnecting sessions that no longer match the active network', {
+          activeChainId,
+          mismatchedTopics,
+        });
+
+        for (const topic of mismatchedTopics) {
+          try {
+            await _walletKit.disconnectSession({
+              topic,
+              reason: getSdkError('USER_DISCONNECTED'),
+            });
+          } catch (error) {
+            wcLogger.error('Failed to reconcile WalletConnect session:', error);
+          }
+        }
+
+        set({
+          pendingRequest:
+            pendingRequest && mismatchedTopics.includes(pendingRequest.topic) ? null : pendingRequest,
+          pendingTransaction:
+            pendingTransaction && mismatchedTopics.includes(pendingTransaction.topic)
+              ? null
+              : pendingTransaction,
+          pendingSigningRequest:
+            pendingSigningRequest && mismatchedTopics.includes(pendingSigningRequest.topic)
+              ? null
+              : pendingSigningRequest,
+        });
+
+        get()._updateSessions();
       },
 
       initialize: async (address: string) => {
@@ -256,6 +429,13 @@ export const useWalletConnectStore = create<WalletConnectState>()(
               return;
             }
 
+            const validation = get().getSessionTopicValidationForActiveNetwork(topic);
+            if (validation.status === 'reject') {
+              wcLogger.error('Rejecting request for stale WalletConnect session topic:', topic);
+              await get().rejectRequest(id, topic, validation.message);
+              return;
+            }
+
             const peerMeta = {
               name: session.peer.metadata.name,
               url: session.peer.metadata.url,
@@ -267,9 +447,14 @@ export const useWalletConnectStore = create<WalletConnectState>()(
               request.method === KOINOS_METHODS.SignAndSendTransaction
             ) {
               // Extract transaction from params
-              const txParams = request.params as { transaction?: TransactionJson; signer?: string };
+              const txParams = request.params as {
+                transaction?: TransactionJson;
+                address?: string;
+                signer?: string;
+                signerAddress?: string;
+              };
               const transaction = txParams.transaction;
-              const signerAddress = txParams.signer || address;
+              const signerAddress = txParams.address || txParams.signer || txParams.signerAddress || address;
 
               if (transaction) {
                 get()._setPendingTransaction({
@@ -284,6 +469,29 @@ export const useWalletConnectStore = create<WalletConnectState>()(
                 // Reject if no transaction provided
                 get().rejectRequest(id, topic, 'No transaction provided');
               }
+            } else if (
+              request.method === KOINOS_METHODS.SignMessage ||
+              request.method === KOINOS_METHODS.SignHash
+            ) {
+              const signingParams = request.params as {
+                address?: string;
+                signer?: string;
+                signerAddress?: string;
+                message?: unknown;
+                hash?: unknown;
+              };
+              const signerAddress =
+                signingParams.address || signingParams.signer || signingParams.signerAddress || address;
+
+              get()._setPendingSigningRequest({
+                id,
+                topic,
+                method: request.method,
+                signerAddress,
+                message: signingParams.message,
+                hash: signingParams.hash,
+                peerMeta,
+              });
             } else {
               // Handle as generic request
               get()._setPendingRequest({
@@ -339,18 +547,23 @@ export const useWalletConnectStore = create<WalletConnectState>()(
           throw new Error('No pending proposal');
         }
 
+        if (!useNetworkStore.getState().hasHydrated) {
+          throw new Error(WALLETCONNECT_NETWORK_NOT_READY_ERROR);
+        }
+
         try {
           wcLogger.debug('Approving session:', pendingProposal.id);
+          const activeChainId = getActiveWalletConnectChainId();
 
           // Build approved namespaces for Koinos
           const approvedNamespaces = buildApprovedNamespaces({
             proposal: pendingProposal.params,
             supportedNamespaces: {
               koinos: {
-                chains: [KOINOS_CHAIN_IDS.Mainnet],
-                methods: SUPPORTED_METHODS,
+                chains: [activeChainId],
+                methods: APPROVED_METHODS,
                 events: SUPPORTED_EVENTS,
-                accounts: [`${KOINOS_CHAIN_IDS.Mainnet}:${address}`],
+                accounts: [`${activeChainId}:${address}`],
               },
             },
           });
@@ -456,7 +669,7 @@ export const useWalletConnectStore = create<WalletConnectState>()(
             },
           });
 
-          set({ pendingRequest: null, pendingTransaction: null });
+          set({ pendingRequest: null, pendingTransaction: null, pendingSigningRequest: null });
 
           wcLogger.debug('Request response sent');
         } catch (error) {
@@ -487,7 +700,7 @@ export const useWalletConnectStore = create<WalletConnectState>()(
             },
           });
 
-          set({ pendingRequest: null, pendingTransaction: null });
+          set({ pendingRequest: null, pendingTransaction: null, pendingSigningRequest: null });
 
           wcLogger.debug('Request rejected');
         } catch (error) {

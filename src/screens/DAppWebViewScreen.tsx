@@ -1,24 +1,30 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  SafeAreaView,
   Platform,
   Alert,
+  Modal,
+  Switch,
+  FlatList,
 } from 'react-native';
 import { WebView, WebViewNavigation, WebViewMessageEvent } from 'react-native-webview';
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { Provider, Signer, Transaction, TransactionJson } from 'koilib';
-import * as SecureStore from 'expo-secure-store';
-import { DApp, isCuratedUrl } from '../constants/dapps';
+import { Provider, Transaction, TransactionJson } from 'koilib';
+import { DApp } from '../constants/dapps';
 import colors from '../theme/colors';
-import { useWalletStore } from '../stores/walletStore';
-import { DEFAULT_NETWORK } from '../lib/constants';
+import { Account, useWalletStore } from '../stores/walletStore';
+import { useTokenStore } from '../stores/tokenStore';
+import {
+  buildPendingTransactionFromBroadcast,
+  useTransactionStore,
+} from '../stores/transactionStore';
 import { browserLogger } from '../lib/logger';
 import {
   KONDOR_PROVIDER_SCRIPT,
@@ -32,6 +38,24 @@ import {
   TransactionRequest,
   SigningResult,
 } from '../components/TransactionApprovalModal';
+import {
+  DAppMessageSigningModal,
+  DAppMessageSigningRequest,
+} from '../components/DAppMessageSigningModal';
+import {
+  getActiveNetworkConfig,
+  getNetworkConfigForMode,
+  type NetworkMode,
+  useNetworkStore,
+} from '../stores/networkStore';
+import {
+  handleWebViewProviderCall,
+  handleWebViewProviderSendTransaction,
+  handleWebViewProviderSubmitBlock,
+} from './dappWebViewProviderGuards';
+import { inspectDAppOrigin, type DAppOriginSecurity } from '../lib/dapp/originSecurity';
+import { createGrant, resolveConnection } from '../lib/dapp/permissions';
+import { getPermissionStoreSnapshot, useDAppPermissionStore } from '../stores/dappPermissionStore';
 
 type DAppWebViewRouteParams = {
   DAppWebView: {
@@ -42,14 +66,166 @@ type DAppWebViewRouteParams = {
 // Pending request for transaction signing
 interface PendingSignRequest {
   id: string;
+  origin: string;
   request: TransactionRequest;
   isSend: boolean;
 }
+
+interface PendingConnectionRequest {
+  id: string;
+  origin: string;
+  security: DAppOriginSecurity;
+}
+
+interface PendingMessageSigningRequest {
+  id: string;
+  origin: string;
+  security: DAppOriginSecurity;
+  request: DAppMessageSigningRequest;
+}
+
+interface KondorConnectedAccount {
+  name: string;
+  address: string;
+  signers: Array<{ name: string; address: string }>;
+}
+
+function getOriginFromUrl(value: string): string {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return value || 'Unknown';
+  }
+}
+
+function getOriginWarningText(security: DAppOriginSecurity): string {
+  if (security.level === 'danger') {
+    return 'Suspicious site origin — do not connect unless you verified the domain.';
+  }
+  if (security.level === 'warning') {
+    return 'Unverified site — review requests carefully before approving.';
+  }
+  return 'Unknown site — connect only if you trust it.';
+}
+
+function truncateAddress(address: string): string {
+  if (address.length <= 18) {
+    return address;
+  }
+  return `${address.slice(0, 10)}...${address.slice(-6)}`;
+}
+
+function getDomain(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    return urlObj.hostname;
+  } catch {
+    return url;
+  }
+}
+
+function toConnectedAccount(account: Account): KondorConnectedAccount {
+  return {
+    name: account.name,
+    address: account.address,
+    signers: [],
+  };
+}
+
+function getProviderNetworkToken(value: unknown): string | null {
+  if (typeof value === 'string') {
+    return value.trim().toLowerCase();
+  }
+
+  if (typeof value === 'object' && value !== null) {
+    const candidate = (value as Record<string, unknown>).tag
+      ?? (value as Record<string, unknown>).network
+      ?? (value as Record<string, unknown>).name;
+    if (typeof candidate === 'string') {
+      return candidate.trim().toLowerCase();
+    }
+  }
+
+  return null;
+}
+
+function resolveProviderNetworkMode(value: unknown): NetworkMode | null | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  const token = getProviderNetworkToken(value);
+  if (!token) {
+    return null;
+  }
+
+  if (token === 'mainnet') {
+    return 'mainnet';
+  }
+
+  if (token === 'harbinger' || token === 'testnet') {
+    return 'harbinger';
+  }
+
+  return null;
+}
+
+function getUnsupportedNetworkLabel(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+type ConnectionAccountRowProps = {
+  account: Account;
+  selected: boolean;
+  onToggle: (address: string) => void;
+};
+
+const ConnectionAccountRow = React.memo(function ConnectionAccountRow({
+  account,
+  selected,
+  onToggle,
+}: ConnectionAccountRowProps) {
+  const handlePress = useCallback(() => {
+    onToggle(account.address);
+  }, [account.address, onToggle]);
+
+  return (
+    <TouchableOpacity
+      style={selected ? styles.accountRowSelected : styles.accountRow}
+      onPress={handlePress}
+    >
+      <View style={styles.accountCopy}>
+        <Text style={styles.accountName}>{account.name}</Text>
+        <Text style={styles.accountAddress}>{truncateAddress(account.address)}</Text>
+      </View>
+      <Ionicons
+        name={selected ? 'checkbox' : 'square-outline'}
+        size={22}
+        color={selected ? colors.purple : colors.textTertiary}
+      />
+    </TouchableOpacity>
+  );
+});
 
 export const DAppWebViewScreen = () => {
   const navigation = useNavigation();
   const route = useRoute<RouteProp<DAppWebViewRouteParams, 'DAppWebView'>>();
   const { app } = route.params;
+  const networkMode = useNetworkStore((state) => state.mode);
+  const hasHydrated = useNetworkStore((state) => state.hasHydrated);
+  const historyNetworkMode = hasHydrated ? networkMode : 'mainnet';
+  const getTokenByContractId = useTokenStore((state) => state.getTokenByContractId);
+  const activeNetwork = getActiveNetworkConfig();
+  const rpcNodesKey = activeNetwork.rpcNodes.join(',');
+  const rpcNodes = useMemo(() => rpcNodesKey.split(',').filter(Boolean), [rpcNodesKey]);
 
   const webViewRef = useRef<WebView>(null);
   const [canGoBack, setCanGoBack] = useState(false);
@@ -58,17 +234,44 @@ export const DAppWebViewScreen = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
-  const [showOriginWarning, setShowOriginWarning] = useState(!app.isCurated);
+  const [showOriginWarning, setShowOriginWarning] = useState(
+    inspectDAppOrigin(getOriginFromUrl(app.url)).level !== 'trusted'
+  );
 
   // Transaction approval modal state
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [pendingRequest, setPendingRequest] = useState<PendingSignRequest | null>(null);
+  const [showConnectionModal, setShowConnectionModal] = useState(false);
+  const [pendingConnectionRequest, setPendingConnectionRequest] = useState<PendingConnectionRequest | null>(null);
+  const [pendingMessageSigningRequest, setPendingMessageSigningRequest] = useState<PendingMessageSigningRequest | null>(null);
+  const [selectedAddresses, setSelectedAddresses] = useState<string[]>([]);
+  const [rememberSite, setRememberSite] = useState(true);
 
   // Wallet state
-  const { accounts, address, getActiveAccount, activeAccountId } = useWalletStore();
+  const { accounts, address, getActiveAccount } = useWalletStore();
+  const permissionStoreHydrated = useDAppPermissionStore((state) => state.hasHydrated);
+  const upsertGrant = useDAppPermissionStore((state) => state.upsertGrant);
+  const touchGrantLastUsed = useDAppPermissionStore((state) => state.touchGrantLastUsed);
 
   // Provider for blockchain queries
-  const providerRef = useRef<Provider>(new Provider(DEFAULT_NETWORK.rpcNodes));
+  const providerRef = useRef<Provider | null>(null);
+  const currentOriginRef = useRef<string | null>(null);
+  const pendingTransactionRequestRef = useRef<PendingSignRequest | null>(null);
+  const pendingConnectionRequestRef = useRef<PendingConnectionRequest | null>(null);
+  const pendingMessageSigningRequestRef = useRef<PendingMessageSigningRequest | null>(null);
+  const currentOriginSecurity = inspectDAppOrigin(getOriginFromUrl(currentUrl));
+
+  if (!providerRef.current) {
+    providerRef.current = new Provider(rpcNodes);
+  }
+
+  if (currentOriginRef.current === null) {
+    currentOriginRef.current = getOriginFromUrl(app.url);
+  }
+
+  useEffect(() => {
+    providerRef.current = new Provider(rpcNodes);
+  }, [hasHydrated, networkMode, rpcNodes]);
 
   // Send response back to WebView
   const sendResponse = useCallback((response: KondorResponse) => {
@@ -76,10 +279,21 @@ export const DAppWebViewScreen = () => {
       browserLogger.debug('Sending response:', response.id, response.error ? 'error' : 'success');
       // Use direct callback for responses - avoids wildcard postMessage security risk
       // The injected provider script also listens for postMessage with origin check
-      const responseJson = JSON.stringify(response);
+      const responsePayload = response.result instanceof Uint8Array
+        ? {
+            ...response,
+            result: Array.from(response.result),
+            __kondorUint8ArrayResult: true,
+          }
+        : response;
+      const responseJson = JSON.stringify(responsePayload);
       const script = `
         (function() {
           var resp = ${responseJson};
+          if (resp.__kondorUint8ArrayResult) {
+            resp.result = new Uint8Array(resp.result);
+            delete resp.__kondorUint8ArrayResult;
+          }
           if (window.__kondorMobileResponse) {
             window.__kondorMobileResponse(resp);
           }
@@ -92,13 +306,26 @@ export const DAppWebViewScreen = () => {
     }
   }, []);
 
+  const getProviderForCommand = useCallback((args: Record<string, unknown>): Provider => {
+    const requestedNetworkMode = resolveProviderNetworkMode(args.network);
+    if (requestedNetworkMode === null) {
+      throw new Error(`Unsupported network: ${getUnsupportedNetworkLabel(args.network)}`);
+    }
+
+    if (!requestedNetworkMode) {
+      return providerRef.current!;
+    }
+
+    return new Provider(getNetworkConfigForMode(requestedNetworkMode).rpcNodes);
+  }, []);
+
   // Handle provider commands (no user approval needed)
   const handleProviderCommand = useCallback(async (command: string, args: Record<string, unknown>): Promise<unknown> => {
-    const provider = providerRef.current;
+    const provider = getProviderForCommand(args);
 
     switch (command) {
       case 'provider:call':
-        return provider.call(args.method as string, args.params);
+        return handleWebViewProviderCall(provider, args);
 
       case 'provider:getNonce':
         return provider.getNonce(args.account as string);
@@ -140,10 +367,10 @@ export const DAppWebViewScreen = () => {
         );
 
       case 'provider:sendTransaction':
-        return provider.sendTransaction(args.transaction as any, args.broadcast as boolean);
+        return handleWebViewProviderSendTransaction(provider, args);
 
       case 'provider:submitBlock':
-        return provider.submitBlock(args.block as any);
+        return handleWebViewProviderSubmitBlock(provider, args);
 
       case 'provider:readContract':
         return provider.readContract(args.operation as any);
@@ -160,30 +387,12 @@ export const DAppWebViewScreen = () => {
       default:
         throw new Error(`Unknown provider command: ${command}`);
     }
-  }, []);
+  }, [getProviderForCommand]);
 
   // Handle signer:prepareTransaction command
   const handlePrepareTransaction = useCallback(async (args: Record<string, unknown>): Promise<TransactionJson> => {
     const { signerAddress, transaction } = args as { signerAddress: string; transaction: TransactionJson };
-    const provider = providerRef.current;
-
-    // Get private key to create signer for prepare
-    let privateKey = await SecureStore.getItemAsync(`kondor_pk_${activeAccountId}`);
-    if (!privateKey) {
-      privateKey = await SecureStore.getItemAsync('kondor_wallet_private_key');
-    }
-
-    if (!privateKey) {
-      throw new Error('Private key not found');
-    }
-
-    let signer: Signer;
-    if (privateKey.length === 64) {
-      signer = new Signer({ privateKey, provider });
-    } else {
-      signer = Signer.fromWif(privateKey);
-      signer.provider = provider;
-    }
+    const provider = providerRef.current!;
 
     // Prepare transaction
     let tx = { ...transaction };
@@ -195,15 +404,15 @@ export const DAppWebViewScreen = () => {
       tx.header.payer = signerAddress;
     }
     if (!tx.header.chain_id) {
-      tx.header.chain_id = DEFAULT_NETWORK.chainId;
+      tx.header.chain_id = activeNetwork.chainId;
     }
 
-    const txObj = new Transaction({ signer, provider });
+    const txObj = new Transaction({ provider });
     txObj.transaction = tx;
     await txObj.prepare();
 
     return txObj.transaction;
-  }, [activeAccountId]);
+  }, [activeNetwork.chainId]);
 
   // Handle signer commands (require user approval)
   const handleSignerCommand = useCallback(async (
@@ -218,7 +427,35 @@ export const DAppWebViewScreen = () => {
 
     // Handle signHash and signMessage
     if (command === 'signer:signHash' || command === 'signer:signMessage') {
-      throw new Error('Message signing not yet implemented');
+      const origin = getOriginFromUrl(currentUrl || app.url);
+      const security = inspectDAppOrigin(origin, {
+        highRiskRequest: command === 'signer:signHash' ? 'raw hash signing' : 'message signing',
+      });
+
+      if (security.denyApproval) {
+        throw new Error(
+          security.signals[0]?.detail || 'This site cannot be approved because its origin looks unsafe.'
+        );
+      }
+
+      const pendingSigningRequest: PendingMessageSigningRequest = {
+        id,
+        origin,
+        security,
+        request: {
+          signerAddress: (args.signerAddress as string) || '',
+          kind: command === 'signer:signHash' ? 'hash' : 'message',
+          message: args.message,
+          hash: args.hash,
+        },
+      };
+
+      pendingMessageSigningRequestRef.current = pendingSigningRequest;
+      setPendingMessageSigningRequest(pendingSigningRequest);
+
+      return new Promise(() => {
+        // The modal handlers send the actual response.
+      });
     }
 
     // For signTransaction and sendTransaction, show approval modal
@@ -239,7 +476,14 @@ export const DAppWebViewScreen = () => {
         abis,
       };
 
-      setPendingRequest({ id, request, isSend });
+      const pendingApproval = {
+        id,
+        origin: getOriginFromUrl(currentUrl || app.url),
+        request,
+        isSend,
+      };
+      pendingTransactionRequestRef.current = pendingApproval;
+      setPendingRequest(pendingApproval);
       setShowApprovalModal(true);
 
       // Return a promise that will be resolved when modal completes
@@ -250,13 +494,46 @@ export const DAppWebViewScreen = () => {
     }
 
     throw new Error(`Unknown signer command: ${command}`);
-  }, [handlePrepareTransaction]);
+  }, [app.url, currentUrl, handlePrepareTransaction]);
 
   // Handle transaction approval
   const handleApproveTransaction = useCallback((result: SigningResult) => {
+    const livePendingRequest = pendingTransactionRequestRef.current;
+    if (!pendingRequest || !livePendingRequest || livePendingRequest.id !== pendingRequest.id) {
+      return;
+    }
+
+    if (currentOriginRef.current !== pendingRequest.origin) {
+      sendResponse({
+        type: 'kondor-response',
+        id: pendingRequest.id,
+        error: 'Navigation changed before transaction was approved',
+      });
+      pendingTransactionRequestRef.current = null;
+      setShowApprovalModal(false);
+      setPendingRequest(null);
+      return;
+    }
+
     if (pendingRequest) {
       browserLogger.debug('Transaction approved:', pendingRequest.id);
-
+      if (pendingRequest.isSend) {
+        useTransactionStore.getState().addPendingTransaction({
+          address: pendingRequest.request.signerAddress || address || '',
+          networkMode: historyNetworkMode,
+          chainTransactionId: result.transaction.id,
+          source: 'dapp',
+          appOrigin: pendingRequest.origin,
+          transaction: buildPendingTransactionFromBroadcast({
+            address: pendingRequest.request.signerAddress || address || '',
+            chainTransactionId: result.transaction.id,
+            transaction: result.transaction,
+            timestamp: Date.now(),
+            receipt: result.receipt as { rc_used?: string | number | bigint | null } | null | undefined,
+            getTokenByContractId,
+          }),
+        });
+      }
       // Send the result back to the dApp
       if (pendingRequest.isSend) {
         sendResponse({
@@ -275,9 +552,10 @@ export const DAppWebViewScreen = () => {
         });
       }
     }
+    pendingTransactionRequestRef.current = null;
     setShowApprovalModal(false);
     setPendingRequest(null);
-  }, [pendingRequest, sendResponse]);
+  }, [address, getTokenByContractId, historyNetworkMode, pendingRequest, sendResponse]);
 
   // Handle transaction rejection
   const handleRejectTransaction = useCallback((error: string) => {
@@ -289,6 +567,7 @@ export const DAppWebViewScreen = () => {
         error,
       });
     }
+    pendingTransactionRequestRef.current = null;
     setShowApprovalModal(false);
     setPendingRequest(null);
   }, [pendingRequest, sendResponse]);
@@ -302,38 +581,198 @@ export const DAppWebViewScreen = () => {
     }
   }, [pendingRequest, handleRejectTransaction]);
 
-  // Handle getAccounts command
-  const handleGetAccounts = useCallback(async (): Promise<unknown> => {
-    // Ask user for permission to connect
-    return new Promise((resolve, reject) => {
-      Alert.alert(
-        'Connect Wallet',
-        `${app.name} wants to connect to your wallet and view your account address.`,
-        [
-          {
-            text: 'Deny',
-            style: 'cancel',
-            onPress: () => reject(new Error('User denied account access')),
-          },
-          {
-            text: 'Connect',
-            onPress: () => {
-              setIsConnected(true);
-              const activeAccount = getActiveAccount();
-              resolve([
-                {
-                  name: activeAccount?.name || 'Account 1',
-                  address: address,
-                  signers: [address], // In Koinos, the address can be a signer
-                },
-              ]);
-            },
-          },
-        ],
-        { cancelable: false }
-      );
+  const clearPendingMessageSigningRequest = useCallback(() => {
+    pendingMessageSigningRequestRef.current = null;
+    setPendingMessageSigningRequest(null);
+  }, []);
+
+  const handleApproveMessageSigning = useCallback((signature: string | Uint8Array) => {
+    const livePendingRequest = pendingMessageSigningRequestRef.current;
+    if (!pendingMessageSigningRequest || !livePendingRequest || livePendingRequest.id !== pendingMessageSigningRequest.id) {
+      return;
+    }
+
+    if (currentOriginRef.current !== pendingMessageSigningRequest.origin) {
+      sendResponse({
+        type: 'kondor-response',
+        id: pendingMessageSigningRequest.id,
+        error: 'Navigation changed before signing was approved',
+      });
+      clearPendingMessageSigningRequest();
+      return;
+    }
+
+    sendResponse({
+      type: 'kondor-response',
+      id: pendingMessageSigningRequest.id,
+      result: signature,
     });
-  }, [app.name, address, getActiveAccount]);
+    clearPendingMessageSigningRequest();
+  }, [clearPendingMessageSigningRequest, pendingMessageSigningRequest, sendResponse]);
+
+  const handleRejectMessageSigning = useCallback((errorMessage = 'User rejected the signing request') => {
+    if (pendingMessageSigningRequest) {
+      sendResponse({
+        type: 'kondor-response',
+        id: pendingMessageSigningRequest.id,
+        error: errorMessage,
+      });
+    }
+
+    clearPendingMessageSigningRequest();
+  }, [clearPendingMessageSigningRequest, pendingMessageSigningRequest, sendResponse]);
+
+  const openConnectionApproval = useCallback((id: string, origin: string, security: DAppOriginSecurity) => {
+    const activeAccount = getActiveAccount();
+    const defaultSelection = activeAccount?.address
+      ? [activeAccount.address]
+      : address
+        ? [address]
+        : accounts[0]?.address
+          ? [accounts[0].address]
+          : [];
+
+    setSelectedAddresses(defaultSelection);
+    setRememberSite(true);
+    const request = { id, origin, security };
+    pendingConnectionRequestRef.current = request;
+    setPendingConnectionRequest(request);
+    setShowConnectionModal(true);
+  }, [accounts, address, getActiveAccount]);
+
+  const buildConnectedAccounts = useCallback((addresses: string[]): KondorConnectedAccount[] => {
+    return addresses
+      .map((selectedAddress) => accounts.find((account) => account.address === selectedAddress))
+      .filter((account): account is Account => Boolean(account))
+      .map(toConnectedAccount);
+  }, [accounts]);
+
+  const handleGetAccounts = useCallback(async (id: string): Promise<unknown> => {
+    if (!permissionStoreHydrated) {
+      await useDAppPermissionStore.persist.rehydrate();
+    }
+
+    const origin = getOriginFromUrl(currentUrl || app.url);
+    const security = inspectDAppOrigin(origin);
+
+    if (security.denyApproval) {
+      throw new Error(
+        security.signals[0]?.detail || 'This site cannot be approved because its origin looks unsafe.'
+      );
+    }
+
+    const resolution = resolveConnection(
+      origin,
+      getPermissionStoreSnapshot(),
+      accounts.map((account) => account.address),
+      Date.now()
+    );
+
+    if (resolution.canAutoConnect) {
+      touchGrantLastUsed(origin, Date.now());
+      setIsConnected(true);
+      return buildConnectedAccounts(resolution.accounts);
+    }
+
+    openConnectionApproval(id, origin, security);
+
+    return new Promise(() => {
+      // The modal handlers send the actual response.
+    });
+  }, [
+    accounts,
+    app.url,
+    buildConnectedAccounts,
+    currentUrl,
+    openConnectionApproval,
+    permissionStoreHydrated,
+    touchGrantLastUsed,
+  ]);
+
+  const handleApproveConnection = useCallback(() => {
+    if (!pendingConnectionRequest) {
+      return;
+    }
+
+    const livePendingRequest = pendingConnectionRequestRef.current;
+    if (!livePendingRequest || livePendingRequest.id !== pendingConnectionRequest.id) {
+      return;
+    }
+    if (currentOriginRef.current !== pendingConnectionRequest.origin) {
+      sendResponse({
+        type: 'kondor-response',
+        id: pendingConnectionRequest.id,
+        error: 'Navigation changed before account access was approved',
+      });
+      pendingConnectionRequestRef.current = null;
+      setShowConnectionModal(false);
+      setPendingConnectionRequest(null);
+      return;
+    }
+
+    const selectedAccounts = buildConnectedAccounts(selectedAddresses);
+    if (selectedAccounts.length === 0) {
+      return;
+    }
+
+    try {
+      const grant = createGrant({
+        origin: pendingConnectionRequest.origin,
+        accounts: selectedAccounts.map((account) => account.address),
+        lifetime: rememberSite ? 'persistent' : 'session',
+        security: pendingConnectionRequest.security,
+        now: Date.now(),
+      });
+
+      if (grant) {
+        upsertGrant(grant);
+      }
+    } catch (grantError) {
+      browserLogger.warn('Failed to save dApp connection grant', grantError);
+    }
+
+    setIsConnected(true);
+    sendResponse({
+      type: 'kondor-response',
+      id: pendingConnectionRequest.id,
+      result: selectedAccounts,
+    });
+    pendingConnectionRequestRef.current = null;
+    setShowConnectionModal(false);
+    setPendingConnectionRequest(null);
+  }, [buildConnectedAccounts, pendingConnectionRequest, rememberSite, selectedAddresses, sendResponse, upsertGrant]);
+
+  const handleRejectConnection = useCallback((errorMessage = 'User denied account access') => {
+    if (pendingConnectionRequest) {
+      sendResponse({
+        type: 'kondor-response',
+        id: pendingConnectionRequest.id,
+        error: errorMessage,
+      });
+    }
+
+    pendingConnectionRequestRef.current = null;
+    setShowConnectionModal(false);
+    setPendingConnectionRequest(null);
+  }, [pendingConnectionRequest, sendResponse]);
+
+  const toggleSelectedAddress = useCallback((selectedAddress: string) => {
+    setSelectedAddresses((current) => (
+      current.includes(selectedAddress)
+        ? current.filter((addressEntry) => addressEntry !== selectedAddress)
+        : [...current, selectedAddress]
+    ));
+  }, []);
+
+  const selectedAddressSet = useMemo(() => new Set(selectedAddresses), [selectedAddresses]);
+
+  const renderConnectionAccount = useCallback(({ item: account }: { item: Account }) => (
+    <ConnectionAccountRow
+      account={account}
+      selected={selectedAddressSet.has(account.address)}
+      onToggle={toggleSelectedAddress}
+    />
+  ), [selectedAddressSet, toggleSelectedAddress]);
 
   // Handle messages from WebView
   const handleMessage = useCallback(async (event: WebViewMessageEvent) => {
@@ -354,7 +793,7 @@ export const DAppWebViewScreen = () => {
         let result: unknown;
 
         if (command === 'getAccounts') {
-          result = await handleGetAccounts();
+          result = await handleGetAccounts(id);
           sendResponse({ type: 'kondor-response', id, result });
         } else if (command === 'signer:prepareTransaction') {
           // prepareTransaction doesn't need approval, but needs signer access
@@ -363,6 +802,9 @@ export const DAppWebViewScreen = () => {
         } else if (command === 'signer:signTransaction' || command === 'signer:sendTransaction') {
           // These require approval modal - modal handles the response
           await handleSignerCommand(id, command, args);
+        } else if (command === 'provider:submitBlock') {
+          result = await handleProviderCommand(command, args);
+          sendResponse({ type: 'kondor-response', id, result });
         } else if (command === 'signer:signHash' || command === 'signer:signMessage') {
           // Message signing - handled by handleSignerCommand (throws error for now)
           result = await handleSignerCommand(id, command, args);
@@ -383,12 +825,48 @@ export const DAppWebViewScreen = () => {
   }, [handleGetAccounts, handleProviderCommand, handleSignerCommand, sendResponse]);
 
   const handleNavigationStateChange = useCallback((navState: WebViewNavigation) => {
+    const nextOrigin = getOriginFromUrl(navState.url);
+    if (nextOrigin !== currentOriginRef.current) {
+      const pendingRequestOnOrigin = pendingConnectionRequestRef.current;
+      const pendingTransactionOnOrigin = pendingTransactionRequestRef.current;
+      const pendingSigningRequestOnOrigin = pendingMessageSigningRequestRef.current;
+      if (pendingTransactionOnOrigin && pendingTransactionOnOrigin.origin !== nextOrigin) {
+        sendResponse({
+          type: 'kondor-response',
+          id: pendingTransactionOnOrigin.id,
+          error: 'Navigation changed before transaction was approved',
+        });
+        pendingTransactionRequestRef.current = null;
+        setShowApprovalModal(false);
+        setPendingRequest(null);
+      }
+      if (pendingRequestOnOrigin && pendingRequestOnOrigin.origin !== nextOrigin) {
+        sendResponse({
+          type: 'kondor-response',
+          id: pendingRequestOnOrigin.id,
+          error: 'Navigation changed before account access was approved',
+        });
+        pendingConnectionRequestRef.current = null;
+        setShowConnectionModal(false);
+        setPendingConnectionRequest(null);
+      }
+      if (pendingSigningRequestOnOrigin && pendingSigningRequestOnOrigin.origin !== nextOrigin) {
+        sendResponse({
+          type: 'kondor-response',
+          id: pendingSigningRequestOnOrigin.id,
+          error: 'Navigation changed before signing was approved',
+        });
+        clearPendingMessageSigningRequest();
+      }
+      currentOriginRef.current = nextOrigin;
+      setIsConnected(false);
+    }
+
     setCanGoBack(navState.canGoBack);
     setCanGoForward(navState.canGoForward);
     setCurrentUrl(navState.url);
-    // Update origin warning based on current URL
-    setShowOriginWarning(!isCuratedUrl(navState.url));
-  }, []);
+    setShowOriginWarning(inspectDAppOrigin(nextOrigin).level !== 'trusted');
+  }, [clearPendingMessageSigningRequest, sendResponse]);
 
   // Block HTTP navigations - only allow HTTPS
   const handleShouldStartLoad = useCallback((request: ShouldStartLoadRequest): boolean => {
@@ -443,16 +921,6 @@ export const DAppWebViewScreen = () => {
     }
   };
 
-  // Extract domain from URL for display
-  const getDomain = (url: string) => {
-    try {
-      const urlObj = new URL(url);
-      return urlObj.hostname;
-    } catch {
-      return url;
-    }
-  };
-
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -499,7 +967,7 @@ export const DAppWebViewScreen = () => {
         <View style={styles.warningBanner}>
           <Ionicons name="warning" size={14} color={colors.warning} />
           <Text style={styles.warningText}>
-            Unverified site — review transactions carefully
+            {getOriginWarningText(currentOriginSecurity)}
           </Text>
           <TouchableOpacity onPress={() => setShowOriginWarning(false)}>
             <Ionicons name="close" size={16} color={colors.warning} />
@@ -587,12 +1055,103 @@ export const DAppWebViewScreen = () => {
         visible={showApprovalModal}
         request={pendingRequest?.request || null}
         appName={app.name}
-        appOrigin={app.url}
+        appOrigin={pendingRequest?.origin || currentOriginRef.current || app.url}
         isSend={pendingRequest?.isSend || false}
         onApprove={handleApproveTransaction}
         onReject={handleRejectTransaction}
         onClose={handleCloseApprovalModal}
       />
+
+      <DAppMessageSigningModal
+        visible={!!pendingMessageSigningRequest}
+        request={pendingMessageSigningRequest?.request || null}
+        appName={app.name}
+        appOrigin={pendingMessageSigningRequest?.origin || app.url}
+        onApprove={handleApproveMessageSigning}
+        onReject={handleRejectMessageSigning}
+      />
+
+      <Modal
+        visible={showConnectionModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => handleRejectConnection('User denied account access')}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.connectionModal}>
+            <View style={styles.connectionHeader}>
+              <Text style={styles.connectionTitle}>Connect with Kondor</Text>
+              <Text style={styles.connectionSubtitle}>
+                {pendingConnectionRequest?.security.displayOrigin || currentOriginSecurity.displayOrigin}
+              </Text>
+            </View>
+
+            <View style={styles.connectionNotice}>
+              <Ionicons
+                name={pendingConnectionRequest?.security.level === 'trusted' ? 'shield-checkmark' : 'warning'}
+                size={16}
+                color={
+                  pendingConnectionRequest?.security.level === 'trusted'
+                    ? colors.success
+                    : colors.warning
+                }
+              />
+              <Text style={styles.connectionNoticeText}>
+                {pendingConnectionRequest
+                  ? getOriginWarningText(pendingConnectionRequest.security)
+                  : 'Choose which accounts this site can view.'}
+              </Text>
+            </View>
+
+            <FlatList
+              style={styles.accountList}
+              data={accounts}
+              keyExtractor={(account) => account.id}
+              showsVerticalScrollIndicator={false}
+              renderItem={renderConnectionAccount}
+            />
+
+            <View style={styles.rememberRow}>
+              <View style={styles.rememberCopy}>
+                <Text style={styles.rememberTitle}>Remember this site</Text>
+                <Text style={styles.rememberText}>
+                  Keep account access connected until you disconnect it in Settings.
+                </Text>
+              </View>
+              <Switch
+                value={rememberSite}
+                onValueChange={setRememberSite}
+                trackColor={{ false: colors.border, true: colors.purpleLight }}
+                thumbColor={rememberSite ? colors.purple : colors.textPrimary}
+              />
+            </View>
+
+            <Text style={styles.connectionFootnote}>
+              Connecting only shares selected account addresses. Signing and transaction approvals always stay prompt-driven.
+            </Text>
+
+            <View style={styles.connectionActions}>
+              <TouchableOpacity
+                style={[styles.connectionButton, styles.connectionButtonSecondary]}
+                onPress={() => handleRejectConnection('User denied account access')}
+              >
+                <Text style={styles.connectionButtonSecondaryText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.connectionButton,
+                  styles.connectionButtonPrimary,
+                  selectedAddresses.length === 0 && styles.connectionButtonDisabled,
+                ]}
+                onPress={handleApproveConnection}
+                disabled={selectedAddresses.length === 0}
+              >
+                <Text style={styles.connectionButtonPrimaryText}>Connect</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -690,7 +1249,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   loadingContainer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: colors.background,
@@ -748,5 +1307,144 @@ const styles = StyleSheet.create({
   },
   navButtonDisabled: {
     opacity: 0.5,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'flex-end',
+  },
+  connectionModal: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+    gap: 16,
+    maxHeight: '82%',
+  },
+  connectionHeader: {
+    gap: 6,
+  },
+  connectionTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  connectionSubtitle: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  connectionNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: colors.card,
+    borderRadius: 8,
+    padding: 12,
+  },
+  connectionNoticeText: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  accountList: {
+    maxHeight: 220,
+  },
+  accountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginBottom: 10,
+  },
+  accountRowSelected: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderColor: colors.purple,
+    borderRadius: 8,
+    borderWidth: 1,
+    backgroundColor: colors.purpleLight,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginBottom: 10,
+  },
+  accountCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  accountName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  accountAddress: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  rememberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    backgroundColor: colors.card,
+    borderRadius: 8,
+    padding: 14,
+  },
+  rememberCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  rememberTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  rememberText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  connectionFootnote: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  connectionActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  connectionButton: {
+    flex: 1,
+    borderRadius: 8,
+    alignItems: 'center',
+    paddingVertical: 14,
+  },
+  connectionButtonPrimary: {
+    backgroundColor: colors.purple,
+  },
+  connectionButtonSecondary: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  connectionButtonDisabled: {
+    opacity: 0.45,
+  },
+  connectionButtonPrimaryText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  connectionButtonSecondaryText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.textPrimary,
   },
 });

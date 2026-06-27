@@ -23,10 +23,10 @@ import { Screen } from '../components/Screen';
 import { useWalletStore } from '../stores/walletStore';
 import { useTokenStore, Token } from '../stores/tokenStore';
 import { useTransactionHistory, ParsedTransaction } from '../hooks/useTransactionHistory';
+import { getContractExplorerUrl, getTransactionExplorerUrl } from '../lib/explorer';
 import { truncateAddress, formatKoinBalance } from '../lib/utils';
 import { tokenLogger } from '../lib/logger';
 import colors from '../theme/colors';
-import { EXPLORER } from '../lib/constants';
 
 type TokenDetailRouteParams = {
   TokenDetail: {
@@ -35,6 +35,7 @@ type TokenDetailRouteParams = {
 };
 
 const formatTransactionTime = (timestamp: number): string => {
+  if (!timestamp) return 'Confirmed';
   const now = Date.now();
   const diff = now - timestamp;
   const seconds = Math.floor(diff / 1000);
@@ -47,6 +48,37 @@ const formatTransactionTime = (timestamp: number): string => {
   if (hours < 24) return `${hours}h ago`;
   if (days < 7) return `${days}d ago`;
   return new Date(timestamp).toLocaleDateString();
+};
+
+const getTransactionLabel = (tx: ParsedTransaction): string => {
+  if (tx.type === 'swap') return 'Swap';
+  return tx.type === 'send' ? 'Sent' : 'Received';
+};
+
+const getTransactionDetail = (tx: ParsedTransaction): string => {
+  if (tx.type === 'swap') return tx.swapRoute || `${tx.tokenSymbol} swap`;
+  return tx.type === 'send' ? truncateAddress(tx.to) : truncateAddress(tx.from);
+};
+
+const getTransactionColor = (tx: ParsedTransaction): string => {
+  if (tx.type === 'receive') return colors.success;
+  if (tx.type === 'swap') return colors.purple;
+  return colors.error;
+};
+
+const getTransactionBackgroundColor = (tx: ParsedTransaction): string => {
+  if (tx.type === 'receive') return 'rgba(34, 197, 94, 0.1)';
+  if (tx.type === 'swap') return 'rgba(124, 92, 255, 0.14)';
+  return 'rgba(239, 68, 68, 0.1)';
+};
+
+const getTransactionIcon = (tx: ParsedTransaction): keyof typeof Ionicons.glyphMap => {
+  if (tx.type === 'swap') return 'swap-horizontal';
+  return tx.type === 'send' ? 'arrow-up' : 'arrow-down';
+};
+
+const getAmountPrefix = (tx: ParsedTransaction): string => {
+  return tx.type === 'receive' ? '+' : '-';
 };
 
 export const TokenDetailScreen = () => {
@@ -96,23 +128,32 @@ export const TokenDetailScreen = () => {
   };
 
   const handleViewOnExplorer = () => {
-    const url = `${EXPLORER.mainnet.token}/${token.contractId}`;
-    Linking.openURL(url);
+    Linking.openURL(getContractExplorerUrl(token.contractId));
   };
 
   const handleTransactionPress = (tx: ParsedTransaction) => {
+    const detail =
+      tx.type === 'swap'
+        ? `Pay: ${tx.amount} ${tx.tokenSymbol}\n` +
+          `Route: ${tx.swapRoute || `${tx.tokenSymbol} swap`}\n` +
+          (tx.swapAmountOutMin && tx.swapTokenOutSymbol
+            ? `Minimum received: ${tx.swapAmountOutMin} ${tx.swapTokenOutSymbol}\n`
+            : '') +
+          `Receiver: ${tx.to}\n`
+        : `Amount: ${tx.amount} ${tx.tokenSymbol}\n` +
+          `${tx.type === 'send' ? 'To' : 'From'}: ${tx.type === 'send' ? tx.to : tx.from}\n`;
+
     Alert.alert(
       'Transaction Details',
-      `Type: ${tx.type === 'send' ? 'Sent' : 'Received'}\n` +
-        `Amount: ${tx.amount} ${tx.tokenSymbol}\n` +
-        `${tx.type === 'send' ? 'To' : 'From'}: ${tx.type === 'send' ? tx.to : tx.from}\n` +
+      `Type: ${getTransactionLabel(tx)}\n` +
+        detail +
         `Block: ${tx.blockHeight || 'N/A'}\n` +
-        `Time: ${new Date(tx.timestamp).toLocaleString()}`,
+        `Time: ${tx.timestamp ? new Date(tx.timestamp).toLocaleString() : 'N/A'}`,
       [
         {
-          text: 'View on KoinScan',
+          text: 'View on Explorer',
           onPress: () => {
-            const url = `${EXPLORER.mainnet.tx}/${tx.id}`;
+            const url = getTransactionExplorerUrl(tx.id);
             Linking.openURL(url);
           },
         },
@@ -130,35 +171,32 @@ export const TokenDetailScreen = () => {
         style={[
           styles.transactionIcon,
           {
-            backgroundColor:
-              tx.type === 'send'
-                ? 'rgba(239, 68, 68, 0.1)'
-                : 'rgba(34, 197, 94, 0.1)',
+            backgroundColor: getTransactionBackgroundColor(tx),
           },
         ]}
       >
         <Ionicons
-          name={tx.type === 'send' ? 'arrow-up' : 'arrow-down'}
+          name={getTransactionIcon(tx)}
           size={20}
-          color={tx.type === 'send' ? colors.error : colors.success}
+          color={getTransactionColor(tx)}
         />
       </View>
       <View style={styles.transactionDetails}>
         <Text style={styles.transactionType}>
-          {tx.type === 'send' ? 'Sent' : 'Received'}
+          {getTransactionLabel(tx)}
         </Text>
         <Text style={styles.transactionAddress}>
-          {tx.type === 'send' ? truncateAddress(tx.to) : truncateAddress(tx.from)}
+          {getTransactionDetail(tx)}
         </Text>
       </View>
       <View style={styles.transactionAmount}>
         <Text
           style={[
             styles.transactionAmountText,
-            { color: tx.type === 'send' ? colors.error : colors.success },
+            { color: getTransactionColor(tx) },
           ]}
         >
-          {tx.type === 'send' ? '-' : '+'}
+          {getAmountPrefix(tx)}
           {tx.amount}
         </Text>
         <Text style={styles.transactionTime}>{formatTransactionTime(tx.timestamp)}</Text>

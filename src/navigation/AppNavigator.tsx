@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { ActivityIndicator, View, StyleSheet, AppState } from 'react-native';
+import { AppState } from 'react-native';
 
 // Screens
 import { WelcomeScreen } from '../screens/WelcomeScreen';
@@ -9,6 +9,7 @@ import { CreateWalletScreen } from '../screens/CreateWalletScreen';
 import { ImportWalletScreen } from '../screens/ImportWalletScreen';
 import { LockScreen } from '../screens/LockScreen';
 import { SetupPinScreen } from '../screens/SetupPinScreen';
+import { StartupSplash } from '../components/StartupSplash';
 
 // Navigators
 import { TabNavigator } from './TabNavigator';
@@ -18,6 +19,7 @@ import { useWalletStore } from '../stores/walletStore';
 
 // Services
 import { isPinEnabled } from '../services/auth';
+import { clearTransactionAuthorization } from '../services/transactionAuthorization';
 import { walletLogger } from '../lib/logger';
 
 // Theme
@@ -40,34 +42,40 @@ export const AppNavigator = () => {
   const { isWalletCreated, loadWallet } = useWalletStore();
 
   useEffect(() => {
+    const checkWallet = async () => {
+      try {
+        await loadWallet();
+        const pinIsEnabled = await isPinEnabled();
+        setPinEnabled(pinIsEnabled);
+        setIsLocked(pinIsEnabled);
+      } catch (error) {
+        walletLogger.error('Failed to load wallet:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
     checkWallet();
-  }, []);
+  }, [loadWallet]);
 
   // Re-lock when app goes to background
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'background' && pinEnabled) {
+        clearTransactionAuthorization();
         setIsLocked(true);
       }
     });
     return () => subscription.remove();
   }, [pinEnabled]);
 
-  const checkWallet = async () => {
-    try {
-      await loadWallet();
-      const pinIsEnabled = await isPinEnabled();
-      setPinEnabled(pinIsEnabled);
-      setIsLocked(pinIsEnabled);
-    } catch (error) {
-      walletLogger.error('Failed to load wallet:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const handleUnlock = () => {
     setIsLocked(false);
+  };
+
+  const handleLock = () => {
+    clearTransactionAuthorization();
+    setIsLocked(true);
   };
 
   const handlePinSetupComplete = async () => {
@@ -76,11 +84,7 @@ export const AppNavigator = () => {
   };
 
   if (isLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.purple} />
-      </View>
-    );
+    return <StartupSplash />;
   }
 
   // Show lock screen if PIN is enabled and app is locked
@@ -130,18 +134,11 @@ export const AppNavigator = () => {
           </Stack.Screen>
         ) : (
           // Main App with Tabs
-          <Stack.Screen name="Main" component={TabNavigator} />
+          <Stack.Screen name="Main">
+            {() => <TabNavigator onLockWallet={handleLock} />}
+          </Stack.Screen>
         )}
       </Stack.Navigator>
     </NavigationContainer>
   );
 };
-
-const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: colors.background,
-  },
-});

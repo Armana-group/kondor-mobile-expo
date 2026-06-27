@@ -1,4 +1,8 @@
-import { parseTransactionTimestamp, fetchTransactionTimestamps } from '../txHistory';
+import {
+  buildTxTimestampCacheKey,
+  parseTransactionTimestamp,
+  fetchTransactionTimestamps,
+} from '../txHistory';
 
 describe('parseTransactionTimestamp', () => {
   it('extracts a numeric ms timestamp from the tx endpoint response', () => {
@@ -55,5 +59,25 @@ describe('fetchTransactionTimestamps', () => {
     const res = await fetchTransactionTimestamps(['0xAAA', '0xBBB'], { baseUrl: 'https://seed', fetchImpl, cache: new Map() });
     expect(res.has('0xAAA')).toBe(false);
     expect(res.get('0xBBB')).toBe(2000);
+  });
+
+  it('scopes cache entries by network and address when a prefix is provided', async () => {
+    const fetchImpl = makeFetch({ '0xBBB': { transaction: { timestamp: 2000 } } });
+    const cache = new Map<string, number>([
+      [buildTxTimestampCacheKey('0xAAA', 'mainnet:1abc'), 1000],
+      [buildTxTimestampCacheKey('0xAAA', 'harbinger:1abc'), 3000],
+    ]);
+
+    const res = await fetchTransactionTimestamps(['0xAAA', '0xBBB'], {
+      baseUrl: 'https://seed',
+      fetchImpl,
+      cache,
+      cacheKeyPrefix: 'mainnet:1abc',
+    });
+
+    expect(res.get('0xAAA')).toBe(1000);
+    expect(res.get('0xBBB')).toBe(2000);
+    expect(cache.get(buildTxTimestampCacheKey('0xBBB', 'mainnet:1abc'))).toBe(2000);
+    expect(cache.get(buildTxTimestampCacheKey('0xBBB', 'harbinger:1abc'))).toBeUndefined();
   });
 });

@@ -7,11 +7,43 @@ import { createWalletFromMnemonic, createWalletFromPrivateKey, validateMnemonic 
 import { requireBiometricAuth } from '../lib/biometrics';
 import { HapticFeedback } from '../lib/haptics';
 import { walletLogger as log } from '../lib/logger';
+import {
+  BackupData,
+  RestoredWalletSnapshot,
+  WalletBackupSnapshot,
+  encryptSecretWithBackupSecret,
+  restoreWalletBackup,
+} from '../lib/walletBackup';
+import {
+  EMPTY_BACKUP_HEALTH,
+  markBackupHealthStale,
+  markBackupHealthVerified,
+  type BackupRecord,
+  type BackupHealth,
+  type MarkBackupVerifiedInput,
+} from '../lib/backupHealth';
+import { verifyPin } from '../services/auth';
+import {
+  clearTransactionAuthorization,
+  rememberTransactionAuthorization,
+  shouldAuthenticateTransaction,
+} from '../services/transactionAuthorization';
 
 // Keys for secure storage
 const MNEMONIC_KEY = 'kondor_wallet_mnemonic';
 const PRIVATE_KEY_PREFIX = 'kondor_pk_'; // For imported accounts: kondor_pk_{accountId}
 const LEGACY_PRIVATE_KEY = 'kondor_wallet_private_key'; // Legacy single-account key
+const MISSING_RECOVERY_PHRASE_MESSAGE =
+  'Recovery phrase is missing from secure storage. Re-import this wallet from the recovery phrase to restore secret access.';
+const MISSING_PRIVATE_KEY_MESSAGE =
+  'Private key is missing from secure storage. Re-import this account to restore secret access.';
+
+function isExpectedMissingSecretError(error: unknown): boolean {
+  return error instanceof Error && (
+    error.message === MISSING_RECOVERY_PHRASE_MESSAGE ||
+    error.message === MISSING_PRIVATE_KEY_MESSAGE
+  );
+}
 
 // Account interface
 export interface Account {
@@ -32,6 +64,9 @@ interface WalletState {
   address: string; // Current active account address (for backward compatibility)
   balance: string;
   isWalletCreated: boolean;
+  lastBackupAt: string | null;
+  backupHealth: BackupHealth;
+  backupRecords: BackupRecord[];
 
   // Actions
   createWallet: (mnemonic: string) => Promise<void>;
@@ -39,7 +74,9 @@ interface WalletState {
   loadWallet: () => Promise<boolean>;
   clearWallet: () => Promise<void>;
   updateBalance: (balance: string) => void;
-  getPrivateKey: () => Promise<string | null>;
+  getPrivateKey: (options?: {
+    allowTransactionAuthorizationMemory?: boolean;
+  }) => Promise<string | null>;
   getMnemonic: () => Promise<string | null>;
 
   // Multi-account actions
@@ -49,6 +86,94 @@ interface WalletState {
   renameAccount: (accountId: string, name: string) => void;
   removeAccount: (accountId: string) => Promise<boolean>;
   getActiveAccount: () => Account | undefined;
+  createBackupSnapshot: (currentPin: string, backupSecret?: string) => Promise<WalletBackupSnapshot>;
+  restoreFromBackup: (backup: BackupData, backupPin: string, currentPin: string) => Promise<void>;
+  setLastBackupAt: (timestamp: string | null) => void;
+  markBackupVerified: (input: MarkBackupVerifiedInput) => void;
+  recordBackupCreated: (record: BackupRecord) => void;
+  markBackupStale: (reason: string) => void;
+}
+
+interface StoredWalletSecrets {
+  mnemonic: string | null;
+  legacyPrivateKey: string | null;
+  importedPrivateKeys: Record<string, string>;
+}
+
+async function captureStoredWalletSecrets(accounts: Account[]): Promise<StoredWalletSecrets> {
+  const importedPrivateKeys: Record<string, string> = {};
+
+  for (const account of accounts) {
+    if (!account.isImported) {
+      continue;
+    }
+
+    const privateKey = await SecureStore.getItemAsync(`${PRIVATE_KEY_PREFIX}${account.id}`);
+    if (privateKey) {
+      importedPrivateKeys[account.id] = privateKey;
+    }
+  }
+
+  return {
+    mnemonic: await SecureStore.getItemAsync(MNEMONIC_KEY),
+    legacyPrivateKey: await SecureStore.getItemAsync(LEGACY_PRIVATE_KEY),
+    importedPrivateKeys,
+  };
+}
+
+async function writeStoredWalletSecrets(
+  secrets: StoredWalletSecrets,
+  targetAccounts: Account[],
+  previousAccounts: Account[]
+): Promise<void> {
+  if (secrets.mnemonic) {
+    await SecureStore.setItemAsync(MNEMONIC_KEY, secrets.mnemonic);
+  }
+
+  for (const account of targetAccounts) {
+    if (!account.isImported) {
+      continue;
+    }
+
+    const privateKey = secrets.importedPrivateKeys[account.id];
+    if (!privateKey) {
+      throw new Error(`Missing private key for restored imported account ${account.id}`);
+    }
+
+    await SecureStore.setItemAsync(`${PRIVATE_KEY_PREFIX}${account.id}`, privateKey);
+  }
+
+  if (!secrets.mnemonic) {
+    await SecureStore.deleteItemAsync(MNEMONIC_KEY);
+  }
+
+  if (secrets.legacyPrivateKey) {
+    await SecureStore.setItemAsync(LEGACY_PRIVATE_KEY, secrets.legacyPrivateKey);
+  } else {
+    await SecureStore.deleteItemAsync(LEGACY_PRIVATE_KEY);
+  }
+
+  const targetImportedIds = new Set(
+    targetAccounts.filter((account) => account.isImported).map((account) => account.id)
+  );
+
+  for (const account of previousAccounts) {
+    if (account.isImported && !targetImportedIds.has(account.id)) {
+      await SecureStore.deleteItemAsync(`${PRIVATE_KEY_PREFIX}${account.id}`);
+    }
+  }
+}
+
+function getRestoredActiveAccount(restored: RestoredWalletSnapshot): Account {
+  const activeAccount = restored.accounts.find(
+    (account) => account.id === restored.activeAccountId
+  );
+
+  if (!activeAccount) {
+    throw new Error('Backup restore did not include an active account');
+  }
+
+  return activeAccount;
 }
 
 // Generate a unique ID
@@ -68,6 +193,9 @@ export const useWalletStore = create<WalletState>()(
       address: '',
       balance: '0',
       isWalletCreated: false,
+      lastBackupAt: null,
+      backupHealth: EMPTY_BACKUP_HEALTH,
+      backupRecords: [],
 
       createWallet: async (mnemonic: string) => {
         try {
@@ -93,6 +221,9 @@ export const useWalletStore = create<WalletState>()(
             nextDerivationIndex: 1,
             address,
             isWalletCreated: true,
+            lastBackupAt: null,
+            backupHealth: EMPTY_BACKUP_HEALTH,
+            backupRecords: [],
           });
 
           await HapticFeedback.walletCreated();
@@ -147,9 +278,10 @@ export const useWalletStore = create<WalletState>()(
               accounts: [migratedAccount],
               activeAccountId: accountId,
               nextDerivationIndex: 1,
-              address,
-              isWalletCreated: true,
-            });
+            address,
+            isWalletCreated: true,
+            backupHealth: EMPTY_BACKUP_HEALTH,
+          });
 
             return true;
           }
@@ -181,6 +313,9 @@ export const useWalletStore = create<WalletState>()(
             address: '',
             balance: '0',
             isWalletCreated: false,
+            lastBackupAt: null,
+            backupHealth: EMPTY_BACKUP_HEALTH,
+            backupRecords: [],
           });
         } catch (error) {
           log.error('Failed to clear wallet:', error);
@@ -190,16 +325,29 @@ export const useWalletStore = create<WalletState>()(
 
       updateBalance: (balance: string) => set({ balance }),
 
-      getPrivateKey: async () => {
+      getPrivateKey: async (options) => {
         try {
-          const authenticated = await requireBiometricAuth('access your private key');
-          if (!authenticated) {
-            log.debug('Biometric authentication failed or was cancelled');
-            return null;
-          }
-
           const { activeAccountId, accounts } = get();
           const activeAccount = accounts.find(a => a.id === activeAccountId);
+          const canUseTransactionAuthorizationMemory = Boolean(
+            options?.allowTransactionAuthorizationMemory && activeAccount?.address
+          );
+
+          const authenticationRequired = canUseTransactionAuthorizationMemory
+            ? await shouldAuthenticateTransaction(activeAccount?.address)
+            : true;
+
+          if (authenticationRequired) {
+            const authenticated = await requireBiometricAuth('access your private key');
+            if (!authenticated) {
+              log.debug('Biometric authentication failed or was cancelled');
+              return null;
+            }
+
+            if (canUseTransactionAuthorizationMemory && activeAccount?.address) {
+              await rememberTransactionAuthorization(activeAccount.address);
+            }
+          }
 
           if (!activeAccount) {
             // Fallback to legacy key
@@ -212,17 +360,25 @@ export const useWalletStore = create<WalletState>()(
           // If not found and it's an HD account, derive from mnemonic
           if (!privateKey && !activeAccount.isImported) {
             const mnemonic = await SecureStore.getItemAsync(MNEMONIC_KEY);
-            if (mnemonic) {
-              const wallet = createWalletFromMnemonic(mnemonic, activeAccount.derivationIndex);
-              privateKey = wallet.privateKey;
-              // Derived on-demand — not cached in SecureStore
+            if (!mnemonic) {
+              throw new Error(MISSING_RECOVERY_PHRASE_MESSAGE);
             }
+
+            const wallet = createWalletFromMnemonic(mnemonic, activeAccount.derivationIndex);
+            privateKey = wallet.privateKey;
+            // Derived on-demand — not cached in SecureStore
+          }
+
+          if (!privateKey && activeAccount.isImported) {
+            throw new Error(MISSING_PRIVATE_KEY_MESSAGE);
           }
 
           return privateKey;
         } catch (error) {
-          log.error('Failed to get private key:', error);
-          return null;
+          if (!isExpectedMissingSecretError(error)) {
+            log.error('Failed to get private key:', error);
+          }
+          throw error;
         }
       },
 
@@ -233,11 +389,150 @@ export const useWalletStore = create<WalletState>()(
             log.debug('Biometric authentication failed or was cancelled');
             return null;
           }
-          return await SecureStore.getItemAsync(MNEMONIC_KEY);
+          const mnemonic = await SecureStore.getItemAsync(MNEMONIC_KEY);
+          if (!mnemonic) {
+            throw new Error(MISSING_RECOVERY_PHRASE_MESSAGE);
+          }
+
+          return mnemonic;
         } catch (error) {
-          log.error('Failed to get mnemonic:', error);
-          return null;
+          if (!isExpectedMissingSecretError(error)) {
+            log.error('Failed to get mnemonic:', error);
+          }
+          throw error;
         }
+      },
+
+      createBackupSnapshot: async (currentPin: string, backupSecret?: string) => {
+        const pinIsValid = await verifyPin(currentPin);
+        if (!pinIsValid) {
+          throw new Error('Incorrect PIN');
+        }
+
+        if (!backupSecret?.trim()) {
+          throw new Error('Backup recovery key is required');
+        }
+
+        const { accounts, activeAccountId, nextDerivationIndex } = get();
+        if (!accounts.length || !activeAccountId) {
+          throw new Error('No wallet accounts found');
+        }
+
+        const mnemonic = await SecureStore.getItemAsync(MNEMONIC_KEY);
+        const hasHdAccounts = accounts.some((account) => !account.isImported);
+        if (hasHdAccounts && !mnemonic) {
+          throw new Error(MISSING_RECOVERY_PHRASE_MESSAGE);
+        }
+
+        const encryptedMnemonic = mnemonic
+          ? await encryptSecretWithBackupSecret(mnemonic, backupSecret)
+          : undefined;
+
+        const encryptedAccounts = await Promise.all(
+          accounts.map(async (account) => {
+            const privateKey = account.isImported
+              ? await SecureStore.getItemAsync(`${PRIVATE_KEY_PREFIX}${account.id}`)
+              : createWalletFromMnemonic(mnemonic!, account.derivationIndex).privateKey;
+
+            if (!privateKey) {
+              throw new Error(`Missing private key for account ${account.name}`);
+            }
+
+            return {
+              ...account,
+              encryptedPrivateKey: await encryptSecretWithBackupSecret(privateKey, backupSecret),
+            };
+          })
+        );
+
+        return {
+          activeAccountId,
+          nextDerivationIndex,
+          encryptedMnemonic,
+          accounts: encryptedAccounts,
+        };
+      },
+
+      restoreFromBackup: async (backup: BackupData, backupPin: string, currentPin: string) => {
+        const currentPinIsValid = await verifyPin(currentPin);
+        if (!currentPinIsValid) {
+          throw new Error('Current PIN is incorrect');
+        }
+
+        const currentState = get();
+        const restored = await restoreWalletBackup(backup, backupPin);
+        const activeAccount = getRestoredActiveAccount(restored);
+        const existingSecrets = await captureStoredWalletSecrets(currentState.accounts);
+
+        try {
+          await writeStoredWalletSecrets(
+            {
+              mnemonic: restored.mnemonic,
+              legacyPrivateKey: null,
+              importedPrivateKeys: restored.importedPrivateKeys,
+            },
+            restored.accounts,
+            currentState.accounts
+          );
+        } catch (error) {
+          try {
+            await writeStoredWalletSecrets(existingSecrets, currentState.accounts, restored.accounts);
+          } catch (rollbackError) {
+            log.error('Failed to roll back backup restore:', rollbackError);
+          }
+
+          throw error;
+        }
+
+        set({
+          accounts: restored.accounts,
+          activeAccountId: restored.activeAccountId,
+          nextDerivationIndex: restored.nextDerivationIndex,
+          address: activeAccount.address,
+          balance: '0',
+          isWalletCreated: true,
+          lastBackupAt: null,
+          backupRecords: [],
+          backupHealth: backup.version === 2
+            ? markBackupHealthVerified({
+                provider: 'manual-file',
+                verifiedAt: new Date().toISOString(),
+                walletFingerprint: backup.walletFingerprint,
+                accountSetHash: backup.accountSetHash,
+              })
+            : EMPTY_BACKUP_HEALTH,
+        });
+      },
+
+      setLastBackupAt: (timestamp: string | null) => set({ lastBackupAt: timestamp }),
+
+      markBackupVerified: (input: MarkBackupVerifiedInput) => {
+        set({
+          backupHealth: markBackupHealthVerified(input),
+          lastBackupAt: input.verifiedAt,
+        });
+      },
+
+      recordBackupCreated: (record: BackupRecord) => {
+        set((state) => ({
+          backupHealth: markBackupHealthVerified({
+            provider: record.provider,
+            verifiedAt: record.createdAt,
+            walletFingerprint: record.walletFingerprint,
+            accountSetHash: record.accountSetHash,
+          }),
+          backupRecords: [
+            record,
+            ...state.backupRecords.filter((candidate) => candidate.id !== record.id),
+          ].slice(0, 20),
+          lastBackupAt: record.createdAt,
+        }));
+      },
+
+      markBackupStale: (reason: string) => {
+        set((state) => ({
+          backupHealth: markBackupHealthStale(state.backupHealth, reason),
+        }));
       },
 
       // Multi-account methods
@@ -271,10 +566,11 @@ export const useWalletStore = create<WalletState>()(
 
         // HD account keys are derived on-demand from mnemonic — not cached
 
-        set({
+        set((state) => ({
           accounts: [...accounts, newAccount],
           nextDerivationIndex: nextDerivationIndex + 1,
-        });
+          backupHealth: markBackupHealthStale(state.backupHealth, 'Account set changed'),
+        }));
 
         await HapticFeedback.success();
         return newAccount;
@@ -312,19 +608,23 @@ export const useWalletStore = create<WalletState>()(
         // Store private key
         await SecureStore.setItemAsync(`${PRIVATE_KEY_PREFIX}${accountId}`, wallet.privateKey);
 
-        set({
+        set((state) => ({
           accounts: [...accounts, newAccount],
-        });
+          backupHealth: markBackupHealthStale(state.backupHealth, 'Account set changed'),
+        }));
 
         await HapticFeedback.success();
         return newAccount;
       },
 
       switchAccount: (accountId: string) => {
-        const { accounts } = get();
+        const { accounts, activeAccountId } = get();
         const account = accounts.find(a => a.id === accountId);
 
         if (account) {
+          if (accountId !== activeAccountId) {
+            clearTransactionAuthorization();
+          }
           set({
             activeAccountId: accountId,
             address: account.address,
@@ -370,12 +670,13 @@ export const useWalletStore = create<WalletState>()(
           newAddress = updatedAccounts[0].address;
         }
 
-        set({
+        set((state) => ({
           accounts: updatedAccounts,
           activeAccountId: newActiveId,
           address: newAddress,
           balance: '0',
-        });
+          backupHealth: markBackupHealthStale(state.backupHealth, 'Account set changed'),
+        }));
 
         await HapticFeedback.success();
         return true;
@@ -396,6 +697,9 @@ export const useWalletStore = create<WalletState>()(
         address: state.address,
         balance: state.balance,
         isWalletCreated: state.isWalletCreated,
+        lastBackupAt: state.lastBackupAt,
+        backupHealth: state.backupHealth,
+        backupRecords: state.backupRecords,
       }),
     }
   )

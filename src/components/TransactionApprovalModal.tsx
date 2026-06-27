@@ -6,7 +6,7 @@
  * biometric authentication before signing.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -17,23 +17,19 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Signer, Transaction, Provider, TransactionJson } from 'koilib';
-import * as SecureStore from 'expo-secure-store';
+import { Transaction, Provider, TransactionJson, type OperationJson } from 'koilib';
 import colors from '../theme/colors';
 import { useWalletStore } from '../stores/walletStore';
-import { requireBiometricAuth } from '../lib/biometrics';
 import { HapticFeedback } from '../lib/haptics';
-import { DEFAULT_NETWORK, FREE_MANA_SHARER } from '../lib/constants';
 import { txLogger } from '../lib/logger';
-
-// Decoded operation for display
-export interface DecodedOperation {
-  type: 'contract_call' | 'upload_contract' | 'set_system_call' | 'set_system_contract';
-  title: string;
-  contractId: string;
-  entryPoint?: number;
-  details: { label: string; value: string }[];
-}
+import { getActiveNetworkConfig, useNetworkStore } from '../stores/networkStore';
+import { inspectDAppOrigin } from '../lib/dapp/originSecurity';
+import { withAuthenticatedAccountSigner } from '../lib/dapp/messageSigning';
+import {
+  type DecodedOperation,
+  decodeKnownOperation,
+  hasKoinDxSwapOperation,
+} from '../lib/transactionDecoder';
 
 // Transaction request from dApp
 export interface TransactionRequest {
@@ -63,104 +59,6 @@ interface TransactionApprovalModalProps {
   onClose: () => void;
 }
 
-// Known contract addresses for better display
-const KNOWN_CONTRACTS: Record<string, { name: string; symbol?: string }> = {
-  '15DJN4a8SgrbGhhGksSBASiSYjGnMU8dGL': { name: 'KOIN', symbol: 'KOIN' },
-  '19GYjDBVXU7keLbYvMLazsGQn3GTWHjHkK': { name: 'KOIN', symbol: 'KOIN' },
-  '1AdzuXSpC6K9qtXdCBgD5NUpDNwHjMgrc9': { name: 'VHP', symbol: 'VHP' },
-  '18tWNU7E4yuQzz7hMVpceb9ixmaWLVyQsr': { name: 'VHP', symbol: 'VHP' },
-  '1KD9Es7LBBjA1FY3ViCgQJ7e6WH1ipKbhz': { name: 'KoinDX Router' },
-  '1NHReq2apWsQ6UPBjNqcV3ABsj88Ncimiy': { name: 'Kollection' },
-};
-
-// Known entry points for better display
-const KNOWN_ENTRY_POINTS: Record<number, string> = {
-  0x27f576ca: 'transfer',
-  0x82a3537f: 'mint',
-  0x859facc5: 'burn',
-  0x5c721497: 'approve',
-  0xe74b785a: 'balanceOf',
-  0xc65b2bae: 'totalSupply',
-  0x7e794b24: 'swap',
-  0x8f5a3e29: 'addLiquidity',
-  0x12b4a9c3: 'removeLiquidity',
-};
-
-// Decode entry point number to human-readable name
-function decodeEntryPoint(entryPoint: number): string {
-  return KNOWN_ENTRY_POINTS[entryPoint] || `0x${entryPoint.toString(16)}`;
-}
-
-// Decode contract ID to human-readable name
-function decodeContract(contractId: string): string {
-  const known = KNOWN_CONTRACTS[contractId];
-  if (known) {
-    return known.symbol ? `${known.name} (${known.symbol})` : known.name;
-  }
-  return contractId;
-}
-
-// Decode transaction operations for display
-function decodeOperations(transaction: TransactionJson): DecodedOperation[] {
-  const operations: DecodedOperation[] = [];
-
-  if (!transaction.operations) {
-    return operations;
-  }
-
-  for (const op of transaction.operations) {
-    if (op.call_contract) {
-      const { contract_id, entry_point, args } = op.call_contract;
-      const entryPointName = decodeEntryPoint(entry_point);
-      const contractName = decodeContract(contract_id);
-
-      operations.push({
-        type: 'contract_call',
-        title: `${entryPointName}`,
-        contractId: contract_id,
-        entryPoint: entry_point,
-        details: [
-          { label: 'Contract', value: contractName },
-          { label: 'Entry Point', value: entryPointName },
-          ...(args ? [{ label: 'Arguments', value: args.length > 100 ? `${args.slice(0, 100)}...` : args }] : []),
-        ],
-      });
-    } else if (op.upload_contract) {
-      operations.push({
-        type: 'upload_contract',
-        title: 'Upload Contract',
-        contractId: op.upload_contract.contract_id || 'New Contract',
-        details: [
-          { label: 'Contract ID', value: op.upload_contract.contract_id || 'TBD' },
-          { label: 'Bytecode Size', value: `${(op.upload_contract.bytecode?.length || 0) / 2} bytes` },
-        ],
-      });
-    } else if (op.set_system_call) {
-      operations.push({
-        type: 'set_system_call',
-        title: 'Set System Call',
-        contractId: 'System',
-        details: [
-          { label: 'Call ID', value: String(op.set_system_call.call_id) },
-          { label: 'Target', value: JSON.stringify(op.set_system_call.target) },
-        ],
-      });
-    } else if (op.set_system_contract) {
-      operations.push({
-        type: 'set_system_contract',
-        title: 'Set System Contract',
-        contractId: 'System',
-        details: [
-          { label: 'Contract ID', value: op.set_system_contract.contract_id || 'N/A' },
-          { label: 'System Contract', value: String(op.set_system_contract.system_contract) },
-        ],
-      });
-    }
-  }
-
-  return operations;
-}
-
 // Get simplified domain name from origin
 function getSimplifiedDomain(origin: string): string {
   try {
@@ -172,6 +70,55 @@ function getSimplifiedDomain(origin: string): string {
   } catch {
     return origin;
   }
+}
+
+function normalizeOrigin(origin: string): string {
+  try {
+    return new URL(origin).origin;
+  } catch {
+    return origin;
+  }
+}
+
+function cloneOperation(operation: OperationJson): OperationJson {
+  if (operation.call_contract) {
+    return {
+      ...operation,
+      call_contract: { ...operation.call_contract },
+    };
+  }
+
+  if (operation.upload_contract) {
+    return {
+      ...operation,
+      upload_contract: { ...operation.upload_contract },
+    };
+  }
+
+  if (operation.set_system_call) {
+    return {
+      ...operation,
+      set_system_call: { ...operation.set_system_call },
+    };
+  }
+
+  if (operation.set_system_contract) {
+    return {
+      ...operation,
+      set_system_contract: { ...operation.set_system_contract },
+    };
+  }
+
+  return { ...operation };
+}
+
+function cloneTransaction(transaction: TransactionJson): TransactionJson {
+  return {
+    ...transaction,
+    header: transaction.header ? { ...transaction.header } : undefined,
+    operations: transaction.operations?.map(cloneOperation),
+    signatures: transaction.signatures ? [...transaction.signatures] : undefined,
+  };
 }
 
 export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> = ({
@@ -191,15 +138,31 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
   const [expandedOps, setExpandedOps] = useState<Set<number>>(new Set([0])); // First op expanded by default
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const { getActiveAccount, activeAccountId } = useWalletStore();
+  const { accounts, getActiveAccount } = useWalletStore();
+  useNetworkStore((state) => state.mode);
+  useNetworkStore((state) => state.hasHydrated);
   const activeAccount = getActiveAccount();
+  const requestedAccount = request
+    ? accounts.find((account) => account.address === request.signerAddress)
+    : undefined;
+  const activeNetwork = getActiveNetworkConfig();
+  const normalizedOrigin = normalizeOrigin(appOrigin);
+  const originSecurity = useMemo(
+    () =>
+      inspectDAppOrigin(normalizedOrigin, {
+        highRiskRequest: isSend ? 'transaction broadcast' : 'transaction signing',
+      }),
+    [isSend, normalizedOrigin]
+  );
+  const blockedSwapMessage =
+    'KoinDX swaps from dApps are not supported on mobile. Use the Swap tab in Kondor Mobile instead.';
 
-  const simplifiedDomain = getSimplifiedDomain(appOrigin);
+  const simplifiedDomain = getSimplifiedDomain(normalizedOrigin);
 
   // Decode operations when request changes
   useEffect(() => {
     if (request?.transaction) {
-      const decoded = decodeOperations(request.transaction);
+      const decoded = request.transaction.operations?.map(decodeKnownOperation) ?? [];
       setOperations(decoded);
       setLoading(false);
     } else {
@@ -209,6 +172,12 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
     setError(null);
     setSigning(false);
   }, [request]);
+
+  const rejectPendingRequest = useCallback((message: string) => {
+    setError(message);
+    setSigning(false);
+    onReject(message);
+  }, [onReject]);
 
   // Toggle operation expansion
   const toggleOperation = useCallback((index: number) => {
@@ -230,173 +199,166 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
       return;
     }
 
+    if (!requestedAccount) {
+      rejectPendingRequest('Transaction signer is not in this wallet.');
+      return;
+    }
+
+    if (
+      request.transaction.header?.chain_id &&
+      request.transaction.header.chain_id !== activeNetwork.chainId
+    ) {
+      rejectPendingRequest('Transaction network does not match the active wallet network.');
+      return;
+    }
+
+    if (hasKoinDxSwapOperation(request.transaction.operations)) {
+      rejectPendingRequest(blockedSwapMessage);
+      return;
+    }
+
     setSigning(true);
     setError(null);
 
     try {
-      // Require biometric authentication
-      const authenticated = await requireBiometricAuth(
-        isSend ? 'send this transaction' : 'sign this transaction'
+      const provider = new Provider(activeNetwork.rpcNodes);
+      await withAuthenticatedAccountSigner(
+        {
+          signerAddress: request.signerAddress,
+          provider,
+          authOperation: isSend ? 'send this transaction' : 'sign this transaction',
+        },
+        async ({ signer }) => {
+          HapticFeedback.success();
+
+          // Prepare transaction
+          const tx = cloneTransaction(request.transaction);
+
+          // Use free mana sharer to pay for transaction mana
+          const freeManaSharer = activeNetwork.freeManaSharer;
+          txLogger.debug('Using free mana sharer:', freeManaSharer);
+
+          // Ensure header exists with free mana sharer as payer
+          if (!tx.header) {
+            tx.header = {
+              payer: freeManaSharer,
+              payee: request.signerAddress
+            };
+          }
+
+          // Override payer to use free mana sharer
+          tx.header.payer = freeManaSharer;
+          tx.header.payee = request.signerAddress;
+          tx.header.chain_id = activeNetwork.chainId;
+
+          // Create Transaction object for dry-run estimation
+          // We ALWAYS estimate rc_limit via dry-run because dApps may send incorrect values
+          const estimateTx = new Transaction({ signer, provider });
+
+          // Copy transaction but clear id and signatures (they'll be recalculated)
+          const txForEstimation = cloneTransaction(tx);
+          delete txForEstimation.id;
+          delete txForEstimation.signatures;
+          estimateTx.transaction = txForEstimation;
+
+          // Set rc_limit for estimation - free mana sharer has a max of 100 mana per tx
+          // 100 mana = 10,000,000,000 (10^10) in smallest units
+          const MAX_FREE_MANA = 10000000000;
+          let estimationLimit = MAX_FREE_MANA;
+          txLogger.debug('Using free mana sharer with max', MAX_FREE_MANA, 'RC (100 mana)');
+
+          // Prepare the estimation transaction
+          if (!estimateTx.transaction.header) {
+            estimateTx.transaction.header = {};
+          }
+          estimateTx.transaction.header.rc_limit = String(estimationLimit);
+
+          // Fill in nonce if missing
+          if (!estimateTx.transaction.header.nonce) {
+            await estimateTx.prepare();
+          }
+
+          // Dry-run to get actual RC usage
+          txLogger.debug('Performing dry-run estimation...');
+          let dryRunReceipt;
+          try {
+            dryRunReceipt = await estimateTx.send({ broadcast: false });
+            txLogger.debug('Dry-run receipt:', dryRunReceipt);
+          } catch (dryRunError: any) {
+            txLogger.error('Dry-run failed:', dryRunError);
+            // If dry-run fails, the transaction would fail anyway - show meaningful error
+            const errorMsg = dryRunError.message || 'Transaction would fail';
+            throw new Error(`Transaction simulation failed: ${errorMsg}`);
+          }
+
+          // Check if dry-run reverted
+          if (dryRunReceipt.reverted) {
+            const revertReason =
+              dryRunReceipt.logs?.join('; ') ||
+              (dryRunReceipt as { error_message?: string }).error_message ||
+              'Unknown error';
+            txLogger.error('Dry-run reverted:', revertReason);
+            throw new Error(`Transaction would revert: ${revertReason}`);
+          }
+
+          // Calculate rc_limit with 10% buffer (Kondor pattern)
+          const rcUsed = Number(dryRunReceipt.rc_used || 0);
+          let rcLimit = Math.floor(1.1 * rcUsed);
+          txLogger.debug('RC used:', rcUsed, '-> RC limit with 10% buffer:', rcLimit);
+
+          // Ensure we have a reasonable rc_limit
+          if (rcLimit <= 0) {
+            txLogger.warn('RC limit is 0, using fallback');
+            throw new Error('Could not estimate transaction cost');
+          }
+
+          // Cap to free mana sharer's max (100 mana)
+          if (rcLimit > MAX_FREE_MANA) {
+            txLogger.warn('Transaction needs', rcLimit, 'RC but free mana max is', MAX_FREE_MANA);
+            // For now, cap it - transaction might fail if it actually needs more
+            // TODO: Fall back to user's own mana if transaction needs more than 100 mana
+            rcLimit = MAX_FREE_MANA;
+            txLogger.debug('Capped rc_limit to', MAX_FREE_MANA);
+          }
+
+          // Now create the actual transaction with proper rc_limit
+          const txObj = new Transaction({ signer, provider });
+
+          // Copy transaction but clear id and signatures (they'll be recalculated after signing)
+          const txForSigning = cloneTransaction(tx);
+          delete txForSigning.id;
+          delete txForSigning.signatures;
+          txObj.transaction = txForSigning;
+
+          // Set the estimated rc_limit (override whatever the dApp sent)
+          if (!txObj.transaction.header) {
+            txObj.transaction.header = {};
+          }
+          txObj.transaction.header.rc_limit = String(rcLimit);
+
+          // Always prepare to calculate transaction ID and fill missing fields
+          txLogger.debug('Preparing transaction...');
+          await txObj.prepare();
+          txLogger.debug('Transaction prepared, ID:', txObj.transaction.id);
+
+          // Sign the transaction
+          await signer.signTransaction(txObj.transaction);
+
+          if (isSend) {
+            // Send the transaction
+            const receipt = await txObj.send({ broadcast: true });
+            onApprove({
+              transaction: txObj.transaction,
+              receipt,
+            });
+          } else {
+            // Just return the signed transaction
+            onApprove({
+              transaction: txObj.transaction,
+            });
+          }
+        }
       );
-
-      if (!authenticated) {
-        setSigning(false);
-        setError('Authentication required');
-        return;
-      }
-
-      HapticFeedback.success();
-
-      // Get private key from secure storage
-      let privateKey = await SecureStore.getItemAsync(`kondor_pk_${activeAccountId}`);
-      if (!privateKey) {
-        privateKey = await SecureStore.getItemAsync('kondor_wallet_private_key');
-      }
-
-      if (!privateKey) {
-        throw new Error('Private key not found');
-      }
-
-      // Create provider and signer
-      const provider = new Provider(DEFAULT_NETWORK.rpcNodes);
-
-      let signer: Signer;
-      if (privateKey.length === 64) {
-        signer = new Signer({ privateKey, provider });
-      } else {
-        signer = Signer.fromWif(privateKey);
-        signer.provider = provider;
-      }
-
-      // Prepare transaction
-      let tx = { ...request.transaction };
-
-      // Use free mana sharer to pay for transaction mana
-      const freeManaSharer = FREE_MANA_SHARER.mainnet;
-      txLogger.debug('Using free mana sharer:', freeManaSharer);
-
-      // Ensure header exists with free mana sharer as payer
-      if (!tx.header) {
-        tx.header = {
-          payer: freeManaSharer,
-          payee: request.signerAddress
-        };
-      }
-
-      // Override payer to use free mana sharer
-      tx.header.payer = freeManaSharer;
-      tx.header.payee = request.signerAddress;
-
-      if (!tx.header.chain_id) {
-        tx.header.chain_id = DEFAULT_NETWORK.chainId;
-      }
-
-      // Create Transaction object for dry-run estimation
-      // We ALWAYS estimate rc_limit via dry-run because dApps may send incorrect values
-      const estimateTx = new Transaction({ signer, provider });
-
-      // Copy transaction but clear id and signatures (they'll be recalculated)
-      const txForEstimation = { ...tx };
-      delete txForEstimation.id;
-      delete txForEstimation.signatures;
-      estimateTx.transaction = txForEstimation;
-
-      // Set rc_limit for estimation - free mana sharer has a max of 100 mana per tx
-      // 100 mana = 10,000,000,000 (10^10) in smallest units
-      const MAX_FREE_MANA = 10000000000;
-      let estimationLimit = MAX_FREE_MANA;
-      txLogger.debug('Using free mana sharer with max', MAX_FREE_MANA, 'RC (100 mana)');
-
-      // Prepare the estimation transaction
-      if (!estimateTx.transaction.header) {
-        estimateTx.transaction.header = {};
-      }
-      estimateTx.transaction.header.rc_limit = String(estimationLimit);
-
-      // Fill in nonce if missing
-      if (!estimateTx.transaction.header.nonce) {
-        await estimateTx.prepare();
-      }
-
-      // Dry-run to get actual RC usage
-      txLogger.debug('Performing dry-run estimation...');
-      let dryRunReceipt;
-      try {
-        dryRunReceipt = await estimateTx.send({ broadcast: false });
-        txLogger.debug('Dry-run receipt:', dryRunReceipt);
-      } catch (dryRunError: any) {
-        txLogger.error('Dry-run failed:', dryRunError);
-        // If dry-run fails, the transaction would fail anyway - show meaningful error
-        const errorMsg = dryRunError.message || 'Transaction would fail';
-        throw new Error(`Transaction simulation failed: ${errorMsg}`);
-      }
-
-      // Check if dry-run reverted
-      if (dryRunReceipt.reverted) {
-        const revertReason =
-          dryRunReceipt.logs?.join('; ') ||
-          (dryRunReceipt as { error_message?: string }).error_message ||
-          'Unknown error';
-        txLogger.error('Dry-run reverted:', revertReason);
-        throw new Error(`Transaction would revert: ${revertReason}`);
-      }
-
-      // Calculate rc_limit with 10% buffer (Kondor pattern)
-      const rcUsed = Number(dryRunReceipt.rc_used || 0);
-      let rcLimit = Math.floor(1.1 * rcUsed);
-      txLogger.debug('RC used:', rcUsed, '-> RC limit with 10% buffer:', rcLimit);
-
-      // Ensure we have a reasonable rc_limit
-      if (rcLimit <= 0) {
-        txLogger.warn('RC limit is 0, using fallback');
-        throw new Error('Could not estimate transaction cost');
-      }
-
-      // Cap to free mana sharer's max (100 mana)
-      if (rcLimit > MAX_FREE_MANA) {
-        txLogger.warn('Transaction needs', rcLimit, 'RC but free mana max is', MAX_FREE_MANA);
-        // For now, cap it - transaction might fail if it actually needs more
-        // TODO: Fall back to user's own mana if transaction needs more than 100 mana
-        rcLimit = MAX_FREE_MANA;
-        txLogger.debug('Capped rc_limit to', MAX_FREE_MANA);
-      }
-
-      // Now create the actual transaction with proper rc_limit
-      const txObj = new Transaction({ signer, provider });
-
-      // Copy transaction but clear id and signatures (they'll be recalculated after signing)
-      const txForSigning = { ...tx };
-      delete txForSigning.id;
-      delete txForSigning.signatures;
-      txObj.transaction = txForSigning;
-
-      // Set the estimated rc_limit (override whatever the dApp sent)
-      if (!txObj.transaction.header) {
-        txObj.transaction.header = {};
-      }
-      txObj.transaction.header.rc_limit = String(rcLimit);
-
-      // Always prepare to calculate transaction ID and fill missing fields
-      txLogger.debug('Preparing transaction...');
-      await txObj.prepare();
-      txLogger.debug('Transaction prepared, ID:', txObj.transaction.id);
-
-      // Sign the transaction
-      await signer.signTransaction(txObj.transaction);
-
-      if (isSend) {
-        // Send the transaction
-        const receipt = await txObj.send({ broadcast: true });
-        onApprove({
-          transaction: txObj.transaction,
-          receipt,
-        });
-      } else {
-        // Just return the signed transaction
-        onApprove({
-          transaction: txObj.transaction,
-        });
-      }
 
       HapticFeedback.success();
     } catch (err: any) {
@@ -405,7 +367,18 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
       setSigning(false);
       HapticFeedback.error();
     }
-  }, [request, activeAccount, activeAccountId, isSend, onApprove]);
+  }, [
+    request,
+    activeAccount,
+    requestedAccount,
+    activeNetwork.chainId,
+    activeNetwork.freeManaSharer,
+    activeNetwork.rpcNodes,
+    isSend,
+    onApprove,
+    rejectPendingRequest,
+    blockedSwapMessage,
+  ]);
 
   // Handle rejection
   const handleReject = useCallback(() => {
@@ -445,9 +418,9 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
             <Text style={styles.headerLabel}>
               Your wallet is interacting with:
             </Text>
-            <Text style={styles.appNameLarge}>{simplifiedDomain}</Text>
+            <Text style={styles.appNameLarge}>{appName || simplifiedDomain}</Text>
             <Text style={styles.appOrigin} numberOfLines={1}>
-              {appOrigin}
+              {originSecurity.displayOrigin}
             </Text>
           </View>
         </View>
@@ -463,6 +436,33 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
             style={styles.scrollContent}
             contentContainerStyle={styles.scrollContentContainer}
           >
+            <View style={styles.noticeCard}>
+              <Ionicons
+                name={originSecurity.level === 'trusted' ? 'shield-checkmark' : 'warning'}
+                size={18}
+                color={originSecurity.level === 'trusted' ? colors.success : colors.warning}
+              />
+              <View style={styles.noticeCopy}>
+                <Text style={styles.noticeTitle}>Origin and network review</Text>
+                <Text style={styles.noticeText}>
+                  {hasKoinDxSwapOperation(request?.transaction.operations)
+                    ? blockedSwapMessage
+                    : 'Review the site origin and network before approving this transaction.'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.summaryGrid}>
+              <View style={styles.summaryCard}>
+                <Text style={styles.summaryLabel}>Site Origin</Text>
+                <Text style={styles.summaryValue}>{originSecurity.displayOrigin}</Text>
+              </View>
+              <View style={styles.summaryCard}>
+                <Text style={styles.summaryLabel}>Active Network</Text>
+                <Text style={styles.summaryValue}>{activeNetwork.name}</Text>
+              </View>
+            </View>
+
             {/* Operations List */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>
@@ -489,7 +489,7 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
                       <View style={styles.operationTitleContainer}>
                         <Text style={styles.operationTitle}>{op.title}</Text>
                         <Text style={styles.operationContract} numberOfLines={1}>
-                          {decodeContract(op.contractId)}
+                          {op.details.find(detail => detail.label === 'Contract')?.value ?? op.contractId}
                         </Text>
                       </View>
                       <Ionicons
@@ -536,7 +536,7 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
                 <View style={styles.advancedCard}>
                   <Text style={styles.advancedLabel}>Signer</Text>
                   <Text style={styles.advancedValue}>
-                    {activeAccount?.name || 'Unknown'}
+                    {requestedAccount?.name || 'Unknown'}
                   </Text>
                   <Text style={styles.advancedValueSmall} numberOfLines={1}>
                     {request.signerAddress}
@@ -675,6 +675,50 @@ const styles = StyleSheet.create({
   },
   scrollContentContainer: {
     padding: 16,
+  },
+  noticeCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    gap: 12,
+  },
+  noticeCopy: {
+    flex: 1,
+  },
+  noticeTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: 4,
+  },
+  noticeText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  summaryGrid: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  summaryCard: {
+    flex: 1,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 14,
+  },
+  summaryLabel: {
+    fontSize: 12,
+    color: colors.textTertiary,
+    marginBottom: 6,
+  },
+  summaryValue: {
+    fontSize: 14,
+    color: colors.textPrimary,
+    fontWeight: '500',
   },
   section: {
     marginBottom: 16,

@@ -69,6 +69,15 @@ describe('KONDOR_PROVIDER_SCRIPT security', () => {
     );
     expect(directConsoleLogs).toHaveLength(0);
   });
+
+  it('forwards explicit getProvider network arguments to native provider commands', () => {
+    expect(KONDOR_PROVIDER_SCRIPT).toContain('function createProvider(network)');
+    expect(KONDOR_PROVIDER_SCRIPT).toContain('const provider = createProvider();');
+    expect(KONDOR_PROVIDER_SCRIPT).toContain('return createProvider(network);');
+    expect(KONDOR_PROVIDER_SCRIPT).toContain("sendToNative('provider:call', { network: network, method, params })");
+    expect(KONDOR_PROVIDER_SCRIPT).toContain("sendToNative('provider:getChainId', { network: network })");
+    expect(KONDOR_PROVIDER_SCRIPT).toContain("sendToNative('provider:getHeadInfo', { network: network })");
+  });
 });
 
 describe('command array integrity', () => {

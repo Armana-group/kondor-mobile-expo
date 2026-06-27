@@ -4,35 +4,26 @@
  * Supports multi-token transactions
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useWalletStore } from '../stores/walletStore';
 import { useTokenStore } from '../stores/tokenStore';
-import { utils } from 'koilib';
 import { txLogger } from '../lib/logger';
-import { KOINOS_REST } from '../lib/constants';
 import { fetchTransactionTimestamps } from '../lib/txHistory';
+import {
+  parseHistoryTransaction,
+  type ParsedTransaction,
+} from '../lib/transactionHistoryParser';
+import { getActiveNetworkConfig, useNetworkStore } from '../stores/networkStore';
+import {
+  PENDING_TRANSACTION_STALE_MS,
+  useTransactionStore,
+} from '../stores/transactionStore';
+
+export type { ParsedTransaction } from '../lib/transactionHistoryParser';
 
 // Cache of txId -> ms timestamp. Confirmed transactions never change, so this
 // persists across the hook's periodic refresh — only new txs trigger a lookup.
 const timestampCache = new Map<string, number>();
-
-export interface ParsedTransaction {
-  id: string;
-  type: 'send' | 'receive';
-  amount: string;
-  token: string; // Contract ID
-  tokenSymbol: string;
-  tokenDecimals: number;
-  tokenIcon?: string;
-  from: string;
-  to: string;
-  timestamp: number;
-  status: 'confirmed' | 'pending';
-  blockHeight?: number;
-  fee: string; // In mana (RC converted to decimals)
-  payer: string;
-  seqNum?: string;
-}
 
 interface TransactionStats {
   incoming: number;
@@ -51,6 +42,65 @@ interface UseTransactionHistoryResult {
 
 const REFRESH_INTERVAL = 30000; // 30 seconds
 
+interface ScopedHistoryStateParams {
+  address: string | null | undefined;
+  historyScopeKey: string;
+  settledScopeKey: string | null;
+  transactions: ParsedTransaction[];
+  loading: boolean;
+  refreshing: boolean;
+  error: string | null;
+}
+
+function getCurrentHistoryScopeKey(): string {
+  const currentAddress = useWalletStore.getState().address || '';
+  const { mode, hasHydrated } = useNetworkStore.getState();
+  return `${hasHydrated ? mode : 'mainnet'}:${currentAddress}`;
+}
+
+export function getScopedHistoryState({
+  address,
+  historyScopeKey,
+  settledScopeKey,
+  transactions,
+  loading,
+  refreshing,
+  error,
+}: ScopedHistoryStateParams): Pick<UseTransactionHistoryResult, 'transactions' | 'loading' | 'refreshing' | 'error'> {
+  if (!address) {
+    return {
+      transactions: [],
+      loading: false,
+      refreshing: false,
+      error: null,
+    };
+  }
+
+  const isSettledForActiveScope = settledScopeKey === historyScopeKey;
+  return {
+    transactions: isSettledForActiveScope ? transactions : [],
+    loading: isSettledForActiveScope ? loading : true,
+    refreshing: isSettledForActiveScope ? refreshing : false,
+    error: isSettledForActiveScope ? error : null,
+  };
+}
+
+export function mergeConfirmedAndPendingTransactions(
+  confirmedTransactions: ParsedTransaction[],
+  pendingTransactions: ParsedTransaction[]
+): ParsedTransaction[] {
+  const confirmedIds = new Set(
+    confirmedTransactions.map((transaction) => transaction.id).filter(Boolean)
+  );
+  const optimisticTransactions = pendingTransactions.filter(
+    (transaction) => !confirmedIds.has(transaction.id)
+  );
+
+  return [...optimisticTransactions, ...confirmedTransactions].sort(
+    (left, right) => right.timestamp - left.timestamp
+  );
+}
+
 /**
  * Hook to fetch and manage transaction history
  * Auto-refreshes every 30 seconds
@@ -58,84 +108,29 @@ const REFRESH_INTERVAL = 30000; // 30 seconds
  */
 export const useTransactionHistory = (): UseTransactionHistoryResult => {
   const { address } = useWalletStore();
-  const { tokens, getTokenByContractId } = useTokenStore();
+  const { getTokenByContractId } = useTokenStore();
+  const networkMode = useNetworkStore((state) => state.mode);
+  const hasHydrated = useNetworkStore((state) => state.hasHydrated);
+  const pendingTransactionScope = useMemo(
+    () => ({
+      address,
+      networkMode: hasHydrated ? networkMode : 'mainnet',
+    }),
+    [address, hasHydrated, networkMode]
+  );
+  const pendingTransactionRecords = useTransactionStore((state) => state.pendingTransactions);
+  const pendingStoreHasHydrated = useTransactionStore((state) => state.hasHydrated);
+  const pendingTransactions = useMemo(
+    () => useTransactionStore.getState().getPendingTransactions(pendingTransactionScope),
+    [pendingTransactionRecords, pendingTransactionScope]
+  );
   const [transactions, setTransactions] = useState<ParsedTransaction[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-
-  /**
-   * Parse raw transaction from REST API into our format
-   * The REST API returns decoded operations, not protobuf
-   * Now supports multi-token by looking up token metadata
-   */
-  const parseTransaction = (rawTx: any, userAddress: string): ParsedTransaction | null => {
-    try {
-      // Extract operation details
-      const operations = rawTx.trx?.transaction?.operations || [];
-      if (operations.length === 0) return null;
-
-      const operation = operations[0];
-      const callContract = operation.call_contract;
-      if (!callContract) return null;
-
-      // REST API provides already-decoded args
-      const args = callContract.args;
-      if (!args || !args.from || !args.to || !args.value) {
-        txLogger.debug('Missing required fields in args');
-        return null;
-      }
-
-      const from = args.from;
-      const to = args.to;
-      const amount = args.value;
-      const contractId = callContract.contract_id;
-
-      // Look up token metadata from store
-      const tokenInfo = getTokenByContractId(contractId);
-      const tokenSymbol = tokenInfo?.symbol || 'UNKNOWN';
-      const tokenDecimals = tokenInfo?.decimals || 8;
-      const tokenIcon = tokenInfo?.icon;
-
-      // Determine transaction type
-      const type: 'send' | 'receive' = from.toLowerCase() === userAddress.toLowerCase() ? 'send' : 'receive';
-
-      // Parse fee from receipt
-      let fee = '0';
-      if (rawTx.trx?.receipt?.rc_used) {
-        fee = utils.formatUnits(rawTx.trx.receipt.rc_used, 8);
-      }
-
-      // Get payer
-      const payer = rawTx.trx?.transaction?.header?.payer || '';
-
-      // The history list has no block time; 0 = unknown (enriched after fetch
-      // via the per-transaction endpoint). Do NOT fake Date.now() — that made
-      // every transaction read "Just now".
-      const timestamp = 0;
-
-      return {
-        id: rawTx.trx?.transaction?.id || `tx-${rawTx.seq_num}`,
-        type,
-        amount: utils.formatUnits(amount, tokenDecimals),
-        token: contractId,
-        tokenSymbol,
-        tokenDecimals,
-        tokenIcon,
-        from,
-        to,
-        timestamp,
-        status: 'confirmed',
-        blockHeight: rawTx.block_height,
-        fee,
-        payer,
-        seqNum: rawTx.seq_num
-      };
-    } catch (error) {
-      txLogger.error('Error parsing transaction:', error);
-      return null;
-    }
-  };
+  const [settledScopeKey, setSettledScopeKey] = useState<string | null>(null);
+  const activeNetwork = getActiveNetworkConfig();
+  const historyScopeKey = `${hasHydrated ? networkMode : 'mainnet'}:${address || ''}`;
 
   /**
    * Fetch transaction history from Koinos REST API
@@ -146,6 +141,7 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
       return;
     }
 
+    const requestScopeKey = historyScopeKey;
     txLogger.debug('Fetching transactions for:', address);
 
     try {
@@ -157,7 +153,7 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
       setError(null);
 
       // Fetch transaction history from REST API
-      const url = `${KOINOS_REST.history}/v1/account/${address}/history?limit=50&ascending=false`;
+      const url = `${activeNetwork.rest.history}/v1/account/${address}/history?limit=50&ascending=false`;
       txLogger.debug('Fetching from:', url);
 
       const response = await fetch(url);
@@ -172,7 +168,7 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
       const parsedTransactions: ParsedTransaction[] = [];
       if (Array.isArray(data)) {
         for (const rawTx of data) {
-          const parsed = parseTransaction(rawTx, address);
+          const parsed = parseHistoryTransaction(rawTx, address, getTokenByContractId);
           if (parsed) {
             parsedTransactions.push(parsed);
           }
@@ -188,8 +184,9 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
           .map((t) => t.id)
           .filter((id) => id && !id.startsWith('tx-')); // skip seq_num fallback ids
         const tsMap = await fetchTransactionTimestamps(realIds, {
-          baseUrl: KOINOS_REST.transaction,
+          baseUrl: activeNetwork.rest.transaction,
           cache: timestampCache,
+          cacheKeyPrefix: historyScopeKey,
         });
         for (const tx of parsedTransactions) {
           const ts = tsMap.get(tx.id);
@@ -200,35 +197,98 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
         txLogger.warn('Timestamp enrichment failed:', tsErr);
       }
 
+      useTransactionStore.getState().pruneStalePendingTransactions();
+      useTransactionStore.getState().confirmPendingTransactionsByChainIds(
+        pendingTransactionScope,
+        parsedTransactions.map((transaction) => transaction.id)
+      );
+
+      if (getCurrentHistoryScopeKey() !== requestScopeKey) {
+        return;
+      }
+      setSettledScopeKey(requestScopeKey);
       setTransactions(parsedTransactions);
     } catch (err: any) {
+      if (getCurrentHistoryScopeKey() !== requestScopeKey) {
+        return;
+      }
       txLogger.error('Fetch error:', err);
+      setSettledScopeKey(requestScopeKey);
       setError(err.message || 'Failed to fetch transaction history');
     } finally {
+      if (getCurrentHistoryScopeKey() !== requestScopeKey) {
+        return;
+      }
       setLoading(false);
       setRefreshing(false);
     }
-  }, [address]);
-
-  /**
-   * Calculate transaction statistics
-   */
-  const calculateStats = useCallback((): TransactionStats => {
-    const incoming = transactions.filter(tx => tx.type === 'receive').length;
-    const outgoing = transactions.filter(tx => tx.type === 'send').length;
-    return {
-      incoming,
-      outgoing,
-      total: transactions.length
-    };
-  }, [transactions]);
+  }, [
+    activeNetwork.rest.history,
+    activeNetwork.rest.transaction,
+    address,
+    getTokenByContractId,
+    historyScopeKey,
+    pendingTransactionScope,
+  ]);
 
   // Initial fetch
   useEffect(() => {
+    setTransactions([]);
+    setError(null);
+
     if (address) {
       fetchTransactions();
     }
-  }, [address]); // Only run on address change
+  }, [address, fetchTransactions, historyScopeKey]);
+
+  useEffect(() => {
+    useTransactionStore.getState().pruneStalePendingTransactions();
+  }, [historyScopeKey]);
+
+  useEffect(() => {
+    if (!address || !pendingStoreHasHydrated || settledScopeKey !== historyScopeKey) {
+      return;
+    }
+
+    if (pendingTransactions.length === 0) {
+      return;
+    }
+
+    const confirmedTransactionIds = new Set(
+      transactions.map((transaction) => transaction.id).filter(Boolean)
+    );
+    const hasConfirmedPending = pendingTransactions.some(
+      (transaction) => confirmedTransactionIds.has(transaction.id)
+    );
+    const now = Date.now();
+    const hasStalePending = pendingTransactions.some(
+      (transaction) => now - transaction.timestamp > PENDING_TRANSACTION_STALE_MS
+    );
+
+    if (!hasConfirmedPending && !hasStalePending) {
+      return;
+    }
+
+    const transactionStore = useTransactionStore.getState();
+    if (hasStalePending) {
+      transactionStore.pruneStalePendingTransactions(now);
+    }
+
+    if (hasConfirmedPending) {
+      transactionStore.confirmPendingTransactionsByChainIds(
+        pendingTransactionScope,
+        Array.from(confirmedTransactionIds)
+      );
+    }
+  }, [
+    address,
+    historyScopeKey,
+    pendingStoreHasHydrated,
+    pendingTransactionScope,
+    pendingTransactions,
+    settledScopeKey,
+    transactions,
+  ]);
 
   // Auto-refresh every 30 seconds
   useEffect(() => {
@@ -240,14 +300,35 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
     }, REFRESH_INTERVAL);
 
     return () => clearInterval(interval);
-  }, [address, fetchTransactions]);
+  }, [address, fetchTransactions, historyScopeKey]);
 
-  return {
+  const scopedState = getScopedHistoryState({
+    address,
+    historyScopeKey,
+    settledScopeKey,
     transactions,
     loading,
-    error,
     refreshing,
-    stats: calculateStats(),
-    refetch: () => fetchTransactions(true)
+    error,
+  });
+  const mergedTransactions = useMemo(
+    () => mergeConfirmedAndPendingTransactions(scopedState.transactions, pendingTransactions),
+    [pendingTransactions, scopedState.transactions]
+  );
+  const stats: TransactionStats = {
+    incoming: mergedTransactions.filter((tx) => tx.type === 'receive').length,
+    outgoing: mergedTransactions.filter(
+      (tx) => tx.type === 'send' || tx.type === 'swap'
+    ).length,
+    total: mergedTransactions.length,
+  };
+
+  return {
+    transactions: mergedTransactions,
+    loading: scopedState.loading,
+    error: scopedState.error,
+    refreshing: scopedState.refreshing,
+    stats,
+    refetch: () => fetchTransactions(true),
   };
 };

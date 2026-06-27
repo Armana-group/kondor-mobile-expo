@@ -1,6 +1,30 @@
 # Development Progress Summary
 
-## Latest Session: 2025-12-17 (WalletConnect Mana Fix)
+## Latest Session: 2026-06-19 (Native KoinDX Swap)
+
+### Status: ✅ IMPLEMENTED (Pending Unlocked Device Smoke)
+
+### Completed
+- Added native KoinDX swap quote and execution plumbing with manual React Native protobuf codecs.
+- Replaced the placeholder Swap tab with token selection, quote review, slippage presets, quote refresh, confirmation alerts, and execution status feedback.
+- Preserved dynamic dry-run RC estimation and kept KoinDX swaps payer-owned rather than using free-mana payer rewriting.
+- Updated dApp transaction decoding so current KoinDX approve and `swap_tokens_in` operations display with readable labels.
+- Hardened canonical KOIN/VHP routing, invalid dry-run RC handling, and dApp KoinDX swap rejection before authentication/signing.
+
+### Verification
+- `npm test -- --runInBand` passed: 16 suites, 139 tests.
+- `npx tsc --noEmit` passed.
+- Read-only KOIN-to-VHP quote check succeeded against mainnet RPC; no transaction was signed or broadcast.
+- `npm run ios` built, installed, bundled, and launched on the iPhone 15 Pro simulator.
+
+### Smoke Notes
+- Simulator launch reached the Kondor lock screen successfully.
+- The Swap tab quote/review flow still needs an unlocked wallet/device smoke test.
+- No live swap was performed and no broadcast test was attempted.
+
+---
+
+## Previous Session: 2025-12-17 (WalletConnect Mana Fix)
 
 ### Status: ✅ FIXED (Mana Estimation Bug)
 

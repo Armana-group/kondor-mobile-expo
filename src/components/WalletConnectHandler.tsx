@@ -5,15 +5,21 @@
  * Should be mounted at the app root to handle incoming requests.
  */
 
-import React, { useEffect, useCallback, useState } from 'react';
+import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { Alert } from 'react-native';
-import { Provider, Transaction, Signer, TransactionJson } from 'koilib';
-import * as SecureStore from 'expo-secure-store';
+import { Provider, Transaction, TransactionJson, utils } from 'koilib';
+import { useTokenStore } from '../stores/tokenStore';
+import {
+  buildPendingTransactionFromBroadcast,
+  useTransactionStore,
+} from '../stores/transactionStore';
 import { useWalletStore } from '../stores/walletStore';
 import {
   useWalletConnectStore,
   KOINOS_METHODS,
+  WCSigningRequest,
   WCTransactionRequest,
+  WALLETCONNECT_SEND_TRANSACTION_UNSUPPORTED_ERROR,
 } from '../stores/walletConnectStore';
 import { WCSessionApprovalModal } from './WCSessionApprovalModal';
 import {
@@ -21,29 +27,65 @@ import {
   TransactionRequest,
   SigningResult,
 } from './TransactionApprovalModal';
-import { DEFAULT_NETWORK } from '../lib/constants';
-import { requireBiometricAuth } from '../lib/biometrics';
+import {
+  DAppMessageSigningModal,
+  DAppMessageSigningRequest,
+} from './DAppMessageSigningModal';
 import { HapticFeedback } from '../lib/haptics';
+import { WALLETCONNECT_JSONRPC_UNSUPPORTED_ERROR } from '../lib/koinosRpcPolicy';
 import { wcLogger, sanitizeErrorForUser } from '../lib/logger';
+import { getActiveNetworkConfig, useNetworkStore } from '../stores/networkStore';
+
+function normalizeWalletConnectOrigin(value?: string): string {
+  if (!value) {
+    return '';
+  }
+
+  try {
+    return new URL(value).origin;
+  } catch {
+    return value;
+  }
+}
 
 export const WalletConnectHandler: React.FC = () => {
-  const { address, activeAccountId, isWalletCreated } = useWalletStore();
+  const { address, isWalletCreated } = useWalletStore();
+  const networkMode = useNetworkStore((state) => state.mode);
+  const hasHydrated = useNetworkStore((state) => state.hasHydrated);
+  const historyNetworkMode = hasHydrated ? networkMode : 'mainnet';
+  const getTokenByContractId = useTokenStore((state) => state.getTokenByContractId);
   const {
     initialized,
     initialize,
     pendingProposal,
     pendingTransaction,
+    pendingSigningRequest,
     pendingRequest,
     approveSession,
     rejectSession,
     respondToRequest,
     rejectRequest,
     clearPendingTransaction,
+    clearPendingSigningRequest,
+    reconcileSessionsForActiveNetwork,
+    getSessionTopicValidationForActiveNetwork,
   } = useWalletConnectStore();
 
   // State for transaction approval
-  const [txRequest, setTxRequest] = useState<TransactionRequest | null>(null);
-  const [currentWCRequest, setCurrentWCRequest] = useState<WCTransactionRequest | null>(null);
+  const [transactionApproval, setTransactionApproval] = useState<{
+    appName: string;
+    appOrigin: string;
+    request: TransactionRequest;
+    current: WCTransactionRequest;
+  } | null>(null);
+  const [signingApproval, setSigningApproval] = useState<{
+    request: DAppMessageSigningRequest;
+    current: WCSigningRequest;
+  } | null>(null);
+  const signingApprovalRef = useRef<{
+    request: DAppMessageSigningRequest;
+    current: WCSigningRequest;
+  } | null>(null);
 
   // Initialize WalletConnect when wallet is created
   useEffect(() => {
@@ -53,6 +95,16 @@ export const WalletConnectHandler: React.FC = () => {
       });
     }
   }, [isWalletCreated, address, initialized, initialize]);
+
+  useEffect(() => {
+    if (!initialized || !hasHydrated) {
+      return;
+    }
+
+    reconcileSessionsForActiveNetwork().catch((error) => {
+      wcLogger.error('Failed to reconcile WalletConnect sessions:', error);
+    });
+  }, [initialized, hasHydrated, networkMode, reconcileSessionsForActiveNetwork]);
 
   // Handle session approval
   const handleApproveSession = useCallback(async () => {
@@ -76,26 +128,97 @@ export const WalletConnectHandler: React.FC = () => {
 
   // Handle incoming transaction request
   useEffect(() => {
-    if (pendingTransaction) {
-      // Convert WC transaction request to TransactionRequest format
-      const txReq: TransactionRequest = {
-        signerAddress: pendingTransaction.signerAddress,
-        transaction: pendingTransaction.transaction,
-      };
-      setTxRequest(txReq);
-      setCurrentWCRequest(pendingTransaction);
-    } else {
-      setTxRequest(null);
-      setCurrentWCRequest(null);
+    if (!pendingTransaction) {
+      setTransactionApproval(null);
+      return;
     }
-  }, [pendingTransaction]);
 
-  // Handle generic requests (non-transaction)
-  useEffect(() => {
-    if (pendingRequest) {
-      handleGenericRequest();
+    const validation = getSessionTopicValidationForActiveNetwork(pendingTransaction.topic);
+
+    if (validation.status === 'defer') {
+      setTransactionApproval(null);
+      return;
     }
-  }, [pendingRequest]);
+
+    if (validation.status === 'reject') {
+      setTransactionApproval(null);
+      rejectRequest(pendingTransaction.id, pendingTransaction.topic, validation.message).catch(
+        (error) => {
+          wcLogger.error('Failed to reject invalid WalletConnect transaction request:', error);
+        }
+      );
+      return;
+    }
+
+    // Convert WC transaction request to TransactionRequest format
+    const txReq: TransactionRequest = {
+      signerAddress: pendingTransaction.signerAddress,
+      transaction: pendingTransaction.transaction,
+    };
+    setTransactionApproval({
+      appName: pendingTransaction.peerMeta.name || 'Unknown App',
+      appOrigin: normalizeWalletConnectOrigin(pendingTransaction.peerMeta.url),
+      request: txReq,
+      current: pendingTransaction,
+    });
+  }, [
+    getSessionTopicValidationForActiveNetwork,
+    hasHydrated,
+    networkMode,
+    pendingTransaction,
+    rejectRequest,
+  ]);
+
+  useEffect(() => {
+    if (!pendingSigningRequest) {
+      signingApprovalRef.current = null;
+      setSigningApproval(null);
+      return;
+    }
+
+    const validation = getSessionTopicValidationForActiveNetwork(pendingSigningRequest.topic);
+
+    if (validation.status === 'defer') {
+      signingApprovalRef.current = null;
+      setSigningApproval(null);
+      return;
+    }
+
+    if (validation.status === 'reject') {
+      signingApprovalRef.current = null;
+      setSigningApproval(null);
+      rejectRequest(pendingSigningRequest.id, pendingSigningRequest.topic, validation.message).catch(
+        (error) => {
+          wcLogger.error('Failed to reject invalid WalletConnect signing request:', error);
+        }
+      );
+      return;
+    }
+
+    const nextSigningApproval: {
+      request: DAppMessageSigningRequest;
+      current: WCSigningRequest;
+    } = {
+      request: {
+        signerAddress: pendingSigningRequest.signerAddress,
+        kind:
+          pendingSigningRequest.method === KOINOS_METHODS.SignHash
+            ? 'hash'
+            : 'message',
+        message: pendingSigningRequest.message,
+        hash: pendingSigningRequest.hash,
+      },
+      current: pendingSigningRequest,
+    };
+    signingApprovalRef.current = nextSigningApproval;
+    setSigningApproval(nextSigningApproval);
+  }, [
+    getSessionTopicValidationForActiveNetwork,
+    hasHydrated,
+    networkMode,
+    pendingSigningRequest,
+    rejectRequest,
+  ]);
 
   // Handle generic (non-signing) requests
   const handleGenericRequest = useCallback(async () => {
@@ -103,15 +226,43 @@ export const WalletConnectHandler: React.FC = () => {
 
     const { id, topic, method, params } = pendingRequest;
 
+    const validation = getSessionTopicValidationForActiveNetwork(topic);
+    if (validation.status === 'defer') {
+      return;
+    }
+
+    if (validation.status === 'reject') {
+      await rejectRequest(id, topic, validation.message);
+      return;
+    }
+
+    if (method === KOINOS_METHODS.SendTransaction) {
+      await rejectRequest(id, topic, WALLETCONNECT_SEND_TRANSACTION_UNSUPPORTED_ERROR);
+      return;
+    }
+
+    if (method === KOINOS_METHODS.JsonRpcCall) {
+      await rejectRequest(id, topic, WALLETCONNECT_JSONRPC_UNSUPPORTED_ERROR);
+      return;
+    }
+
+    const activeNetwork = getActiveNetworkConfig();
+
     try {
-      const provider = new Provider(DEFAULT_NETWORK.rpcNodes);
+      const provider = new Provider(activeNetwork.rpcNodes);
       let result: unknown;
 
       switch (method) {
         case KOINOS_METHODS.GetNonce:
-        case KOINOS_METHODS.GetNextNonce: {
+        {
           const address = (params as { address?: string })?.address || '';
           result = await provider.getNonce(address);
+          break;
+        }
+
+        case KOINOS_METHODS.GetNextNonce: {
+          const address = (params as { address?: string })?.address || '';
+          result = await provider.getNextNonce(address);
           break;
         }
 
@@ -168,7 +319,6 @@ export const WalletConnectHandler: React.FC = () => {
         case KOINOS_METHODS.PrepareTransaction: {
           // Prepare transaction without signing
           const prepParams = params as { transaction: TransactionJson };
-          const provider = new Provider(DEFAULT_NETWORK.rpcNodes);
           const txObj = new Transaction({ provider });
           txObj.transaction = prepParams.transaction;
           await txObj.prepare();
@@ -182,19 +332,6 @@ export const WalletConnectHandler: React.FC = () => {
           break;
         }
 
-        case KOINOS_METHODS.SendTransaction: {
-          // Just broadcast, don't sign
-          const sendParams = params as { transaction: TransactionJson };
-          result = await provider.sendTransaction(sendParams.transaction, true);
-          break;
-        }
-
-        case KOINOS_METHODS.JsonRpcCall: {
-          const rpcParams = params as { method: string; params: unknown };
-          result = await provider.call(rpcParams.method, rpcParams.params);
-          break;
-        }
-
         default:
           throw new Error(`Unsupported method: ${method}`);
       }
@@ -204,15 +341,44 @@ export const WalletConnectHandler: React.FC = () => {
       wcLogger.error('Request error:', error);
       await rejectRequest(id, topic, error.message || 'Request failed');
     }
-  }, [pendingRequest, respondToRequest, rejectRequest]);
+  }, [
+    getSessionTopicValidationForActiveNetwork,
+    pendingRequest,
+    rejectRequest,
+    respondToRequest,
+  ]);
+
+  // Handle generic requests (non-transaction)
+  useEffect(() => {
+    if (pendingRequest) {
+      handleGenericRequest();
+    }
+  }, [hasHydrated, networkMode, pendingRequest, handleGenericRequest]);
 
   // Handle transaction approval
   const handleApproveTransaction = useCallback(
     async (signingResult: SigningResult) => {
-      if (!currentWCRequest) return;
+      if (!transactionApproval) return;
 
       try {
-        const { id, topic, method } = currentWCRequest;
+        const { id, topic, method } = transactionApproval.current;
+        if (method === KOINOS_METHODS.SignAndSendTransaction) {
+          useTransactionStore.getState().addPendingTransaction({
+            address: transactionApproval.request.signerAddress || address || '',
+            networkMode: historyNetworkMode,
+            chainTransactionId: signingResult.transaction.id,
+            source: 'walletconnect',
+            appOrigin: transactionApproval.appOrigin,
+            transaction: buildPendingTransactionFromBroadcast({
+              address: transactionApproval.request.signerAddress || address || '',
+              chainTransactionId: signingResult.transaction.id,
+              transaction: signingResult.transaction,
+              timestamp: Date.now(),
+              receipt: signingResult.receipt as { rc_used?: string | number | bigint | null } | null | undefined,
+              getTokenByContractId,
+            }),
+          });
+        }
 
         if (method === KOINOS_METHODS.SignAndSendTransaction) {
           // Return both transaction and receipt
@@ -234,36 +400,90 @@ export const WalletConnectHandler: React.FC = () => {
         Alert.alert('Error', sanitizeErrorForUser(error, 'Failed to send response'));
       }
     },
-    [currentWCRequest, respondToRequest, clearPendingTransaction]
+    [address, clearPendingTransaction, getTokenByContractId, historyNetworkMode, respondToRequest, transactionApproval]
   );
 
   // Handle transaction rejection
   const handleRejectTransaction = useCallback(
     async (error: string) => {
-      if (!currentWCRequest) return;
+      if (!transactionApproval) return;
 
       try {
-        await rejectRequest(currentWCRequest.id, currentWCRequest.topic, error);
+        await rejectRequest(transactionApproval.current.id, transactionApproval.current.topic, error);
         clearPendingTransaction();
       } catch (err) {
         wcLogger.error('Rejection error:', err);
       }
     },
-    [currentWCRequest, rejectRequest, clearPendingTransaction]
+    [transactionApproval, rejectRequest, clearPendingTransaction]
   );
 
   // Close transaction modal
   const handleCloseTransaction = useCallback(() => {
     clearPendingTransaction();
-    setTxRequest(null);
-    setCurrentWCRequest(null);
+    setTransactionApproval(null);
   }, [clearPendingTransaction]);
+
+  const handleApproveSigningRequest = useCallback(
+    async (signature: string | Uint8Array) => {
+      const approval = signingApprovalRef.current;
+      if (!approval) {
+        return;
+      }
+
+      const livePendingSigningRequest = useWalletConnectStore.getState().pendingSigningRequest;
+      if (
+        !livePendingSigningRequest ||
+        livePendingSigningRequest.id !== approval.current.id ||
+        livePendingSigningRequest.topic !== approval.current.topic
+      ) {
+        signingApprovalRef.current = null;
+        setSigningApproval(null);
+        return;
+      }
+
+      try {
+        const result =
+          approval.current.method === KOINOS_METHODS.SignHash
+            ? utils.encodeBase64(signature as Uint8Array)
+            : utils.encodeBase64(utils.decodeBase64url(signature as string));
+
+        await respondToRequest(approval.current.id, approval.current.topic, result);
+        signingApprovalRef.current = null;
+        clearPendingSigningRequest();
+        setSigningApproval(null);
+      } catch (error: any) {
+        wcLogger.error('Signing response error:', error);
+        Alert.alert('Error', sanitizeErrorForUser(error, 'Failed to send response'));
+      }
+    },
+    [clearPendingSigningRequest, respondToRequest]
+  );
+
+  const handleRejectSigningRequest = useCallback(
+    async (error: string) => {
+      if (!signingApproval) {
+        return;
+      }
+
+      signingApprovalRef.current = null;
+      setSigningApproval(null);
+
+      try {
+        await rejectRequest(signingApproval.current.id, signingApproval.current.topic, error);
+        clearPendingSigningRequest();
+      } catch (err) {
+        wcLogger.error('Signing rejection error:', err);
+      }
+    },
+    [clearPendingSigningRequest, signingApproval, rejectRequest]
+  );
 
   return (
     <>
       {/* Session Approval Modal */}
       <WCSessionApprovalModal
-        visible={!!pendingProposal}
+        visible={hasHydrated && !!pendingProposal}
         proposal={pendingProposal}
         walletAddress={address}
         onApprove={handleApproveSession}
@@ -272,14 +492,23 @@ export const WalletConnectHandler: React.FC = () => {
 
       {/* Transaction Approval Modal */}
       <TransactionApprovalModal
-        visible={!!txRequest}
-        request={txRequest}
-        appName={currentWCRequest?.peerMeta.name || 'Unknown App'}
-        appOrigin={currentWCRequest?.peerMeta.url || ''}
-        isSend={currentWCRequest?.method === KOINOS_METHODS.SignAndSendTransaction}
+        visible={!!transactionApproval}
+        request={transactionApproval?.request || null}
+        appName={transactionApproval?.appName || 'Unknown App'}
+        appOrigin={transactionApproval?.appOrigin || ''}
+        isSend={transactionApproval?.current.method === KOINOS_METHODS.SignAndSendTransaction}
         onApprove={handleApproveTransaction}
         onReject={handleRejectTransaction}
         onClose={handleCloseTransaction}
+      />
+
+      <DAppMessageSigningModal
+        visible={!!signingApproval}
+        request={signingApproval?.request || null}
+        appName={signingApproval?.current.peerMeta.name || 'Unknown App'}
+        appOrigin={signingApproval?.current.peerMeta.url || ''}
+        onApprove={handleApproveSigningRequest}
+        onReject={handleRejectSigningRequest}
       />
     </>
   );

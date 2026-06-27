@@ -1,112 +1,101 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
   Alert,
   ScrollView,
-  ActivityIndicator,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '../components/Screen';
 import { useWalletStore } from '../stores/walletStore';
-import { HapticFeedback } from '../lib/haptics';
-import { copyWithAutoClear } from '../lib/clipboard';
-import { sanitizeErrorForUser } from '../lib/logger';
+import { useNetworkStore } from '../stores/networkStore';
+import {
+  isSendConfirmationRequired,
+  setSendConfirmationRequired as persistSendConfirmationRequired,
+} from '../services/auth';
 import colors from '../theme/colors';
 
-export const SettingsScreen = () => {
+type SettingsItem = {
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+  value?: string;
+  helperText?: string;
+  destructive?: boolean;
+};
+
+type SettingsSection = {
+  title: string;
+  items: SettingsItem[];
+};
+
+type SettingsScreenProps = {
+  onLockWallet?: () => void;
+};
+
+export const SettingsScreen = ({ onLockWallet }: SettingsScreenProps) => {
   const navigation = useNavigation<any>();
-  const { getMnemonic, getPrivateKey, clearWallet } = useWalletStore();
-  const [isLoading, setIsLoading] = useState(false);
+  const clearWallet = useWalletStore((state) => state.clearWallet);
+  const networkMode = useNetworkStore((state) => state.mode);
+  const hasHydrated = useNetworkStore((state) => state.hasHydrated);
+  const [sendConfirmationRequired, setSendConfirmationRequiredState] = useState(true);
+  const networkLabel = hasHydrated
+    ? networkMode === 'harbinger' ? 'Harbinger' : 'Mainnet'
+    : 'Loading...';
 
-  const handleViewSeedPhrase = async () => {
+  useEffect(() => {
+    let mounted = true;
+
+    void isSendConfirmationRequired()
+      .then((required) => {
+        if (mounted) {
+          setSendConfirmationRequiredState(required);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setSendConfirmationRequiredState(true);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const updateSendConfirmationRequired = async (required: boolean) => {
+    try {
+      await persistSendConfirmationRequired(required);
+      setSendConfirmationRequiredState(required);
+    } catch {
+      Alert.alert('Error', 'Failed to update send confirmation setting.');
+    }
+  };
+
+  const handleSendConfirmationToggle = () => {
+    if (!sendConfirmationRequired) {
+      void updateSendConfirmationRequired(true);
+      return;
+    }
+
     Alert.alert(
-      'View Recovery Phrase',
-      'Your recovery phrase gives full access to your wallet. Never share it with anyone.',
+      'Turn Off Send Confirmation?',
+      'Anyone with access to your unlocked wallet can send tokens without biometric confirmation. Keep this on for the strongest protection.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Continue',
-          onPress: async () => {
-            setIsLoading(true);
-            try {
-              const mnemonic = await getMnemonic();
-              if (mnemonic) {
-                Alert.alert(
-                  'Recovery Phrase',
-                  mnemonic,
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Copy',
-                      onPress: async () => {
-                        await copyWithAutoClear(mnemonic);
-                        await HapticFeedback.success();
-                        Alert.alert('Copied', 'Recovery phrase copied to clipboard. It will be cleared in 30 seconds.');
-                      },
-                    },
-                  ]
-                );
-              } else {
-                Alert.alert('Error', 'Unable to retrieve recovery phrase');
-              }
-            } catch (error: any) {
-              Alert.alert('Error', sanitizeErrorForUser(error, 'Failed to get recovery phrase'));
-            } finally {
-              setIsLoading(false);
-            }
-          },
+          text: 'Turn Off',
+          style: 'destructive',
+          onPress: () => updateSendConfirmationRequired(false),
         },
       ]
     );
   };
 
-  const handleViewPrivateKey = async () => {
-    Alert.alert(
-      'View Private Key',
-      'Your private key gives full access to your wallet. Never share it with anyone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Continue',
-          onPress: async () => {
-            setIsLoading(true);
-            try {
-              const privateKey = await getPrivateKey();
-              if (privateKey) {
-                Alert.alert(
-                  'Private Key',
-                  privateKey,
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Copy',
-                      onPress: async () => {
-                        await copyWithAutoClear(privateKey);
-                        await HapticFeedback.success();
-                        Alert.alert('Copied', 'Private key copied to clipboard. It will be cleared in 30 seconds.');
-                      },
-                    },
-                  ]
-                );
-              } else {
-                Alert.alert('Error', 'Unable to retrieve private key');
-              }
-            } catch (error: any) {
-              Alert.alert('Error', sanitizeErrorForUser(error, 'Failed to get private key'));
-            } finally {
-              setIsLoading(false);
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const handleLogout = () => {
+  const handleRemoveWallet = () => {
     Alert.alert(
       'Remove Wallet',
       'Are you sure you want to remove this wallet? Make sure you have backed up your recovery phrase.',
@@ -118,8 +107,7 @@ export const SettingsScreen = () => {
           onPress: async () => {
             try {
               await clearWallet();
-              // Navigation will be handled by AppNavigator when wallet is cleared
-            } catch (error: any) {
+            } catch {
               Alert.alert('Error', 'Failed to remove wallet');
             }
           },
@@ -128,15 +116,90 @@ export const SettingsScreen = () => {
     );
   };
 
+  const sections: SettingsSection[] = [
+    {
+      title: 'Wallet',
+      items: [
+        {
+          label: 'Manage Accounts',
+          icon: 'wallet-outline',
+          onPress: () => navigation.navigate('ManageAccounts'),
+        },
+        {
+          label: 'Manage Tokens',
+          icon: 'logo-bitcoin',
+          onPress: () => navigation.navigate('TokenManagement'),
+        },
+        {
+          label: 'Contacts',
+          icon: 'people-outline',
+          onPress: () => navigation.getParent()?.navigate('Contacts'),
+        },
+      ],
+    },
+    {
+      title: 'Security',
+      items: [
+        {
+          label: 'Security & Privacy',
+          icon: 'shield-checkmark-outline',
+          onPress: () => navigation.navigate('SecurityPrivacy'),
+        },
+        {
+          label: 'Backup & Recovery',
+          icon: 'cloud-upload-outline',
+          onPress: () => navigation.navigate('BackupRecovery'),
+        },
+        {
+          label: 'Require confirmation before sending',
+          icon: 'shield-checkmark-outline',
+          value: sendConfirmationRequired ? 'On' : 'Off',
+          helperText: sendConfirmationRequired
+            ? undefined
+            : 'Less secure: sends will not ask for biometrics.',
+          onPress: handleSendConfirmationToggle,
+        },
+        {
+          label: 'Lock Wallet',
+          icon: 'lock-closed-outline',
+          onPress: () => onLockWallet?.(),
+        },
+      ],
+    },
+    {
+      title: 'Connections',
+      items: [
+        {
+          label: 'Connected Sites',
+          icon: 'globe-outline',
+          onPress: () => navigation.navigate('ConnectedSites'),
+        },
+        {
+          label: 'Network',
+          icon: 'git-network-outline',
+          value: networkLabel,
+          onPress: () => navigation.navigate('NetworkSettings'),
+        },
+      ],
+    },
+    {
+      title: 'Danger Zone',
+      items: [
+        {
+          label: 'Remove Wallet',
+          icon: 'trash-outline',
+          onPress: handleRemoveWallet,
+          destructive: true,
+        },
+      ],
+    },
+  ];
+
   return (
     <Screen scroll={false}>
       <View style={styles.container}>
-        {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
+          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
             <Ionicons name="chevron-back" size={28} color={colors.purple} />
           </TouchableOpacity>
           <Text style={styles.title}>Settings</Text>
@@ -144,87 +207,52 @@ export const SettingsScreen = () => {
         </View>
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {/* Security Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Security</Text>
+          {sections.map((section) => (
+            <View key={section.title} style={styles.section}>
+              <Text style={styles.sectionTitle}>{section.title}</Text>
+              {section.items.map((item, index) => {
+                const color = item.destructive ? colors.error : colors.purple;
+                const textColor = item.destructive ? colors.error : colors.textPrimary;
 
-            <TouchableOpacity
-              style={styles.settingItem}
-              onPress={handleViewSeedPhrase}
-              disabled={isLoading}
-            >
-              <View style={styles.settingItemLeft}>
-                <Ionicons name="shield-outline" size={22} color={colors.purple} />
-                <Text style={styles.settingItemText}>View Recovery Phrase</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
-            </TouchableOpacity>
+                return (
+                  <React.Fragment key={item.label}>
+                    <TouchableOpacity style={styles.settingItem} onPress={item.onPress}>
+                      <View style={styles.settingItemLeft}>
+                        <Ionicons name={item.icon} size={22} color={color} />
+                        <View style={styles.settingItemLabelWrap}>
+                          <Text style={[styles.settingItemText, { color: textColor }]}>
+                            {item.label}
+                          </Text>
+                          {item.helperText ? (
+                            <Text style={styles.settingItemHelper}>{item.helperText}</Text>
+                          ) : null}
+                        </View>
+                      </View>
 
-            <View style={styles.separator} />
-
-            <TouchableOpacity
-              style={styles.settingItem}
-              onPress={handleViewPrivateKey}
-              disabled={isLoading}
-            >
-              <View style={styles.settingItemLeft}>
-                <Ionicons name="key-outline" size={22} color={colors.purple} />
-                <Text style={styles.settingItemText}>View Private Key</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Network Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Network</Text>
-
-            <View style={styles.settingItem}>
-              <View style={styles.settingItemLeft}>
-                <Ionicons name="globe-outline" size={22} color={colors.purple} />
-                <Text style={styles.settingItemText}>Network</Text>
-              </View>
-              <Text style={styles.settingItemValue}>Mainnet</Text>
+                      {item.value ? (
+                        <View style={styles.settingItemRight}>
+                          <Text style={styles.settingItemValue}>{item.value}</Text>
+                          <Ionicons
+                            name="chevron-forward"
+                            size={20}
+                            color={colors.textTertiary}
+                          />
+                        </View>
+                      ) : (
+                        <Ionicons
+                          name="chevron-forward"
+                          size={20}
+                          color={colors.textTertiary}
+                        />
+                      )}
+                    </TouchableOpacity>
+                    {index < section.items.length - 1 && <View style={styles.separator} />}
+                  </React.Fragment>
+                );
+              })}
             </View>
-          </View>
-
-          {/* About Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>About</Text>
-
-            <View style={styles.settingItem}>
-              <View style={styles.settingItemLeft}>
-                <Ionicons name="information-circle-outline" size={22} color={colors.purple} />
-                <Text style={styles.settingItemText}>Version</Text>
-              </View>
-              <Text style={styles.settingItemValue}>1.0.0</Text>
-            </View>
-          </View>
-
-          {/* Danger Zone */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Danger Zone</Text>
-
-            <TouchableOpacity
-              style={styles.settingItem}
-              onPress={handleLogout}
-            >
-              <View style={styles.settingItemLeft}>
-                <Ionicons name="trash-outline" size={22} color={colors.error} />
-                <Text style={[styles.settingItemText, { color: colors.error }]}>
-                  Remove Wallet
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
-            </TouchableOpacity>
-          </View>
+          ))}
         </ScrollView>
-
-        {isLoading && (
-          <View style={styles.loadingOverlay}>
-            <ActivityIndicator size="large" color={colors.purple} />
-          </View>
-        )}
       </View>
     </Screen>
   );
@@ -237,70 +265,82 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 12,
     paddingBottom: 16,
   },
   backButton: {
-    padding: 4,
-    marginRight: 8,
-  },
-  title: {
-    flex: 1,
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: colors.textPrimary,
-    textAlign: 'center',
+    width: 40,
   },
   headerSpacer: {
-    width: 36,
+    width: 40,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.textPrimary,
   },
   content: {
     flex: 1,
+    paddingHorizontal: 20,
   },
   section: {
-    marginTop: 24,
-    paddingHorizontal: 20,
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    marginBottom: 16,
+    overflow: 'hidden',
   },
   sectionTitle: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.textTertiary,
+    color: colors.textSecondary,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
     textTransform: 'uppercase',
-    marginBottom: 12,
-    letterSpacing: 0.5,
   },
   settingItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: colors.card,
-    paddingVertical: 16,
+    minHeight: 58,
     paddingHorizontal: 16,
-    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   settingItemLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
     gap: 12,
+  },
+  settingItemLabelWrap: {
+    flex: 1,
   },
   settingItemText: {
     fontSize: 16,
-    color: colors.textPrimary,
     fontWeight: '500',
+    color: colors.textPrimary,
+  },
+  settingItemHelper: {
+    fontSize: 12,
+    lineHeight: 16,
+    color: colors.warning,
+    marginTop: 3,
+  },
+  settingItemRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   settingItemValue: {
-    fontSize: 15,
+    fontSize: 14,
+    fontWeight: '500',
     color: colors.textSecondary,
   },
   separator: {
-    height: 8,
-  },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.border,
+    marginLeft: 50,
   },
 });

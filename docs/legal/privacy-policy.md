@@ -23,6 +23,7 @@ All sensitive information is stored locally on your device and never transmitted
 
 - **Recovery phrase (seed phrase)** - Encrypted and stored in your device's secure storage
 - **Private keys** - Encrypted and stored in your device's secure storage
+- **Encrypted wallet backups** - Backup files may include encrypted recovery phrases and private keys. Kondor never stores or receives the plaintext recovery phrase, private keys, or backup recovery key.
 - **Wallet addresses** - Stored locally for display purposes
 - **Contacts** - Stored locally on your device
 - **Transaction history** - Cached locally for performance

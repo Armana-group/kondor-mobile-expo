@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -16,75 +16,217 @@ import * as Clipboard from 'expo-clipboard';
 import { useNavigation } from '@react-navigation/native';
 import { Screen } from '../components/Screen';
 import { AccountSwitcher } from '../components/AccountSwitcher';
+import { BackupStatusNotice } from '../components/BackupStatusNotice';
 import { useWalletStore } from '../stores/walletStore';
 import { useKoinosStore } from '../stores/koinosStore';
-import { useTokenStore, Token } from '../stores/tokenStore';
+import {
+  useTokenStore,
+  Token,
+  getVisibleTokens,
+  getScopedTokens,
+  isTokenScopeLoading,
+} from '../stores/tokenStore';
+import { useNetworkStore } from '../stores/networkStore';
+import { useTransactionStore } from '../stores/transactionStore';
+import { tokenPriceService } from '../lib/tokenPrices';
 import { truncateAddress, formatKoinBalance } from '../lib/utils';
 import { HapticFeedback } from '../lib/haptics';
 import { koinosLogger, sanitizeErrorForUser } from '../lib/logger';
+import { MAINNET, TESTNET } from '../lib/constants';
 import colors from '../theme/colors';
+
+const USD_FORMATTER = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  maximumFractionDigits: 2,
+});
 
 export const HomeScreen = () => {
   const navigation = useNavigation<any>();
-  const { address, balance, updateBalance, accounts, getActiveAccount } = useWalletStore();
+  const { address, updateBalance, accounts, getActiveAccount, backupHealth } = useWalletStore();
   const { getBalance, getMana, initialize, reset: resetKoinos } = useKoinosStore();
-  const { tokens, isLoading: tokensLoading, initialize: initializeTokens, refreshBalances } = useTokenStore();
+  const {
+    tokens,
+    isLoading: tokensLoading,
+    cacheKey: tokenCacheKey,
+    initialize: initializeTokens,
+    refreshBalances,
+    reset: resetTokens,
+  } = useTokenStore();
+  const networkMode = useNetworkStore((state) => state.mode);
+  const hasHydrated = useNetworkStore((state) => state.hasHydrated);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isInitialized, setIsInitialized] = useState(false);
   const [manaPercentage, setManaPercentage] = useState<number>(0);
   const [showAccountSwitcher, setShowAccountSwitcher] = useState(false);
+  const [portfolioValueUsd, setPortfolioValueUsd] = useState<number | null>(null);
+  const [portfolioPricingCycle, setPortfolioPricingCycle] = useState<{
+    scope: string;
+    version: number;
+  } | null>(null);
+  const initializedScopeRef = useRef<string | null>(null);
 
   // Get active account info
   const activeAccount = getActiveAccount();
+  const initializationScope = hasHydrated && address ? `${networkMode}:${address}` : null;
+  const scopedTokens = useMemo(
+    () => getScopedTokens({
+      hasHydrated,
+      networkMode,
+      address,
+      cacheKey: tokenCacheKey,
+      tokens,
+    }),
+    [address, hasHydrated, networkMode, tokenCacheKey, tokens]
+  );
+  const visibleTokens = useMemo(
+    () => getVisibleTokens(scopedTokens),
+    [scopedTokens]
+  );
+  const tokenScopeLoading = isTokenScopeLoading({
+    hasHydrated,
+    networkMode,
+    address,
+    cacheKey: tokenCacheKey,
+    isLoading: tokensLoading,
+  });
+  const pendingTransactionCount = useTransactionStore((state) => state.getPendingTransactions({
+    address,
+    networkMode: hasHydrated ? networkMode : 'mainnet',
+  }).length);
 
   // Core balance fetching logic (silent - no spinner)
   const fetchBalances = useCallback(async () => {
-    if (!address) {
+    if (!address || !hasHydrated) {
       koinosLogger.debug('No address, skipping balance refresh');
       return;
     }
 
+    const requestScope = `${networkMode}:${address}`;
     koinosLogger.debug('Fetching balances for address:', address);
     try {
+      setPortfolioPricingCycle(null);
+
       // Refresh token balances
       await refreshBalances(address);
 
       // Get KOIN balance for portfolio display
       const newBalance = await getBalance(address);
+      if (initializedScopeRef.current !== requestScope) {
+        koinosLogger.debug('Skipping stale balance write for scope:', requestScope);
+        return;
+      }
       koinosLogger.debug('Balance fetched successfully:', newBalance);
       updateBalance(newBalance);
 
       // Fetch mana
       try {
         const manaData = await getMana(address);
+        if (initializedScopeRef.current !== requestScope) {
+          koinosLogger.debug('Skipping stale mana write for scope:', requestScope);
+          return;
+        }
         koinosLogger.debug('Mana fetched successfully:', manaData);
         setManaPercentage(manaData.availablePercentage);
       } catch (manaError: any) {
         koinosLogger.error('Mana fetch error:', manaError);
       }
+
+      if (initializedScopeRef.current !== requestScope) {
+        koinosLogger.debug('Skipping stale portfolio refresh write for scope:', requestScope);
+        return;
+      }
+
+      setPortfolioPricingCycle((current) => (
+        current?.scope === requestScope
+          ? { scope: requestScope, version: current.version + 1 }
+          : { scope: requestScope, version: 1 }
+      ));
     } catch (error: any) {
       koinosLogger.error('Balance fetch error:', error);
     }
-  }, [address, refreshBalances, getBalance, updateBalance, getMana]);
+  }, [address, hasHydrated, networkMode, refreshBalances, getBalance, updateBalance, getMana]);
 
   // Initialize on first load (silent)
   const initializeAndLoadBalance = useCallback(async () => {
+    if (!initializationScope || !address) {
+      initializedScopeRef.current = null;
+      return;
+    }
+
+    if (initializedScopeRef.current === initializationScope) {
+      return;
+    }
+
     try {
-      if (!isInitialized && address) {
-        await initialize();
-        await initializeTokens(address);
-        setIsInitialized(true);
-        await fetchBalances();
-      }
+      initializedScopeRef.current = initializationScope;
+      setManaPercentage(0);
+      updateBalance('0');
+      setPortfolioValueUsd(null);
+      setPortfolioPricingCycle(null);
+      resetKoinos();
+      resetTokens();
+      await initialize();
+      await initializeTokens(address);
+      await fetchBalances();
     } catch (error: any) {
+      initializedScopeRef.current = null;
       koinosLogger.error('Failed to initialize:', error);
     }
-  }, [isInitialized, address, initialize, initializeTokens, fetchBalances]);
+  }, [address, initializationScope, initialize, initializeTokens, fetchBalances, resetKoinos, resetTokens, updateBalance]);
 
-  // Only run on initial mount, not on every focus
   useEffect(() => {
+    if (!initializationScope) {
+      initializedScopeRef.current = null;
+      setPortfolioValueUsd(null);
+      setPortfolioPricingCycle(null);
+      return;
+    }
+
     initializeAndLoadBalance();
-  }, [initializeAndLoadBalance]);
+  }, [initializationScope, initializeAndLoadBalance]);
+
+  useEffect(() => {
+    const activeProvider = useKoinosStore.getState().provider;
+
+    if (
+      !initializationScope ||
+      !activeProvider ||
+      !portfolioPricingCycle ||
+      portfolioPricingCycle.scope !== initializationScope ||
+      visibleTokens.length === 0
+    ) {
+      setPortfolioValueUsd(null);
+      return;
+    }
+
+    if (tokenScopeLoading || visibleTokens.some((token) => token.isLoading)) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void tokenPriceService.getPortfolioValue({
+      provider: activeProvider,
+      networkMode,
+      tokens: visibleTokens,
+    }).then((result) => {
+      if (cancelled) {
+        return;
+      }
+
+      setPortfolioValueUsd(result.totalUsd);
+    }).catch(() => {
+      if (cancelled) {
+        return;
+      }
+
+      setPortfolioValueUsd(null);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initializationScope, networkMode, portfolioPricingCycle, tokenScopeLoading, visibleTokens]);
 
   // Manual pull-to-refresh (with spinner)
   const handleManualRefresh = async () => {
@@ -99,14 +241,17 @@ export const HomeScreen = () => {
   };
 
   // Calculate total portfolio value (for now just sum of balances, no USD)
-  const totalBalance = tokens.reduce((sum, token) => {
-    const bal = parseFloat(token.balance) || 0;
-    return sum + bal;
-  }, 0);
-
-  // Get KOIN balance for display
-  const koinToken = tokens.find(t => t.symbol === 'KOIN');
-  const koinBalance = koinToken?.balance || balance || '0';
+  // Get native token balance for display.
+  const nativeTokenContractId = networkMode === 'harbinger'
+    ? TESTNET.koinContract
+    : MAINNET.koinContract;
+  const nativeTokenSymbol = networkMode === 'harbinger' ? 'tKOIN' : 'KOIN';
+  const nativeToken = scopedTokens.find((token) => token.contractId === nativeTokenContractId)
+    || scopedTokens.find((token) => token.symbol.toLowerCase() === nativeTokenSymbol.toLowerCase())
+    || (networkMode === 'mainnet'
+      ? scopedTokens.find((token) => token.symbol === 'KOIN')
+      : undefined);
+  const nativeTokenBalance = nativeToken?.balance || '0';
 
   // Handle token press - navigate to token detail
   const handleTokenPress = (token: Token) => {
@@ -154,6 +299,10 @@ export const HomeScreen = () => {
 
   const handleReceive = () => {
     navigation.navigate('Receive');
+  };
+
+  const handleBackupPress = () => {
+    navigation.navigate('Settings', { screen: 'BackupRecovery' });
   };
 
   const getManaColor = () => {
@@ -206,6 +355,21 @@ export const HomeScreen = () => {
           <View style={styles.headerActions}>
             <TouchableOpacity
               style={styles.headerButton}
+              onPress={() => navigation.navigate('Activity', pendingTransactionCount > 0 ? {
+                initialFilter: 'pending',
+              } : undefined)}
+            >
+              <Ionicons name="time-outline" size={22} color={colors.textSecondary} />
+              {pendingTransactionCount > 0 && (
+                <View style={styles.headerButtonBadge}>
+                  <Text style={styles.headerButtonBadgeText}>
+                    {pendingTransactionCount > 9 ? '9+' : pendingTransactionCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.headerButton}
               onPress={() => navigation.navigate('Contacts')}
             >
               <Ionicons name="people-outline" size={22} color={colors.textSecondary} />
@@ -224,8 +388,13 @@ export const HomeScreen = () => {
           <Text style={styles.portfolioLabel}>Portfolio</Text>
           <Text style={styles.portfolioSubLabel}>Total Balance</Text>
           <Text style={styles.portfolioValue}>
-            {formatKoinBalance(koinBalance)} KOIN
+            {formatKoinBalance(nativeTokenBalance)} {nativeTokenSymbol}
           </Text>
+          {portfolioValueUsd != null && (
+            <Text style={styles.portfolioUsdValue}>
+              {USD_FORMATTER.format(portfolioValueUsd)}
+            </Text>
+          )}
 
           {/* Mana Bar */}
           <View style={styles.manaContainer}>
@@ -248,6 +417,8 @@ export const HomeScreen = () => {
             </View>
           </View>
         </View>
+
+        <BackupStatusNotice backupHealth={backupHealth} onPress={handleBackupPress} />
 
         {/* Action Buttons */}
         <View style={styles.actions}>
@@ -286,15 +457,15 @@ export const HomeScreen = () => {
         <View style={styles.tokensSection}>
           <View style={styles.tokensSectionHeader}>
             <Text style={styles.sectionTitle}>Tokens</Text>
-            <Text style={styles.tokenCount}>{tokens.length}</Text>
+            <Text style={styles.tokenCount}>{visibleTokens.length}</Text>
           </View>
-          {tokens.length === 0 && tokensLoading ? (
+          {visibleTokens.length === 0 && tokenScopeLoading ? (
             <View style={styles.loadingContainer}>
               <Text style={styles.loadingText}>Loading tokens...</Text>
             </View>
           ) : (
             <FlatList
-              data={tokens}
+              data={visibleTokens}
               keyExtractor={(item) => item.contractId}
               renderItem={renderTokenItem}
               scrollEnabled={false}
@@ -322,12 +493,8 @@ export const HomeScreen = () => {
         onAccountSwitch={() => {
           // Reset koinos store to re-initialize with new account's private key
           resetKoinos();
-          // Reset initialization to reload balances for new account
-          setIsInitialized(false);
-          // Refresh balance and mana for new account (silent refresh)
-          setTimeout(() => {
-            fetchBalances();
-          }, 100);
+          resetTokens();
+          initializedScopeRef.current = null;
         }}
       />
     </Screen>
@@ -421,6 +588,24 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     justifyContent: 'center',
     alignItems: 'center',
+    position: 'relative',
+  },
+  headerButtonBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    backgroundColor: colors.warning,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerButtonBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.background,
   },
   portfolioCard: {
     marginHorizontal: 16,
@@ -444,7 +629,12 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: 'bold',
     color: colors.textPrimary,
+  },
+  portfolioUsdValue: {
+    marginTop: 6,
     marginBottom: 20,
+    fontSize: 15,
+    color: colors.textSecondary,
   },
   manaContainer: {
     paddingTop: 16,

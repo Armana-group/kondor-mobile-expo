@@ -28,6 +28,13 @@ export interface FetchTimestampsOptions {
   /** Cache of txId -> ms timestamp. Confirmed txs never change, so this avoids
    *  refetching on the history hook's periodic refresh. Pass a persistent Map. */
   cache?: Map<string, number>;
+  /** Optional scope prefix so different network/address histories never share
+   *  the same cached timestamp entry for an identical tx id. */
+  cacheKeyPrefix?: string;
+}
+
+export function buildTxTimestampCacheKey(id: string, prefix?: string): string {
+  return prefix ? `${prefix}:${id}` : id;
 }
 
 /**
@@ -39,12 +46,17 @@ export async function fetchTransactionTimestamps(
   ids: string[],
   opts: FetchTimestampsOptions
 ): Promise<Map<string, number>> {
-  const { baseUrl, fetchImpl = fetch, cache = new Map<string, number>() } = opts;
+  const {
+    baseUrl,
+    fetchImpl = fetch,
+    cache = new Map<string, number>(),
+    cacheKeyPrefix,
+  } = opts;
   const result = new Map<string, number>();
   const toFetch: string[] = [];
 
   for (const id of ids) {
-    const cached = cache.get(id);
+    const cached = cache.get(buildTxTimestampCacheKey(id, cacheKeyPrefix));
     if (cached !== undefined) result.set(id, cached);
     else if (id) toFetch.push(id);
   }
@@ -60,7 +72,7 @@ export async function fetchTransactionTimestamps(
         const data = await resp.json();
         const ts = parseTransactionTimestamp(data);
         if (ts !== undefined) {
-          cache.set(id, ts);
+          cache.set(buildTxTimestampCacheKey(id, cacheKeyPrefix), ts);
           result.set(id, ts);
         }
       } catch {
