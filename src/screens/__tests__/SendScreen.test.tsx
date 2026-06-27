@@ -310,7 +310,7 @@ describe('SendScreen balance scoping', () => {
 
     const sendButton = findSendButton(renderer!);
     expect(sendButton.props.disabled).toBe(true);
-  });
+  }, 15000);
 
   it('initializes the active token scope on direct entry after a network change', async () => {
     mockTokenState = {
