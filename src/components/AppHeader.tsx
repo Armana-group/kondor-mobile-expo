@@ -36,7 +36,9 @@ export const AppHeader = ({
     >
       <Ionicons name="chevron-back" size={layout.header.iconSize} color={colors.purple} />
     </Pressable>
-    <Text style={styles.title}>{title}</Text>
+    <Text numberOfLines={1} style={[styles.title, styles.titleFlexible]}>
+      {title}
+    </Text>
     <View style={styles.sideButton}>{rightAccessory}</View>
   </View>
 );
@@ -59,6 +61,12 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     color: colors.textPrimary,
+  },
+  titleFlexible: {
+    flex: 1,
+    flexShrink: 1,
+    textAlign: 'center',
+    marginHorizontal: 8,
   },
   pressed: {
     opacity: 0.65,

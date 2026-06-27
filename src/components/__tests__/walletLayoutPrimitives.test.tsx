@@ -30,6 +30,12 @@ describe('wallet layout primitives', () => {
     });
 
     expect(renderedText(renderer!)).toContain('Security & Privacy');
+    expect(renderer!.root.findByType(Text).props.numberOfLines).toBe(1);
+    expect(renderer!.root.findByType(Text).props.style).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ flexShrink: 1, textAlign: 'center' }),
+      ])
+    );
 
     await act(async () => {
       renderer!.root.findByProps({ accessibilityLabel: 'Go back' }).props.onPress();
@@ -78,6 +84,22 @@ describe('wallet layout primitives', () => {
     expect(renderer!.root.findByType(Switch).props.accessibilityLabel).toBe('Require biometrics for sends');
     expect(renderer!.root.findByProps({ testID: 'settings-row-trailing-control' }).props.style)
       .toEqual(expect.arrayContaining([expect.objectContaining({ width: layout.row.controlColumnWidth })]));
+  });
+
+  it('renders no-icon row separators without icon inset spacing', async () => {
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <SettingsSection title="Security">
+          <SettingsRow label="Every transaction" showSeparator showChevron={false} />
+        </SettingsSection>
+      );
+    });
+
+    expect(
+      renderer!.root.findByProps({ testID: 'settings-row-separator-Every transaction' }).props.style
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ marginLeft: 0 })]));
   });
 
   it('renders compact inline warnings with consistent copy', async () => {

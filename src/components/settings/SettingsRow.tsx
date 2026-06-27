@@ -53,6 +53,7 @@ export const SettingsRow = ({
   const textColor = destructive ? colors.error : colors.textPrimary;
   const resolvedIconColor = iconColor ?? (destructive ? colors.error : colors.purple);
   const shouldShowChevron = Boolean(showChevron && onPress && !control && !selected);
+  const separatorInset = icon ? layout.separator.insetWithIcon : 0;
 
   return (
     <>
@@ -97,7 +98,12 @@ export const SettingsRow = ({
           <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
         ) : null}
       </Pressable>
-      {showSeparator ? <View style={styles.separator} /> : null}
+      {showSeparator ? (
+        <View
+          style={[styles.separator, { marginLeft: separatorInset }]}
+          testID={testID ? `${testID}-separator` : `settings-row-separator-${label}`}
+        />
+      ) : null}
     </>
   );
 };
@@ -159,7 +165,6 @@ const styles = StyleSheet.create({
   separator: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: colors.border,
-    marginLeft: layout.separator.insetWithIcon,
   },
   pressed: {
     opacity: 0.65,
