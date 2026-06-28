@@ -9,6 +9,8 @@ export const colors = {
   card: '#1A1A1A',            // Card backgrounds
   elevated: '#272727',        // neutral-800 - Elevated surfaces, hover states
   border: '#404040',          // neutral-700 - Borders, dividers
+  glassFallback: 'rgba(31, 31, 34, 0.72)',
+  glassBorder: 'rgba(255, 255, 255, 0.10)',
 
   // Text
   textPrimary: '#FFFFFF',     // white - Primary text

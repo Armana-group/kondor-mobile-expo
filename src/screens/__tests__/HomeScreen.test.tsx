@@ -3,6 +3,7 @@ import { Switch } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import type { BackupHealth } from '../../lib/backupHealth';
 import { TESTNET } from '../../lib/constants';
+import { NativeMaterialSurface } from '../../components/NativeMaterialSurface';
 
 jest.mock('@expo/vector-icons', () => ({
   Ionicons: 'Ionicons',
@@ -604,6 +605,41 @@ describe('HomeScreen network initialization', () => {
 
     const renderedText = collectRenderedText(renderer!).join(' ');
     expect(renderedText).not.toContain('$0.00');
+  });
+
+  it('uses native material surfaces for the primary wallet chrome', async () => {
+    mockNetworkState = {
+      mode: 'mainnet',
+      hasHydrated: true,
+    };
+    mockTokenState = {
+      tokens: [
+        {
+          contractId: 'koin-contract',
+          symbol: 'KOIN',
+          name: 'Koinos',
+          decimals: 8,
+          icon: '',
+          balance: '12.34000000',
+          isLoading: false,
+        },
+      ],
+      isLoading: false,
+      cacheKey: `mainnet:${mockAddress}`,
+    };
+
+    const { HomeScreen } = require('../HomeScreen');
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<HomeScreen />);
+    });
+    await flushEffects();
+
+    expect(renderer!.root.findByProps({ testID: 'home-portfolio-card' }).type)
+      .toBe(NativeMaterialSurface);
+    expect(renderer!.root.findByProps({ testID: 'home-token-surface-koin-contract' }).type)
+      .toBe(NativeMaterialSurface);
   });
 
   it('keeps the headline KOIN balance even when KOIN is hidden from the token list', async () => {

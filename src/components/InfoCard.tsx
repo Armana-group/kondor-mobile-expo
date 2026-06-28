@@ -6,6 +6,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import { NativeMaterialSurface } from './NativeMaterialSurface';
 import colors from '../theme/colors';
 import { layout } from '../theme/layout';
 
@@ -24,17 +25,15 @@ export const InfoCard = ({
   style,
   testID = 'info-card',
 }: InfoCardProps) => (
-  <View style={[styles.card, style]} testID={testID}>
+  <NativeMaterialSurface variant="card" style={[styles.card, style]} testID={testID}>
     <Text style={styles.title}>{title}</Text>
     {body ? <Text style={styles.body}>{body}</Text> : null}
     {children ? <View style={styles.children}>{children}</View> : null}
-  </View>
+  </NativeMaterialSurface>
 );
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.card,
-    borderRadius: layout.card.radius,
     padding: layout.card.padding,
     marginBottom: layout.section.gap,
   },

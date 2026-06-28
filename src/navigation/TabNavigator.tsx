@@ -1,9 +1,7 @@
 import React from 'react';
-import { StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
 
 // Screens
 import { HomeScreen } from '../screens/HomeScreen';
@@ -27,15 +25,17 @@ import { TokenDetailScreen } from '../screens/TokenDetailScreen';
 import { DAppWebViewScreen } from '../screens/DAppWebViewScreen';
 import { AccountSwitcher } from '../components/AccountSwitcher';
 
-// Theme
-import colors from '../theme/colors';
-
 // Stores
 import { Token } from '../stores/tokenStore';
 import { DApp } from '../constants/dapps';
 import type { NFT } from '../lib/nftService';
 import { useKoinosStore } from '../stores/koinosStore';
 import { useTokenStore } from '../stores/tokenStore';
+import {
+  createTabBarIcon,
+  getTabNavigatorScreenOptions,
+  TAB_BAR_SYMBOLS,
+} from './tabBarStyling';
 
 // Types
 export type SettingsStackParamList = {
@@ -82,9 +82,6 @@ const HomeStack = createNativeStackNavigator<HomeStackParamList>();
 const AppsStack = createNativeStackNavigator<AppsStackParamList>();
 const CollectiblesStack = createNativeStackNavigator<CollectiblesStackParamList>();
 const SettingsStack = createNativeStackNavigator<SettingsStackParamList>();
-
-// Icon name type for Ionicons
-type IoniconsName = keyof typeof Ionicons.glyphMap;
 
 const ManageAccountsScreen = () => {
   const navigation = useNavigation<any>();
@@ -203,21 +200,13 @@ type TabNavigatorProps = {
 export const TabNavigator = ({ onLockWallet }: TabNavigatorProps) => {
   return (
     <Tab.Navigator
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle: styles.tabBar,
-        tabBarActiveTintColor: colors.purple,
-        tabBarInactiveTintColor: colors.textTertiary,
-        tabBarLabelStyle: styles.tabBarLabel,
-      }}
+      screenOptions={getTabNavigatorScreenOptions()}
     >
       <Tab.Screen
         name="HomeTab"
         options={{
           tabBarLabel: 'Home',
-          tabBarIcon: ({ focused, color }) => (
-            <Ionicons name={focused ? 'home' : 'home-outline'} size={24} color={color} />
-          ),
+          tabBarIcon: createTabBarIcon(TAB_BAR_SYMBOLS.home),
         }}
       >
         {() => <HomeStackNavigator onLockWallet={onLockWallet} />}
@@ -227,9 +216,7 @@ export const TabNavigator = ({ onLockWallet }: TabNavigatorProps) => {
         component={CollectiblesStackNavigator}
         options={{
           tabBarLabel: 'Collectibles',
-          tabBarIcon: ({ focused, color }) => (
-            <Ionicons name={focused ? 'grid' : 'grid-outline'} size={24} color={color} />
-          ),
+          tabBarIcon: createTabBarIcon(TAB_BAR_SYMBOLS.collectibles),
         }}
       />
       <Tab.Screen
@@ -237,9 +224,7 @@ export const TabNavigator = ({ onLockWallet }: TabNavigatorProps) => {
         component={SwapScreen}
         options={{
           tabBarLabel: 'Swap',
-          tabBarIcon: ({ focused, color }) => (
-            <Ionicons name={focused ? 'swap-horizontal' : 'swap-horizontal-outline'} size={24} color={color} />
-          ),
+          tabBarIcon: createTabBarIcon(TAB_BAR_SYMBOLS.swap),
         }}
       />
       <Tab.Screen
@@ -247,27 +232,9 @@ export const TabNavigator = ({ onLockWallet }: TabNavigatorProps) => {
         component={AppsStackNavigator}
         options={{
           tabBarLabel: 'Apps',
-          tabBarIcon: ({ focused, color }) => (
-            <Ionicons name={focused ? 'apps' : 'apps-outline'} size={24} color={color} />
-          ),
+          tabBarIcon: createTabBarIcon(TAB_BAR_SYMBOLS.apps),
         }}
       />
     </Tab.Navigator>
   );
 };
-
-const styles = StyleSheet.create({
-  tabBar: {
-    backgroundColor: colors.card,
-    borderTopColor: colors.border,
-    borderTopWidth: 0.5,
-    height: 85,
-    paddingTop: 8,
-    paddingBottom: 28,
-  },
-  tabBarLabel: {
-    fontSize: 10,
-    fontWeight: '500',
-    marginTop: 2,
-  },
-});

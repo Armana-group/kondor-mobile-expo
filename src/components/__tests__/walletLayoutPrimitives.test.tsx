@@ -3,6 +3,7 @@ import { Switch, Text } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import { AppHeader } from '../AppHeader';
 import { InfoCard } from '../InfoCard';
+import { NativeMaterialSurface } from '../NativeMaterialSurface';
 import { WarningInline } from '../WarningInline';
 import { SettingsRow, SettingsSection } from '../settings';
 import { layout } from '../../theme/layout';
@@ -30,6 +31,7 @@ describe('wallet layout primitives', () => {
     });
 
     expect(renderedText(renderer!)).toContain('Security & Privacy');
+    expect(renderer!.root.findByType(NativeMaterialSurface).props.variant).toBe('header');
     expect(renderer!.root.findByType(Text).props.numberOfLines).toBe(1);
     expect(renderer!.root.findByType(Text).props.style).toEqual(
       expect.arrayContaining([
@@ -59,6 +61,7 @@ describe('wallet layout primitives', () => {
     expect(text).toContain('Sensitive Wallet Data');
     expect(text).toContain('Authenticate before revealing secrets.');
     expect(text).toContain('Child control');
+    expect(renderer!.root.findByType(NativeMaterialSurface).props.variant).toBe('card');
   });
 
   it('renders settings rows with helper text and a stable trailing control column', async () => {

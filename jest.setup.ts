@@ -93,6 +93,27 @@ jest.mock('expo-application', () => ({
   nativeBuildVersion: '1',
 }));
 
+// expo native material modules
+jest.mock('expo-glass-effect', () => ({
+  GlassView: 'GlassView',
+  GlassContainer: 'GlassContainer',
+  isGlassEffectAPIAvailable: jest.fn(() => false),
+  isLiquidGlassAvailable: jest.fn(() => false),
+}));
+
+jest.mock('expo-blur', () => ({
+  BlurView: 'BlurView',
+}));
+
+jest.mock('expo-symbols', () => ({
+  SymbolView: 'SymbolView',
+}));
+
+jest.mock('expo-symbols/androidWeights/semiBold', () => ({
+  name: 'Material Symbols Rounded',
+  font: 700,
+}));
+
 // react-native-quick-crypto
 jest.mock('react-native-quick-crypto', () => ({
   randomBytes: jest.fn((size: number) => Buffer.alloc(size)),

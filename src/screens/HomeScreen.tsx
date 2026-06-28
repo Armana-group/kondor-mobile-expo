@@ -11,6 +11,8 @@ import {
   Image,
   FlatList,
   Switch,
+  StyleProp,
+  ViewStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
@@ -18,6 +20,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Screen } from '../components/Screen';
 import { AccountSwitcher } from '../components/AccountSwitcher';
 import { BackupStatusNotice } from '../components/BackupStatusNotice';
+import { NativeMaterialSurface } from '../components/NativeMaterialSurface';
 import { useWalletStore } from '../stores/walletStore';
 import { useKoinosStore } from '../stores/koinosStore';
 import {
@@ -45,6 +48,19 @@ const USD_FORMATTER = new Intl.NumberFormat('en-US', {
 function hasPositiveTokenBalance(token: Token): boolean {
   const balance = Number.parseFloat(token.balance);
   return Number.isFinite(balance) && balance > 0;
+}
+
+type HeaderChromeButtonSurfaceProps = {
+  children: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
+};
+
+function HeaderChromeButtonSurface({ children, style }: HeaderChromeButtonSurfaceProps) {
+  return (
+    <NativeMaterialSurface variant="compact" style={[styles.iconChromeSurface, style]}>
+      {children}
+    </NativeMaterialSurface>
+  );
 }
 
 export const HomeScreen = () => {
@@ -274,33 +290,39 @@ export const HomeScreen = () => {
   // Render token item
   const renderTokenItem = ({ item: token }: { item: Token }) => (
     <TouchableOpacity
-      style={styles.tokenItem}
+      style={styles.tokenItemTouch}
       onPress={() => handleTokenPress(token)}
     >
-      <View style={styles.tokenIconContainer}>
-        {token.icon ? (
-          <Image
-            source={{ uri: token.icon }}
-            style={styles.tokenIconImage}
-            defaultSource={require('../../assets/icon.png')}
-          />
-        ) : (
-          <View style={styles.tokenIcon}>
-            <Text style={styles.tokenIconText}>{token.symbol.charAt(0)}</Text>
-          </View>
-        )}
-      </View>
-      <View style={styles.tokenInfo}>
-        <Text style={styles.tokenName}>{token.name}</Text>
-        <Text style={styles.tokenSymbol}>{token.symbol}</Text>
-      </View>
-      <View style={styles.tokenBalance}>
-        <Text style={styles.tokenAmount}>
-          {parseFloat(token.balance) > 0 ? formatKoinBalance(token.balance) : '0'}
-        </Text>
-        <Text style={styles.tokenValue}>{token.symbol}</Text>
-      </View>
-      <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+      <NativeMaterialSurface
+        variant="compact"
+        style={styles.tokenItem}
+        testID={`home-token-surface-${token.contractId}`}
+      >
+        <View style={styles.tokenIconContainer}>
+          {token.icon ? (
+            <Image
+              source={{ uri: token.icon }}
+              style={styles.tokenIconImage}
+              defaultSource={require('../../assets/icon.png')}
+            />
+          ) : (
+            <View style={styles.tokenIcon}>
+              <Text style={styles.tokenIconText}>{token.symbol.charAt(0)}</Text>
+            </View>
+          )}
+        </View>
+        <View style={styles.tokenInfo}>
+          <Text style={styles.tokenName}>{token.name}</Text>
+          <Text style={styles.tokenSymbol}>{token.symbol}</Text>
+        </View>
+        <View style={styles.tokenBalance}>
+          <Text style={styles.tokenAmount}>
+            {parseFloat(token.balance) > 0 ? formatKoinBalance(token.balance) : '0'}
+          </Text>
+          <Text style={styles.tokenValue}>{token.symbol}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+      </NativeMaterialSurface>
     </TouchableOpacity>
   );
 
@@ -372,7 +394,9 @@ export const HomeScreen = () => {
                 initialFilter: 'pending',
               } : undefined)}
             >
-              <Ionicons name="time-outline" size={22} color={colors.textSecondary} />
+              <HeaderChromeButtonSurface>
+                <Ionicons name="time-outline" size={22} color={colors.textSecondary} />
+              </HeaderChromeButtonSurface>
               {pendingTransactionCount > 0 && (
                 <View style={styles.headerButtonBadge}>
                   <Text style={styles.headerButtonBadgeText}>
@@ -385,19 +409,27 @@ export const HomeScreen = () => {
               style={styles.headerButton}
               onPress={() => navigation.navigate('Contacts')}
             >
-              <Ionicons name="people-outline" size={22} color={colors.textSecondary} />
+              <HeaderChromeButtonSurface>
+                <Ionicons name="people-outline" size={22} color={colors.textSecondary} />
+              </HeaderChromeButtonSurface>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.headerButton}
               onPress={() => navigation.navigate('Settings')}
             >
-              <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
+              <HeaderChromeButtonSurface>
+                <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
+              </HeaderChromeButtonSurface>
             </TouchableOpacity>
           </View>
         </View>
 
         {/* Portfolio Card */}
-        <View style={styles.portfolioCard}>
+        <NativeMaterialSurface
+          variant="card"
+          style={styles.portfolioCard}
+          testID="home-portfolio-card"
+        >
           <Text style={styles.portfolioLabel}>Portfolio</Text>
           <Text style={styles.portfolioSubLabel}>Total Balance</Text>
           <Text style={styles.portfolioValue}>
@@ -429,39 +461,39 @@ export const HomeScreen = () => {
               />
             </View>
           </View>
-        </View>
+        </NativeMaterialSurface>
 
         <BackupStatusNotice backupHealth={backupHealth} onPress={handleBackupPress} />
 
         {/* Action Buttons */}
         <View style={styles.actions}>
           <TouchableOpacity style={styles.actionButton} onPress={handleReceive}>
-            <View style={styles.actionIconContainer}>
+            <NativeMaterialSurface variant="compact" style={styles.actionIconContainer}>
               <Ionicons name="arrow-down" size={24} color={colors.textPrimary} />
-            </View>
+            </NativeMaterialSurface>
             <Text style={styles.actionLabel}>Receive</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.actionButton}
             onPress={() => navigation.navigate('Send')}>
-            <View style={styles.actionIconContainer}>
+            <NativeMaterialSurface variant="compact" style={styles.actionIconContainer}>
               <Ionicons name="arrow-up" size={24} color={colors.textPrimary} />
-            </View>
+            </NativeMaterialSurface>
             <Text style={styles.actionLabel}>Send</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('Swap')}>
-            <View style={styles.actionIconContainer}>
+            <NativeMaterialSurface variant="compact" style={styles.actionIconContainer}>
               <Ionicons name="swap-horizontal" size={24} color={colors.textPrimary} />
-            </View>
+            </NativeMaterialSurface>
             <Text style={styles.actionLabel}>Swap</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('Activity')}>
-            <View style={styles.actionIconContainer}>
+            <NativeMaterialSurface variant="compact" style={styles.actionIconContainer}>
               <Ionicons name="time-outline" size={24} color={colors.textPrimary} />
-            </View>
+            </NativeMaterialSurface>
             <Text style={styles.actionLabel}>Activity</Text>
           </TouchableOpacity>
         </View>
@@ -619,11 +651,14 @@ const styles = StyleSheet.create({
   headerButton: {
     width: 36,
     height: 36,
+    position: 'relative',
+  },
+  iconChromeSurface: {
+    width: 36,
+    height: 36,
     borderRadius: 18,
-    backgroundColor: colors.card,
     justifyContent: 'center',
     alignItems: 'center',
-    position: 'relative',
   },
   headerButtonBadge: {
     position: 'absolute',
@@ -646,8 +681,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginVertical: 12,
     padding: 24,
-    backgroundColor: colors.card,
-    borderRadius: 16,
   },
   portfolioLabel: {
     fontSize: 20,
@@ -715,8 +748,6 @@ const styles = StyleSheet.create({
   actionIconContainer: {
     width: 52,
     height: 52,
-    borderRadius: 26,
-    backgroundColor: colors.card,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
@@ -770,12 +801,13 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: colors.textSecondary,
   },
+  tokenItemTouch: {
+    borderRadius: 12,
+  },
   tokenItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.card,
     padding: 16,
-    borderRadius: 12,
   },
   tokenIconContainer: {
     marginRight: 12,

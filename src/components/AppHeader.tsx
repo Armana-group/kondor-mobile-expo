@@ -8,6 +8,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { NativeMaterialSurface } from './NativeMaterialSurface';
 import colors from '../theme/colors';
 import { layout } from '../theme/layout';
 
@@ -26,31 +27,41 @@ export const AppHeader = ({
   rightAccessory,
   style,
 }: AppHeaderProps) => (
-  <View style={[styles.header, style]} testID="app-header">
-    <Pressable
-      style={({ pressed }) => [styles.sideButton, pressed ? styles.pressed : null]}
-      onPress={onBack}
-      accessibilityRole="button"
-      accessibilityLabel={backAccessibilityLabel}
-      hitSlop={8}
-    >
-      <Ionicons name="chevron-back" size={layout.header.iconSize} color={colors.purple} />
-    </Pressable>
-    <Text numberOfLines={1} style={[styles.title, styles.titleFlexible]}>
-      {title}
-    </Text>
-    <View style={styles.sideButton}>{rightAccessory}</View>
-  </View>
+  <NativeMaterialSurface
+    variant="header"
+    style={[styles.headerChrome, style]}
+    testID="app-header"
+  >
+    <View style={styles.headerContent}>
+      <Pressable
+        style={({ pressed }) => [styles.sideButton, pressed ? styles.pressed : null]}
+        onPress={onBack}
+        accessibilityRole="button"
+        accessibilityLabel={backAccessibilityLabel}
+        hitSlop={8}
+      >
+        <Ionicons name="chevron-back" size={layout.header.iconSize} color={colors.purple} />
+      </Pressable>
+      <Text numberOfLines={1} style={[styles.title, styles.titleFlexible]}>
+        {title}
+      </Text>
+      <View style={styles.sideButton}>{rightAccessory}</View>
+    </View>
+  </NativeMaterialSurface>
 );
 
 const styles = StyleSheet.create({
-  header: {
+  headerChrome: {
+    marginHorizontal: layout.header.horizontalPadding,
+    marginTop: layout.header.topPadding,
+    marginBottom: layout.header.bottomPadding,
+  },
+  headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: layout.header.horizontalPadding,
-    paddingTop: layout.header.topPadding,
-    paddingBottom: layout.header.bottomPadding,
+    minHeight: 52,
+    paddingHorizontal: 4,
   },
   sideButton: {
     width: layout.header.sideButtonWidth,
