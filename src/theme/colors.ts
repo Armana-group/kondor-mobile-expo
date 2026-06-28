@@ -5,12 +5,13 @@
 
 export const colors = {
   // Backgrounds
-  background: '#181818',      // Brand black background
-  card: '#1A1A1A',            // Card backgrounds
-  elevated: '#272727',        // neutral-800 - Elevated surfaces, hover states
-  border: '#404040',          // neutral-700 - Borders, dividers
-  glassFallback: 'rgba(31, 31, 34, 0.72)',
-  glassBorder: 'rgba(255, 255, 255, 0.10)',
+  background: '#000000',      // Native dark canvas
+  card: '#1C1C1E',            // iOS dark grouped content
+  elevated: '#242426',        // Elevated surfaces, hover states
+  border: '#2C2C2E',          // Subtle borders and dividers
+  separator: 'rgba(255, 255, 255, 0.08)',
+  glassFallback: 'rgba(28, 28, 30, 0.58)',
+  glassBorder: 'rgba(255, 255, 255, 0.07)',
 
   // Text
   textPrimary: '#FFFFFF',     // white - Primary text

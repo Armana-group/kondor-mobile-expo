@@ -21,7 +21,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#181818"
+        "backgroundColor": "#000000"
       },
       "package": "io.armana.kondor",
       "versionCode": 3,
@@ -53,7 +53,7 @@
           "image": "./assets/kondor-native-splash.png",
           "imageWidth": 320,
           "resizeMode": "contain",
-          "backgroundColor": "#181818"
+          "backgroundColor": "#000000"
         }
       ],
       [

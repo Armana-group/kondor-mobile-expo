@@ -293,11 +293,7 @@ export const HomeScreen = () => {
       style={styles.tokenItemTouch}
       onPress={() => handleTokenPress(token)}
     >
-      <NativeMaterialSurface
-        variant="compact"
-        style={styles.tokenItem}
-        testID={`home-token-surface-${token.contractId}`}
-      >
+      <View style={styles.tokenItem} testID={`home-token-row-${token.contractId}`}>
         <View style={styles.tokenIconContainer}>
           {token.icon ? (
             <Image
@@ -322,7 +318,7 @@ export const HomeScreen = () => {
           <Text style={styles.tokenValue}>{token.symbol}</Text>
         </View>
         <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
-      </NativeMaterialSurface>
+      </View>
     </TouchableOpacity>
   );
 
@@ -349,6 +345,7 @@ export const HomeScreen = () => {
   return (
     <Screen scroll={false}>
       <ScrollView
+        testID="home-scroll-view"
         style={styles.container}
         contentContainerStyle={styles.scrollContent}
         refreshControl={
@@ -426,6 +423,7 @@ export const HomeScreen = () => {
 
         {/* Portfolio Card */}
         <NativeMaterialSurface
+          material="solid"
           variant="card"
           style={styles.portfolioCard}
           testID="home-portfolio-card"
@@ -527,28 +525,35 @@ export const HomeScreen = () => {
               <Text style={styles.loadingText}>Loading tokens...</Text>
             </View>
           ) : (
-            <FlatList
-              data={displayedTokens}
-              keyExtractor={(item) => item.contractId}
-              renderItem={renderTokenItem}
-              scrollEnabled={false}
-              ItemSeparatorComponent={() => <View style={styles.tokenSeparator} />}
-              ListEmptyComponent={
-                <View style={styles.emptyContainer}>
-                  <View style={styles.emptyIconContainer}>
-                    <Ionicons name="wallet-outline" size={32} color={colors.textTertiary} />
+            <NativeMaterialSurface
+              material="solid"
+              variant="card"
+              style={styles.tokensList}
+              testID="home-token-list-surface"
+            >
+              <FlatList
+                data={displayedTokens}
+                keyExtractor={(item) => item.contractId}
+                renderItem={renderTokenItem}
+                scrollEnabled={false}
+                ItemSeparatorComponent={() => <View style={styles.tokenSeparator} />}
+                ListEmptyComponent={
+                  <View style={styles.emptyContainer}>
+                    <View style={styles.emptyIconContainer}>
+                      <Ionicons name="wallet-outline" size={32} color={colors.textTertiary} />
+                    </View>
+                    <Text style={styles.emptyTitle}>
+                      {hideZeroBalanceTokens ? 'No Token Balances' : 'No Tokens Yet'}
+                    </Text>
+                    <Text style={styles.emptyText}>
+                      {hideZeroBalanceTokens
+                        ? 'Turn off the filter to view tokens with 0 balance'
+                        : 'Tokens will appear here once you receive them'}
+                    </Text>
                   </View>
-                  <Text style={styles.emptyTitle}>
-                    {hideZeroBalanceTokens ? 'No Token Balances' : 'No Tokens Yet'}
-                  </Text>
-                  <Text style={styles.emptyText}>
-                    {hideZeroBalanceTokens
-                      ? 'Turn off the filter to view tokens with 0 balance'
-                      : 'Tokens will appear here once you receive them'}
-                  </Text>
-                </View>
-              }
-            />
+                }
+              />
+            </NativeMaterialSurface>
           )}
         </View>
       </ScrollView>
@@ -575,14 +580,15 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
+    paddingBottom: 128,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 16,
+    paddingTop: 20,
+    paddingBottom: 22,
   },
   accountInfo: {
     flexDirection: 'row',
@@ -645,18 +651,18 @@ const styles = StyleSheet.create({
   },
   headerActions: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
     flexShrink: 0,
   },
   headerButton: {
-    width: 36,
-    height: 36,
+    width: 38,
+    height: 38,
     position: 'relative',
   },
   iconChromeSurface: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -678,15 +684,21 @@ const styles = StyleSheet.create({
     color: colors.background,
   },
   portfolioCard: {
-    marginHorizontal: 16,
-    marginVertical: 12,
-    padding: 24,
+    marginHorizontal: 20,
+    marginTop: 2,
+    marginBottom: 24,
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 22,
+    backgroundColor: colors.card,
+    borderRadius: 24,
+    borderWidth: 0,
   },
   portfolioLabel: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '600',
     color: colors.textPrimary,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   portfolioSubLabel: {
     fontSize: 14,
@@ -694,8 +706,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   portfolioValue: {
-    fontSize: 32,
-    fontWeight: 'bold',
+    fontSize: 42,
+    lineHeight: 48,
+    fontWeight: '800',
     color: colors.textPrimary,
   },
   portfolioUsdValue: {
@@ -705,9 +718,10 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   manaContainer: {
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+    marginTop: 22,
+    paddingTop: 18,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.separator,
   },
   manaHeader: {
     flexDirection: 'row',
@@ -725,7 +739,7 @@ const styles = StyleSheet.create({
   },
   manaBarContainer: {
     height: 6,
-    backgroundColor: colors.elevated,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderRadius: 3,
     overflow: 'hidden',
   },
@@ -735,22 +749,23 @@ const styles = StyleSheet.create({
   },
   actions: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-    marginBottom: 32,
-    gap: 8,
+    justifyContent: 'space-between',
+    paddingHorizontal: 26,
+    marginBottom: 36,
+    gap: 10,
   },
   actionButton: {
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    minWidth: 64,
   },
   actionIconContainer: {
-    width: 52,
-    height: 52,
+    width: 50,
+    height: 50,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
+    borderWidth: 0,
   },
   actionLabel: {
     fontSize: 13,
@@ -758,8 +773,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   tokensSection: {
-    paddingHorizontal: 16,
-    paddingBottom: 40,
+    paddingHorizontal: 20,
   },
   tokensSectionHeader: {
     flexDirection: 'row',
@@ -782,7 +796,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textTertiary,
     marginLeft: 8,
-    backgroundColor: colors.elevated,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 10,
@@ -802,12 +816,20 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   tokenItemTouch: {
-    borderRadius: 12,
+    minHeight: 76,
+  },
+  tokensList: {
+    backgroundColor: colors.card,
+    borderRadius: 24,
+    borderWidth: 0,
+    overflow: 'hidden',
   },
   tokenItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    minHeight: 76,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
   tokenIconContainer: {
     marginRight: 12,
@@ -859,7 +881,9 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   tokenSeparator: {
-    height: 8,
+    height: StyleSheet.hairlineWidth,
+    marginLeft: 72,
+    backgroundColor: colors.separator,
   },
   loadingContainer: {
     padding: 40,

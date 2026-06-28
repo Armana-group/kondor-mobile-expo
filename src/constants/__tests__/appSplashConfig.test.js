@@ -11,7 +11,8 @@ describe('native splash config', () => {
       image: './assets/kondor-native-splash.png',
       imageWidth: 320,
       resizeMode: 'contain',
-      backgroundColor: '#181818',
+      backgroundColor: '#000000',
     });
+    expect(appConfig.expo.android.adaptiveIcon.backgroundColor).toBe('#000000');
   });
 });

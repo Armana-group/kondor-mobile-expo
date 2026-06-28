@@ -47,6 +47,20 @@ describe('TabNavigator iOS material styling', () => {
     expect(backgroundRenderer!.root.findByType(NativeMaterialSurface).props.variant).toBe('tabBar');
   });
 
+  it('keeps the floating tab bar compact and secondary to content', () => {
+    const options = getTabNavigatorScreenOptions();
+
+    expect(options.tabBarStyle).toEqual(
+      expect.objectContaining({
+        height: 68,
+        left: 28,
+        right: 28,
+        bottom: 18,
+        borderRadius: 34,
+      })
+    );
+  });
+
   it('creates native-symbol tab icons', async () => {
     let iconRenderer: TestRenderer.ReactTestRenderer;
 

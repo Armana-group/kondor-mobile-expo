@@ -1,10 +1,8 @@
 import React from 'react';
 import { Text, View } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
-import {
-  NativeMaterialSurface,
-  resolveNativeMaterialMode,
-} from '../NativeMaterialSurface';
+import { NativeMaterialSurface } from '../NativeMaterialSurface';
+import { resolveNativeMaterialMode } from '../nativeMaterial';
 
 jest.mock('expo-glass-effect', () => ({
   GlassView: 'GlassView',

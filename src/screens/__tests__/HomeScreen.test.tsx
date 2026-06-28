@@ -1,5 +1,5 @@
 import React from 'react';
-import { Switch } from 'react-native';
+import { StyleSheet, Switch } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import type { BackupHealth } from '../../lib/backupHealth';
 import { TESTNET } from '../../lib/constants';
@@ -638,8 +638,71 @@ describe('HomeScreen network initialization', () => {
 
     expect(renderer!.root.findByProps({ testID: 'home-portfolio-card' }).type)
       .toBe(NativeMaterialSurface);
-    expect(renderer!.root.findByProps({ testID: 'home-token-surface-koin-contract' }).type)
+    expect(renderer!.root.findByProps({ testID: 'home-token-list-surface' }).type)
       .toBe(NativeMaterialSurface);
+    expect(renderer!.root.findByProps({ testID: 'home-token-row-koin-contract' }))
+      .toBeTruthy();
+  });
+
+  it('uses a quieter Apple-style dark hierarchy on Home', async () => {
+    mockNetworkState = {
+      mode: 'mainnet',
+      hasHydrated: true,
+    };
+    mockTokenState = {
+      tokens: [
+        {
+          contractId: 'koin-contract',
+          symbol: 'KOIN',
+          name: 'Koinos',
+          decimals: 8,
+          icon: '',
+          balance: '12.34000000',
+          isLoading: false,
+        },
+        {
+          contractId: 'vhp-contract',
+          symbol: 'VHP',
+          name: 'Virtual Hash Power',
+          decimals: 8,
+          icon: '',
+          balance: '3.00000000',
+          isLoading: false,
+        },
+      ],
+      isLoading: false,
+      cacheKey: `mainnet:${mockAddress}`,
+    };
+
+    const { HomeScreen } = require('../HomeScreen');
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<HomeScreen />);
+    });
+    await flushEffects();
+
+    const scrollViewStyle = StyleSheet.flatten(
+      renderer!.root.findByProps({ testID: 'home-scroll-view' }).props.style
+    );
+    expect(scrollViewStyle.backgroundColor).toBe('#000000');
+
+    const portfolio = renderer!.root.findByProps({ testID: 'home-portfolio-card' });
+    const portfolioStyle = StyleSheet.flatten(portfolio.props.style);
+    expect(portfolio.type).toBe(NativeMaterialSurface);
+    expect(portfolio.props.material).toBe('solid');
+    expect(portfolioStyle.borderWidth).toBe(0);
+    expect(portfolioStyle.borderRadius).toBeGreaterThanOrEqual(22);
+
+    const tokenList = renderer!.root.findByProps({ testID: 'home-token-list-surface' });
+    const tokenListStyle = StyleSheet.flatten(tokenList.props.style);
+    expect(tokenList.type).toBe(NativeMaterialSurface);
+    expect(tokenList.props.material).toBe('solid');
+    expect(tokenListStyle.borderWidth).toBe(0);
+    expect(tokenListStyle.overflow).toBe('hidden');
+
+    expect(renderer!.root.findAllByProps({ testID: 'home-token-surface-koin-contract' }))
+      .toHaveLength(0);
   });
 
   it('keeps the headline KOIN balance even when KOIN is hidden from the token list', async () => {

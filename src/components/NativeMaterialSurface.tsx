@@ -3,7 +3,6 @@ import {
   Platform,
   StyleSheet,
   View,
-  type PlatformOSType,
   type StyleProp,
   type ViewProps,
   type ViewStyle,
@@ -16,16 +15,11 @@ import {
   type GlassStyle,
 } from 'expo-glass-effect';
 import colors, { borderRadius } from '../theme/colors';
-
-export type NativeMaterialMode = 'glass' | 'blur' | 'solid';
-export type NativeMaterialChoice = NativeMaterialMode | 'auto';
-export type NativeMaterialVariant = 'card' | 'header' | 'tabBar' | 'compact';
-
-type ResolveNativeMaterialModeParams = {
-  platform: PlatformOSType;
-  isGlassEffectAPIAvailable: boolean;
-  isLiquidGlassAvailable: boolean;
-};
+import {
+  resolveNativeMaterialMode,
+  type NativeMaterialChoice,
+  type NativeMaterialVariant,
+} from './nativeMaterial';
 
 type NativeMaterialSurfaceProps = ViewProps & {
   children?: React.ReactNode;
@@ -80,18 +74,6 @@ function readGlassAvailability() {
       isLiquidGlassAvailable: false,
     };
   }
-}
-
-export function resolveNativeMaterialMode({
-  platform,
-  isGlassEffectAPIAvailable: glassApiAvailable,
-  isLiquidGlassAvailable: liquidGlassAvailable,
-}: ResolveNativeMaterialModeParams): NativeMaterialMode {
-  if (platform !== 'ios') {
-    return 'solid';
-  }
-
-  return glassApiAvailable && liquidGlassAvailable ? 'glass' : 'blur';
 }
 
 export const NativeMaterialSurface = ({
