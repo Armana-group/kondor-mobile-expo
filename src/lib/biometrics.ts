@@ -27,19 +27,11 @@ export const authenticateWithBiometrics = async (
   fallbackLabel: string = 'Use Passcode'
 ): Promise<BiometricAuthResult> => {
   try {
-    const { hasHardware, isEnrolled } = await checkBiometricSupport();
-
-    if (!hasHardware) {
+    const securityLevel = await LocalAuthentication.getEnrolledLevelAsync();
+    if (securityLevel === LocalAuthentication.SecurityLevel.NONE) {
       return {
         success: false,
-        error: 'Biometric authentication is not available on this device'
-      };
-    }
-
-    if (!isEnrolled) {
-      return {
-        success: false,
-        error: 'No biometric credentials are enrolled on this device'
+        error: 'Set a device passcode or enroll biometrics to authenticate.',
       };
     }
 

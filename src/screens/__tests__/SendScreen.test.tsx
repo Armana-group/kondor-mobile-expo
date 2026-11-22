@@ -15,6 +15,7 @@ const mockInitializeTokens = jest.fn(async () => undefined);
 const mockTransferToken = jest.fn();
 const mockGetMana = jest.fn();
 const mockGetBalance = jest.fn();
+const mockGetTransferCapacity = jest.fn(async () => '1000000000');
 const mockAddPendingTransaction = jest.fn();
 const mockIsSendConfirmationRequired = jest.fn(async () => true);
 const mockResolveRecipient = jest.fn();
@@ -94,17 +95,17 @@ jest.mock('../../services/transactionAuthorization', () => ({
 }));
 
 jest.mock('../../stores/networkStore', () => ({
-  useNetworkStore: (selector?: (state: typeof mockNetworkState) => unknown) =>
-    selector ? selector(mockNetworkState) : mockNetworkState,
+  useNetworkStore: Object.assign((selector?: (state: typeof mockNetworkState) => unknown) =>
+    selector ? selector(mockNetworkState) : mockNetworkState, { getState: () => mockNetworkState }),
 }));
 
 jest.mock('../../stores/walletStore', () => ({
-  useWalletStore: () => ({
+  useWalletStore: Object.assign(() => ({
     balance: '99.00000000',
     address: mockAddress,
     updateBalance: mockUpdateBalance,
     backupHealth: mockBackupHealth,
-  }),
+  }), { getState: () => ({ address: mockAddress }) }),
 }));
 
 jest.mock('../../stores/contactStore', () => ({
@@ -125,6 +126,7 @@ jest.mock('../../stores/koinosStore', () => ({
     transferToken: mockTransferToken,
     getMana: mockGetMana,
     getBalance: mockGetBalance,
+    getTransferCapacity: mockGetTransferCapacity,
   }),
 }));
 
@@ -233,6 +235,8 @@ describe('SendScreen balance scoping', () => {
     jest.clearAllMocks();
     mockIsSendConfirmationRequired.mockResolvedValue(true);
     mockShouldAuthenticateTransaction.mockResolvedValue(true);
+    mockGetTransferCapacity.mockResolvedValue('1000000000');
+    require('../../lib/biometrics').requireBiometricAuth.mockResolvedValue(true);
     mockNetworkState = {
       mode: 'harbinger',
       hasHydrated: true,
@@ -472,6 +476,7 @@ describe('SendScreen balance scoping', () => {
       networkMode: 'harbinger',
       chainTransactionId: '0xsend-accepted',
       source: 'send',
+      submissionTracked: true,
       transaction: {
         id: '0xsend-accepted',
         type: 'send',
@@ -746,4 +751,58 @@ describe('SendScreen balance scoping', () => {
     expect(requireBiometricAuth).not.toHaveBeenCalled();
     expect(mockTransferToken).toHaveBeenCalled();
   });
+  async function prepareFundedSend(maximum = '') {
+    mockNetworkState.mode = 'mainnet';
+    const { SendScreen } = require('../SendScreen');
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => { renderer = TestRenderer.create(<SendScreen />); });
+    const [recipientInput, amountInput, , manaInput] = renderer!.root.findAllByType(TextInput);
+    await act(async () => {
+      recipientInput.props.onChangeText(recipientAddress);
+      amountInput.props.onChangeText('1');
+      manaInput.props.onChangeText(maximum);
+    });
+    await act(async () => { await findSendButton(renderer!).props.onPress(); });
+    return { renderer: renderer!, amountInput, confirm: alertSpy.mock.calls.at(-1)?.[2]?.find(button => button.text === 'Send')?.onPress };
+  }
+
+  it('shows the exact authorized mana ceiling and rejects extra precision before authentication', async () => {
+    const valid = await prepareFundedSend('5.99999999');
+    expect(alertSpy.mock.calls.at(-1)?.[1]).toContain('Maximum mana: 5.99999999');
+    mockTransferToken.mockResolvedValueOnce('exact-ceiling');
+    await act(async () => { await valid.confirm?.(); });
+    expect(mockTransferToken).toHaveBeenCalledWith(expect.any(String), recipientAddress, '1', 8,
+      expect.objectContaining({ rcLimit: '599999999', payer: mockAddress }));
+    jest.clearAllMocks();
+    await prepareFundedSend('5.999999995');
+    expect(alertSpy.mock.calls.at(-1)?.[0]).toBe('Mana Check');
+    expect(mockTransferToken).not.toHaveBeenCalled();
+    expect(require('../../lib/biometrics').requireBiometricAuth).not.toHaveBeenCalled();
+  });
+
+  it('invalidates a review after amount or network changes and consumes approval only once', async () => {
+    const review = await prepareFundedSend();
+    await act(async () => { review.amountInput.props.onChangeText('2'); });
+    await act(async () => { await review.confirm?.(); });
+    expect(mockTransferToken).not.toHaveBeenCalled();
+    const next = await prepareFundedSend();
+    mockNetworkState.mode = 'harbinger';
+    await act(async () => { await next.confirm?.(); });
+    expect(mockTransferToken).not.toHaveBeenCalled();
+    mockNetworkState.mode = 'mainnet';
+    const single = await prepareFundedSend();
+    mockTransferToken.mockResolvedValue('single-submit');
+    await act(async () => { await single.confirm?.(); await single.confirm?.(); });
+    expect(mockTransferToken).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a confirmed send successful when the subsequent balance refresh fails', async () => {
+    const review = await prepareFundedSend();
+    mockTransferToken.mockResolvedValueOnce('confirmed-send');
+    mockGetBalance.mockRejectedValueOnce(new Error('offline'));
+    await act(async () => { await review.confirm?.(); });
+    expect(alertSpy.mock.calls.at(-1)?.[0]).toBe('Success!');
+    expect(alertSpy.mock.calls.some(call => call[0] === 'Transaction Failed')).toBe(false);
+  });
+
 });

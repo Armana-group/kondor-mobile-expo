@@ -6,7 +6,7 @@
  * biometric authentication before signing.
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useLayoutEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -15,19 +15,27 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
+  AppState,
+  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Transaction, Provider, TransactionJson, type OperationJson } from 'koilib';
+import { Provider, TransactionJson, utils } from 'koilib';
 import colors from '../theme/colors';
 import { useWalletStore } from '../stores/walletStore';
 import { HapticFeedback } from '../lib/haptics';
 import { txLogger } from '../lib/logger';
+import { submitTransactionOnce, TransactionOutcomeUnknownError, TransactionRejectedError } from '../lib/transactionBroadcast';
+import { buildPendingTransactionFromBroadcast, useTransactionStore, type AddPendingTransactionInput } from '../stores/transactionStore';
+import { useTokenStore } from '../stores/tokenStore';
 import { getActiveNetworkConfig, useNetworkStore } from '../stores/networkStore';
 import { inspectDAppOrigin } from '../lib/dapp/originSecurity';
 import { withAuthenticatedAccountSigner } from '../lib/dapp/messageSigning';
+import { copyTransaction, prepareTransactionReview, transactionPayload } from '../lib/dapp/transactionReview';
+import { assertManaCapacity, DEFAULT_MAX_MANA, formatMana, parseManaLimit, readPayerCapacity } from '../lib/mana';
 import {
   type DecodedOperation,
   decodeKnownOperation,
+  decodeRecoveryTransfer,
   hasKoinDxSwapOperation,
 } from '../lib/transactionDecoder';
 
@@ -54,6 +62,9 @@ interface TransactionApprovalModalProps {
   appName: string;
   appOrigin: string;
   isSend: boolean; // true for sendTransaction, false for signTransaction
+  isRequestCurrent?: () => boolean;
+  source?: 'dapp' | 'walletconnect';
+  recovery?: AddPendingTransactionInput;
   onApprove: (result: SigningResult) => void;
   onReject: (error: string) => void;
   onClose: () => void;
@@ -80,47 +91,6 @@ function normalizeOrigin(origin: string): string {
   }
 }
 
-function cloneOperation(operation: OperationJson): OperationJson {
-  if (operation.call_contract) {
-    return {
-      ...operation,
-      call_contract: { ...operation.call_contract },
-    };
-  }
-
-  if (operation.upload_contract) {
-    return {
-      ...operation,
-      upload_contract: { ...operation.upload_contract },
-    };
-  }
-
-  if (operation.set_system_call) {
-    return {
-      ...operation,
-      set_system_call: { ...operation.set_system_call },
-    };
-  }
-
-  if (operation.set_system_contract) {
-    return {
-      ...operation,
-      set_system_contract: { ...operation.set_system_contract },
-    };
-  }
-
-  return { ...operation };
-}
-
-function cloneTransaction(transaction: TransactionJson): TransactionJson {
-  return {
-    ...transaction,
-    header: transaction.header ? { ...transaction.header } : undefined,
-    operations: transaction.operations?.map(cloneOperation),
-    signatures: transaction.signatures ? [...transaction.signatures] : undefined,
-  };
-}
-
 export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> = ({
   visible,
   request,
@@ -128,6 +98,9 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
   appOrigin,
   isSend,
   onApprove,
+  isRequestCurrent,
+  source = 'dapp',
+  recovery,
   onReject,
   onClose,
 }) => {
@@ -137,9 +110,16 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
   const [operations, setOperations] = useState<DecodedOperation[]>([]);
   const [expandedOps, setExpandedOps] = useState<Set<number>>(new Set([0])); // First op expanded by default
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [review, setReview] = useState<{ transaction: TransactionJson; provider: Provider; expiresAt: number } | null>(null);
+  const [sponsoredMana, setSponsoredMana] = useState(false);
+  const [rcLimit, setRcLimit] = useState(DEFAULT_MAX_MANA);
+  const [preparing, setPreparing] = useState(false);
+  const [approvalFinished, setApprovalFinished] = useState(false);
+  const revision = useRef(0);
+  const busy = useRef(false);
 
   const { accounts, getActiveAccount } = useWalletStore();
-  useNetworkStore((state) => state.mode);
+  const networkMode = useNetworkStore((state) => state.mode);
   useNetworkStore((state) => state.hasHydrated);
   const activeAccount = getActiveAccount();
   const requestedAccount = request
@@ -154,15 +134,61 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
       }),
     [isSend, normalizedOrigin]
   );
-  const blockedSwapMessage =
-    'KoinDX swaps from dApps are not supported on mobile. Use the Swap tab in Kondor Mobile instead.';
+  const unsupportedSwap = activeNetwork.isTestnet && hasKoinDxSwapOperation(request?.transaction.operations);
+  const unsupportedSwapMessage = 'KoinDX swaps are only available on Koinos Mainnet.';
+  const fixedPayer = request?.transaction.header?.payer;
+  const fixedRc = request?.transaction.header?.rc_limit;
+  const recoveredTransfer = useMemo(() => recovery && request?.transaction.operations?.length === 1
+    ? decodeRecoveryTransfer(request.transaction.operations[0]) : undefined, [recovery, request]);
+  const canSetPayer = !request?.transaction.signatures?.length && !fixedPayer;
+  const canSetRc = !request?.transaction.signatures?.length && fixedRc === undefined;
+
+  useLayoutEffect(() => {
+    revision.current += 1;
+    const reset = () => {
+      revision.current += 1;
+    };
+    setReview(null);
+    setPreparing(false);
+    setSigning(false);
+    setApprovalFinished(false);
+    setSponsoredMana(false);
+    setRcLimit(DEFAULT_MAX_MANA);
+    return reset;
+  }, [visible, request, normalizedOrigin, activeNetwork.chainId, activeAccount?.id, isSend]);
 
   const simplifiedDomain = getSimplifiedDomain(normalizedOrigin);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'background') {
+        revision.current += 1;
+        setReview(null);
+        setPreparing(false);
+        setSigning(false);
+      }
+    });
+    return () => subscription.remove();
+  }, []);
 
   // Decode operations when request changes
   useEffect(() => {
     if (request?.transaction) {
-      const decoded = request.transaction.operations?.map(decodeKnownOperation) ?? [];
+      const token = recovery?.transaction;
+      const amount = recoveredTransfer && token?.token === recoveredTransfer.contractId &&
+        Number.isInteger(token.tokenDecimals) && token.tokenDecimals >= 0 && token.tokenDecimals <= 255
+        ? `${utils.formatUnits(recoveredTransfer.value, token.tokenDecimals)} ${token.tokenSymbol}` : undefined;
+      const decoded: DecodedOperation[] = recovery ? (recoveredTransfer ? [{
+        type: 'contract_call', title: 'Token transfer', contractId: recoveredTransfer.contractId,
+        details: [
+          { label: 'Token contract', value: recoveredTransfer.contractId },
+          { label: 'From', value: recoveredTransfer.from },
+          { label: 'To', value: recoveredTransfer.to },
+          ...(amount ? [{ label: 'Amount', value: amount }] : []),
+          { label: 'Base units', value: recoveredTransfer.value },
+          ...(recoveredTransfer.memo ? [{ label: 'Memo', value: recoveredTransfer.memo }] : []),
+        ],
+      }] : []) : request.transaction.operations?.map(decodeKnownOperation) ?? [];
       setOperations(decoded);
       setLoading(false);
     } else {
@@ -170,8 +196,7 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
       setLoading(true);
     }
     setError(null);
-    setSigning(false);
-  }, [request]);
+  }, [request, recovery, recoveredTransfer]);
 
   const rejectPendingRequest = useCallback((message: string) => {
     setError(message);
@@ -192,196 +217,179 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
     });
   }, []);
 
-  // Handle sign/send
-  const handleApprove = useCallback(async () => {
-    if (!request || !activeAccount) {
-      setError('No active account');
-      return;
+  const assertCurrent = (currentRevision: number) => {
+    if (
+      currentRevision !== revision.current ||
+      !visible ||
+      isRequestCurrent?.() === false ||
+      (recovery && (!isSend || recovery.chainTransactionId !== request?.transaction.id ||
+        recovery.address !== request?.signerAddress || recovery.networkMode !== useNetworkStore.getState().mode ||
+        recovery.address !== useWalletStore.getState().address)) ||
+      getActiveNetworkConfig().chainId !== activeNetwork.chainId ||
+      getActiveNetworkConfig().rpcNodes[0] !== activeNetwork.rpcNodes[0] ||
+      !useWalletStore.getState().accounts.some(({ id, address }) =>
+        id === requestedAccount?.id && address === request?.signerAddress
+      )
+    ) {
+      throw new Error('The transaction request changed. Review it again.');
     }
+  };
 
-    if (!requestedAccount) {
+  const assertResources = async (provider: Provider, transaction: TransactionJson) => {
+    if (!isSend) return;
+    const payer = transaction.header?.payer;
+    const maxRc = transaction.header?.rc_limit;
+    if (!payer || !maxRc) throw new Error('Payer or maximum mana is missing.');
+    const capacity = await readPayerCapacity({
+      provider, payer, koinContract: activeNetwork.koinContract, sponsor: activeNetwork.freeManaSharer,
+      ...(recoveredTransfer?.contractId === activeNetwork.koinContract && recoveredTransfer.from === payer
+        ? { outgoingKoin: recoveredTransfer.value } : {}),
+    });
+    assertManaCapacity(String(maxRc), capacity);
+  };
+
+  const handleReview = async () => {
+    if (busy.current || !request) return;
+    if (!activeAccount || !requestedAccount) {
       rejectPendingRequest('Transaction signer is not in this wallet.');
       return;
     }
-
-    if (
-      request.transaction.header?.chain_id &&
-      request.transaction.header.chain_id !== activeNetwork.chainId
-    ) {
-      rejectPendingRequest('Transaction network does not match the active wallet network.');
+    if (isSend && request.options?.broadcast === false) {
+      rejectPendingRequest('Transaction simulation is unavailable. No transaction was signed or sent.');
       return;
     }
-
-    if (hasKoinDxSwapOperation(request.transaction.operations)) {
-      rejectPendingRequest(blockedSwapMessage);
+    if (unsupportedSwap) {
+      rejectPendingRequest(unsupportedSwapMessage);
       return;
     }
-
-    setSigning(true);
+    if (recovery && recoveredTransfer?.from !== request.signerAddress) {
+      rejectPendingRequest('The original transfer could not be reviewed.');
+      return;
+    }
+    if (!recovery && originSecurity.denyApproval) {
+      rejectPendingRequest('This site cannot request wallet approval.');
+      return;
+    }
+    const currentRevision = revision.current;
+    busy.current = true;
+    setPreparing(true);
     setError(null);
 
     try {
+      assertCurrent(currentRevision);
       const provider = new Provider(activeNetwork.rpcNodes);
+      const transaction = await prepareTransactionReview({
+        transaction: request.transaction,
+        provider,
+        signerAddress: request.signerAddress,
+        chainId: activeNetwork.chainId,
+        defaultPayer: sponsoredMana ? activeNetwork.freeManaSharer : request.signerAddress,
+        rcLimit: canSetRc ? parseManaLimit(rcLimit) : '',
+      });
+      assertCurrent(currentRevision);
+      await assertResources(provider, transaction);
+      assertCurrent(currentRevision);
+      setReview({ transaction, provider, expiresAt: Date.now() + 60_000 });
+    } catch (err) {
+      if (currentRevision === revision.current) {
+        if (request.transaction.header?.chain_id && request.transaction.header.chain_id !== activeNetwork.chainId) {
+          rejectPendingRequest('Transaction network does not match the active wallet network.');
+        } else {
+          setError(err instanceof Error ? err.message : 'Unable to prepare transaction');
+        }
+      }
+    } finally {
+      busy.current = false;
+      if (currentRevision === revision.current) setPreparing(false);
+    }
+  };
+
+  const handleApprove = async () => {
+    if (busy.current || approvalFinished || !request || !review) return;
+    const currentRevision = revision.current;
+    const assertApprovalCurrent = () => {
+      assertCurrent(currentRevision);
+      if (Date.now() >= review.expiresAt) throw new Error('Transaction review expired. Review it again.');
+    };
+    busy.current = true;
+    setSigning(true);
+    setError(null);
+    try {
+      assertApprovalCurrent();
+      await assertResources(review.provider, review.transaction);
+      assertApprovalCurrent();
       await withAuthenticatedAccountSigner(
         {
           signerAddress: request.signerAddress,
-          provider,
+          provider: review.provider,
           authOperation: isSend ? 'send this transaction' : 'sign this transaction',
+          assertCurrent: assertApprovalCurrent,
         },
         async ({ signer }) => {
-          HapticFeedback.success();
-
-          // Prepare transaction
-          const tx = cloneTransaction(request.transaction);
-
-          // Use free mana sharer to pay for transaction mana
-          const freeManaSharer = activeNetwork.freeManaSharer;
-          txLogger.debug('Using free mana sharer:', freeManaSharer);
-
-          // Ensure header exists with free mana sharer as payer
-          if (!tx.header) {
-            tx.header = {
-              payer: freeManaSharer,
-              payee: request.signerAddress
-            };
+          assertApprovalCurrent();
+          const transaction = copyTransaction(review.transaction);
+          const priorSignatures = review.transaction.signatures ?? [];
+          await signer.signTransaction(transaction);
+          assertApprovalCurrent();
+          if (transactionPayload(transaction) !== transactionPayload(review.transaction) ||
+              transaction.signatures?.length !== priorSignatures.length + 1 ||
+              priorSignatures.some((signature, index) => transaction.signatures?.[index] !== signature)) {
+            throw new Error('The signature changed the transaction you reviewed.');
           }
-
-          // Override payer to use free mana sharer
-          tx.header.payer = freeManaSharer;
-          tx.header.payee = request.signerAddress;
-          tx.header.chain_id = activeNetwork.chainId;
-
-          // Create Transaction object for dry-run estimation
-          // We ALWAYS estimate rc_limit via dry-run because dApps may send incorrect values
-          const estimateTx = new Transaction({ signer, provider });
-
-          // Copy transaction but clear id and signatures (they'll be recalculated)
-          const txForEstimation = cloneTransaction(tx);
-          delete txForEstimation.id;
-          delete txForEstimation.signatures;
-          estimateTx.transaction = txForEstimation;
-
-          // Set rc_limit for estimation - free mana sharer has a max of 100 mana per tx
-          // 100 mana = 10,000,000,000 (10^10) in smallest units
-          const MAX_FREE_MANA = 10000000000;
-          let estimationLimit = MAX_FREE_MANA;
-          txLogger.debug('Using free mana sharer with max', MAX_FREE_MANA, 'RC (100 mana)');
-
-          // Prepare the estimation transaction
-          if (!estimateTx.transaction.header) {
-            estimateTx.transaction.header = {};
-          }
-          estimateTx.transaction.header.rc_limit = String(estimationLimit);
-
-          // Fill in nonce if missing
-          if (!estimateTx.transaction.header.nonce) {
-            await estimateTx.prepare();
-          }
-
-          // Dry-run to get actual RC usage
-          txLogger.debug('Performing dry-run estimation...');
-          let dryRunReceipt;
-          try {
-            dryRunReceipt = await estimateTx.send({ broadcast: false });
-            txLogger.debug('Dry-run receipt:', dryRunReceipt);
-          } catch (dryRunError: any) {
-            txLogger.error('Dry-run failed:', dryRunError);
-            // If dry-run fails, the transaction would fail anyway - show meaningful error
-            const errorMsg = dryRunError.message || 'Transaction would fail';
-            throw new Error(`Transaction simulation failed: ${errorMsg}`);
-          }
-
-          // Check if dry-run reverted
-          if (dryRunReceipt.reverted) {
-            const revertReason =
-              dryRunReceipt.logs?.join('; ') ||
-              (dryRunReceipt as { error_message?: string }).error_message ||
-              'Unknown error';
-            txLogger.error('Dry-run reverted:', revertReason);
-            throw new Error(`Transaction would revert: ${revertReason}`);
-          }
-
-          // Calculate rc_limit with 10% buffer (Kondor pattern)
-          const rcUsed = Number(dryRunReceipt.rc_used || 0);
-          let rcLimit = Math.floor(1.1 * rcUsed);
-          txLogger.debug('RC used:', rcUsed, '-> RC limit with 10% buffer:', rcLimit);
-
-          // Ensure we have a reasonable rc_limit
-          if (rcLimit <= 0) {
-            txLogger.warn('RC limit is 0, using fallback');
-            throw new Error('Could not estimate transaction cost');
-          }
-
-          // Cap to free mana sharer's max (100 mana)
-          if (rcLimit > MAX_FREE_MANA) {
-            txLogger.warn('Transaction needs', rcLimit, 'RC but free mana max is', MAX_FREE_MANA);
-            // For now, cap it - transaction might fail if it actually needs more
-            // TODO: Fall back to user's own mana if transaction needs more than 100 mana
-            rcLimit = MAX_FREE_MANA;
-            txLogger.debug('Capped rc_limit to', MAX_FREE_MANA);
-          }
-
-          // Now create the actual transaction with proper rc_limit
-          const txObj = new Transaction({ signer, provider });
-
-          // Copy transaction but clear id and signatures (they'll be recalculated after signing)
-          const txForSigning = cloneTransaction(tx);
-          delete txForSigning.id;
-          delete txForSigning.signatures;
-          txObj.transaction = txForSigning;
-
-          // Set the estimated rc_limit (override whatever the dApp sent)
-          if (!txObj.transaction.header) {
-            txObj.transaction.header = {};
-          }
-          txObj.transaction.header.rc_limit = String(rcLimit);
-
-          // Always prepare to calculate transaction ID and fill missing fields
-          txLogger.debug('Preparing transaction...');
-          await txObj.prepare();
-          txLogger.debug('Transaction prepared, ID:', txObj.transaction.id);
-
-          // Sign the transaction
-          await signer.signTransaction(txObj.transaction);
-
+          setApprovalFinished(true);
           if (isSend) {
-            // Send the transaction
-            const receipt = await txObj.send({ broadcast: true });
-            onApprove({
-              transaction: txObj.transaction,
-              receipt,
+            const receipt = await submitTransactionOnce({
+              provider: review.provider,
+              transaction,
+              assertCurrent: assertApprovalCurrent,
+              ...(recovery ? { retryOnly: true } : {}),
+              pending: recovery ?? {
+                address: request.signerAddress,
+                networkMode,
+                source,
+                appOrigin: normalizedOrigin,
+                transaction: buildPendingTransactionFromBroadcast({
+                  address: request.signerAddress,
+                  chainTransactionId: transaction.id,
+                  transaction,
+                  getTokenByContractId: useTokenStore.getState().getTokenByContractId,
+                }),
+              },
+              onPersisted: (pending) => useTransactionStore.getState().addPendingTransaction(pending),
+              onRejected: (pending) => {
+                if (pending.chainTransactionId) {
+                  useTransactionStore.getState().removeRejectedSubmission(pending, pending.chainTransactionId);
+                }
+              },
             });
+            onApprove({ transaction, receipt });
           } else {
-            // Just return the signed transaction
-            onApprove({
-              transaction: txObj.transaction,
-            });
+            onApprove({ transaction });
           }
         }
       );
-
       HapticFeedback.success();
-    } catch (err: any) {
-      txLogger.error('Transaction signing error:', err);
-      setError(err.message || 'Failed to sign transaction');
-      setSigning(false);
+    } catch (err) {
+      txLogger.error('Transaction approval failed:', err);
+      if (currentRevision === revision.current) {
+        const message = err instanceof Error ? err.message : 'Failed to approve transaction';
+        setError(message);
+        if (err instanceof TransactionOutcomeUnknownError || err instanceof TransactionRejectedError) {
+          onReject(message);
+        } else {
+          setApprovalFinished(false);
+        }
+      }
       HapticFeedback.error();
+    } finally {
+      busy.current = false;
+      if (currentRevision === revision.current) setSigning(false);
     }
-  }, [
-    request,
-    activeAccount,
-    requestedAccount,
-    activeNetwork.chainId,
-    activeNetwork.freeManaSharer,
-    activeNetwork.rpcNodes,
-    isSend,
-    onApprove,
-    rejectPendingRequest,
-    blockedSwapMessage,
-  ]);
+  };
 
   // Handle rejection
   const handleReject = useCallback(() => {
+    revision.current += 1;
     HapticFeedback.selection();
     onReject('User rejected the transaction');
     onClose();
@@ -416,12 +424,12 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
         <View style={styles.header}>
           <View style={styles.headerContent}>
             <Text style={styles.headerLabel}>
-              Your wallet is interacting with:
+              {recovery ? 'Activity' : 'Your wallet is interacting with:'}
             </Text>
-            <Text style={styles.appNameLarge}>{appName || simplifiedDomain}</Text>
-            <Text style={styles.appOrigin} numberOfLines={1}>
+            <Text style={styles.appNameLarge}>{recovery ? 'Review original send' : appName || simplifiedDomain}</Text>
+            {!recovery && <Text style={styles.appOrigin} numberOfLines={1}>
               {originSecurity.displayOrigin}
-            </Text>
+            </Text>}
           </View>
         </View>
 
@@ -443,20 +451,20 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
                 color={originSecurity.level === 'trusted' ? colors.success : colors.warning}
               />
               <View style={styles.noticeCopy}>
-                <Text style={styles.noticeTitle}>Origin and network review</Text>
+                <Text style={styles.noticeTitle}>{recovery ? 'Original transaction' : 'Origin and network review'}</Text>
                 <Text style={styles.noticeText}>
-                  {hasKoinDxSwapOperation(request?.transaction.operations)
-                    ? blockedSwapMessage
+                  {recovery ? 'Retry the same send with its original amount, recipient and maximum mana.' : unsupportedSwap
+                    ? unsupportedSwapMessage
                     : 'Review the site origin and network before approving this transaction.'}
                 </Text>
               </View>
             </View>
 
             <View style={styles.summaryGrid}>
-              <View style={styles.summaryCard}>
+              {!recovery && <View style={styles.summaryCard}>
                 <Text style={styles.summaryLabel}>Site Origin</Text>
                 <Text style={styles.summaryValue}>{originSecurity.displayOrigin}</Text>
-              </View>
+              </View>}
               <View style={styles.summaryCard}>
                 <Text style={styles.summaryLabel}>Active Network</Text>
                 <Text style={styles.summaryValue}>{activeNetwork.name}</Text>
@@ -504,7 +512,7 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
                         {op.details.map((detail, detailIndex) => (
                           <View key={detailIndex} style={styles.detailRow}>
                             <Text style={styles.detailLabel}>{detail.label}</Text>
-                            <Text style={styles.detailValue} numberOfLines={3}>
+                            <Text style={styles.detailValue} numberOfLines={recovery ? undefined : 3}>
                               {detail.value}
                             </Text>
                           </View>
@@ -515,6 +523,43 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
                 ))
               )}
             </View>
+
+            {review ? (
+              <View style={styles.advancedCard}>
+                <Text style={styles.advancedLabel}>Reviewed transaction</Text>
+                <Text style={styles.advancedValue}>Payer {review.transaction.header?.payer}</Text>
+                {review.transaction.header?.payee && (
+                  <Text style={styles.advancedValue}>Payee {review.transaction.header.payee}</Text>
+                )}
+                <Text style={styles.advancedValue}>Maximum mana {formatMana(String(review.transaction.header?.rc_limit))}</Text>
+                <TouchableOpacity onPress={() => setReview(null)} disabled={signing || approvalFinished}>
+                  <Text style={styles.advancedLabel}>Review again</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.advancedCard}>
+                {canSetPayer && (
+                  <TouchableOpacity onPress={() => setSponsoredMana((enabled) => !enabled)} disabled={preparing}>
+                    <Text style={styles.advancedValue}>
+                      {sponsoredMana ? 'Paying with sponsored mana' : 'Paying with account mana'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                {canSetRc && (
+                  <>
+                    <Text style={styles.advancedLabel}>Maximum mana</Text>
+                    <TextInput
+                      accessibilityLabel="Maximum mana"
+                      style={styles.advancedValue}
+                      value={rcLimit}
+                      editable={!preparing}
+                      keyboardType="decimal-pad"
+                      onChangeText={setRcLimit}
+                    />
+                  </>
+                )}
+              </View>
+            )}
 
             {/* Advanced Toggle */}
             <TouchableOpacity
@@ -544,38 +589,38 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
                 </View>
 
                 {/* Transaction Header */}
-                {request.transaction.header && (
+                {(review?.transaction ?? request.transaction).header && (
                   <View style={styles.advancedCard}>
                     <Text style={styles.advancedLabel}>Transaction Header</Text>
-                    {request.transaction.header.payer && (
+                    {(review?.transaction ?? request.transaction).header?.payer && (
                       <View style={styles.advancedRow}>
                         <Text style={styles.advancedRowLabel}>Payer:</Text>
                         <Text style={styles.advancedRowValue} numberOfLines={1}>
-                          {request.transaction.header.payer}
+                          {(review?.transaction ?? request.transaction).header?.payer}
                         </Text>
                       </View>
                     )}
-                    {request.transaction.header.payee && (
+                    {(review?.transaction ?? request.transaction).header?.payee && (
                       <View style={styles.advancedRow}>
                         <Text style={styles.advancedRowLabel}>Payee:</Text>
                         <Text style={styles.advancedRowValue} numberOfLines={1}>
-                          {request.transaction.header.payee}
+                          {(review?.transaction ?? request.transaction).header?.payee}
                         </Text>
                       </View>
                     )}
-                    {request.transaction.header.nonce && (
+                    {(review?.transaction ?? request.transaction).header?.nonce && (
                       <View style={styles.advancedRow}>
                         <Text style={styles.advancedRowLabel}>Nonce:</Text>
                         <Text style={styles.advancedRowValue}>
-                          {request.transaction.header.nonce}
+                          {(review?.transaction ?? request.transaction).header?.nonce}
                         </Text>
                       </View>
                     )}
-                    {request.transaction.header.rc_limit && (
+                    {(review?.transaction ?? request.transaction).header?.rc_limit && (
                       <View style={styles.advancedRow}>
                         <Text style={styles.advancedRowLabel}>RC Limit:</Text>
                         <Text style={styles.advancedRowValue}>
-                          {request.transaction.header.rc_limit}
+                          {(review?.transaction ?? request.transaction).header?.rc_limit}
                         </Text>
                       </View>
                     )}
@@ -588,7 +633,7 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
             <View style={styles.warningContainer}>
               <Ionicons name="warning" size={20} color={colors.warning} />
               <Text style={styles.warningText}>
-                Interacting with unknown contracts can be risky. Only proceed if you trust this application.
+                {recovery ? 'Check the recipient and token contract before you retry.' : 'Interacting with unknown contracts can be risky. Only proceed if you trust this application.'}
               </Text>
             </View>
           </ScrollView>
@@ -613,14 +658,14 @@ export const TransactionApprovalModal: React.FC<TransactionApprovalModalProps> =
 
           <TouchableOpacity
             style={[styles.approveButton, signing && styles.buttonDisabled]}
-            onPress={handleApprove}
-            disabled={signing || loading}
+            onPress={review ? handleApprove : handleReview}
+            disabled={signing || preparing || loading || approvalFinished}
           >
-            {signing ? (
+            {signing || preparing ? (
               <ActivityIndicator size="small" color={colors.textPrimary} />
             ) : (
               <Text style={styles.approveButtonText}>
-                {isSend ? 'Send' : 'Sign'}
+                {review ? (recovery ? 'Retry send' : isSend ? 'Send' : 'Sign') : 'Review'}
               </Text>
             )}
           </TouchableOpacity>

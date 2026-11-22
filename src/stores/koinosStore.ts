@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Provider, Signer, Contract, utils } from 'koilib';
 import * as SecureStore from 'expo-secure-store';
+import { readPayerCapacity, parseManaLimit, DEFAULT_MAX_MANA } from '../lib/mana';
 import { DEFAULT_RC_LIMIT } from '../lib/constants';
 import { createWalletFromMnemonic } from '../lib/wallet';
 import {
@@ -12,6 +13,9 @@ import { getActiveNetworkConfig } from './networkStore';
 import { useWalletStore } from './walletStore';
 
 interface TransferExecutionOptions {
+  rcLimit?: string;
+  payer?: string;
+  assertCurrent?: () => void;
   memo?: string;
   onBroadcastAccepted?: (details: TransferBroadcastAcceptedDetails) => void;
 }
@@ -36,6 +40,7 @@ interface KoinosState {
     options?: TransferExecutionOptions
   ) => Promise<string>;
   estimateMana: (to: string, amount: string) => Promise<string>;
+  getTransferCapacity: (payer: string, contractId: string, from: string, amount: string) => Promise<string>;
   reset: () => void;
 }
 
@@ -52,10 +57,6 @@ async function getTemporarySigner(provider: Provider): Promise<Signer> {
     privateKey = await SecureStore.getItemAsync(`kondor_pk_${activeAccountId}`);
   }
 
-  if (!privateKey) {
-    privateKey = await SecureStore.getItemAsync('kondor_wallet_private_key');
-  }
-
   // If still no key, try deriving from mnemonic
   if (!privateKey) {
     const state = useWalletStore.getState();
@@ -70,16 +71,19 @@ async function getTemporarySigner(provider: Provider): Promise<Signer> {
     }
   }
 
+  if (!privateKey) privateKey = await SecureStore.getItemAsync('kondor_wallet_private_key');
+
   if (!privateKey) {
     throw new Error('No private key found');
   }
 
-  if (privateKey.length === 64) {
-    return new Signer({ privateKey, provider });
-  }
-
-  const signer = Signer.fromWif(privateKey);
+  const signer = privateKey.length === 64 ? new Signer({ privateKey, provider }) : Signer.fromWif(privateKey);
   signer.provider = provider;
+  const state = useWalletStore.getState();
+  const expectedAddress = state.accounts.find(account => account.id === activeAccountId)?.address ?? state.address;
+  if (!expectedAddress || signer.getAddress() !== expectedAddress || state.activeAccountId !== activeAccountId) {
+    throw new Error('The signing key does not match the selected account. Restore this account before sending.');
+  }
   return signer;
 }
 
@@ -168,7 +172,7 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
 
   getMana: async (address: string) => {
     log.debug(' getMana called for address:', address);
-    const { provider: currentProvider } = await ensureActiveProvider(get);
+    const { provider: currentProvider, network } = await ensureActiveProvider(get);
 
     try {
       log.debug(' Fetching account resource credits...');
@@ -234,16 +238,6 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
       const signer = await getTemporarySigner(currentProvider);
       const from = signer.getAddress();
 
-      // See transferToken: use max rc (balance) as the dry-run limit so a stale
-      // available-rc reading can't trigger a spurious "insufficient rc".
-      let maxRc: number | undefined;
-      try {
-        const mana = await get().getMana(from);
-        maxRc = Number(mana.max) || undefined;
-      } catch (manaErr) {
-        log.debug(' Could not fetch max rc; estimation will fall back to available rc');
-      }
-
       const tokenContract = new ManualTokenContract(
         network.koinContract,
         currentProvider
@@ -254,7 +248,10 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
         to,
         amount,
         {
-          maxRc,
+          rcLimit: options?.rcLimit ?? parseManaLimit(DEFAULT_MAX_MANA),
+          payer: options?.payer,
+          assertCurrent: options?.assertCurrent,
+          networkMode: network.isTestnet ? 'harbinger' : 'mainnet',
           memo: options?.memo,
           onBroadcastAccepted: options?.onBroadcastAccepted,
         }
@@ -281,7 +278,7 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
     decimals: number,
     options?: TransferExecutionOptions
   ) => {
-    const { provider: currentProvider } = await ensureActiveProvider(get);
+    const { provider: currentProvider, network } = await ensureActiveProvider(get);
 
     try {
       set({ isLoading: true, error: null });
@@ -290,17 +287,6 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
 
       const signer = await getTemporarySigner(currentProvider);
       const from = signer.getAddress();
-
-      // Max rc = the account's KOIN balance; used as the dry-run rc_limit so a
-      // stale/low *available* rc reading (e.g. just after funding) can't cap the
-      // estimation and cause a spurious "insufficient rc" on the first attempt.
-      let maxRc: number | undefined;
-      try {
-        const mana = await get().getMana(from);
-        maxRc = Number(mana.max) || undefined;
-      } catch (manaErr) {
-        log.debug(' Could not fetch max rc; estimation will fall back to available rc');
-      }
 
       const tokenContract = new ManualTokenContract(
         contractId,
@@ -313,7 +299,10 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
         amount,
         {
           decimals,
-          maxRc,
+          rcLimit: options?.rcLimit ?? parseManaLimit(DEFAULT_MAX_MANA),
+          payer: options?.payer,
+          assertCurrent: options?.assertCurrent,
+          networkMode: network.isTestnet ? 'harbinger' : 'mainnet',
           memo: options?.memo,
           onBroadcastAccepted: options?.onBroadcastAccepted,
         }
@@ -331,6 +320,14 @@ export const useKoinosStore = create<KoinosState>((set, get) => ({
       });
       throw error;
     }
+  },
+
+  getTransferCapacity: async (payer, contractId, from, amount) => {
+    const { provider, network } = await ensureActiveProvider(get);
+    return readPayerCapacity({
+      provider, payer, koinContract: network.koinContract, sponsor: network.freeManaSharer,
+      outgoingKoin: payer === from && contractId === network.koinContract ? utils.parseUnits(amount, 8) : '0',
+    });
   },
 
   estimateMana: async (to: string, amount: string) => {

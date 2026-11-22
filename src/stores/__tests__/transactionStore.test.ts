@@ -408,3 +408,32 @@ describe('transactionStore', () => {
     ]);
   });
 });
+
+describe('durable broadcast recovery', () => {
+  beforeEach(async () => {
+    await getAsyncStorage().clear();
+    jest.clearAllMocks();
+  });
+
+  it('restores an unresolved submission from its journal after restart and never prunes it by age', async () => {
+    jest.resetModules();
+    const input = createPendingInput();
+    await getAsyncStorage().setItem('kondor-submission:mainnet:1WalletAddress:0xchain-tx-1', JSON.stringify({
+      state: 'unknown', pending: input,
+      transaction: { id: input.chainTransactionId },
+    }));
+    const { useTransactionStore } = require('../transactionStore') as TransactionStoreModule;
+    await useTransactionStore.persist.rehydrate();
+    await useTransactionStore.getState().recoverPendingSubmissions();
+    useTransactionStore.getState().pruneStalePendingTransactions(NOW + 7 * 24 * 60 * 60 * 1000);
+    expect(useTransactionStore.getState().getPendingTransactions(input)).toEqual([
+      expect.objectContaining({ id: '0xchain-tx-1', status: 'pending' }),
+    ]);
+    useTransactionStore.getState().confirmPendingTransactionsByChainIds(input, ['0xchain-tx-1']);
+    await flushPersistedWrites();
+    const journal = JSON.parse(await getAsyncStorage().getItem('kondor-submission:mainnet:1WalletAddress:0xchain-tx-1'));
+    expect(journal.state).toBe('confirmed');
+    expect(journal.transaction.signatures).toBeUndefined();
+    expect(useTransactionStore.getState().getPendingTransactions(input)).toHaveLength(0);
+  });
+});

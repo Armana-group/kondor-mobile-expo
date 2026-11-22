@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Alert,
   ActivityIndicator,
+  AppState,
   TouchableOpacity,
   Image,
   Modal,
@@ -31,9 +32,13 @@ import {
 } from '../stores/tokenStore';
 import { useNetworkStore } from '../stores/networkStore';
 import { useTransactionStore } from '../stores/transactionStore';
-import { isValidAddress, calculateManaRegenTime, truncateAddress, formatKoinBalance } from '../lib/utils';
+import { isValidAddress, truncateAddress, formatKoinBalance } from '../lib/utils';
 import { resolveRecipient, type RecipientResolution } from '../lib/recipient';
 import { requireBiometricAuth } from '../lib/biometrics';
+import { parseManaLimit, formatMana, assertManaCapacity, DEFAULT_MAX_MANA } from '../lib/mana';
+import { parseDecimalAmount } from '../lib/swapMath';
+import { MAINNET, TESTNET } from '../lib/constants';
+import { TransactionOutcomeUnknownError } from '../lib/transactionBroadcast';
 import { koinosLogger } from '../lib/logger';
 import { isSendConfirmationRequired } from '../services/auth';
 import {
@@ -194,7 +199,7 @@ export const SendScreen = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<SendRouteParams, 'Send'>>();
   const routeToken = route.params?.token;
-  const { transfer, transferToken, getMana, getBalance } = useKoinosStore();
+  const { transferToken, getTransferCapacity, getBalance } = useKoinosStore();
   const { address, updateBalance, backupHealth } = useWalletStore();
   const { contacts, getContactByAddress } = useContactStore();
   const {
@@ -233,6 +238,9 @@ export const SendScreen = () => {
   const [recipient, setRecipient] = useState('');
   const [amount, setAmount] = useState('');
   const [memo, setMemo] = useState('');
+  const [maxMana, setMaxMana] = useState('');
+  const [payerMode, setPayerMode] = useState<'own' | 'free' | 'custom'>('own');
+  const [customPayer, setCustomPayer] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [sendConfirmationRequired, setSendConfirmationRequired] = useState(true);
   const [showContactPicker, setShowContactPicker] = useState(false);
@@ -244,6 +252,18 @@ export const SendScreen = () => {
     recipient?: string;
     amount?: string;
   }>({});
+
+  const approvalEpoch = useRef(0);
+  const draftRef = useRef('');
+  useLayoutEffect(() => {
+    draftRef.current = JSON.stringify([address, historyNetworkMode, selectedToken?.contractId, recipient, amount, memo, maxMana, payerMode, customPayer]);
+  }, [address, historyNetworkMode, selectedToken?.contractId, recipient, amount, memo, maxMana, payerMode, customPayer]);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'background') approvalEpoch.current += 1;
+    });
+    return () => { approvalEpoch.current += 1; subscription.remove(); };
+  }, []);
 
   // Update selected token when route params change
   useEffect(() => {
@@ -324,61 +344,16 @@ export const SendScreen = () => {
       newErrors.recipient = 'Cannot send to yourself';
     }
 
-    // Validate amount
-    if (!amount) {
-      newErrors.amount = 'Amount is required';
-    } else if (isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
-      newErrors.amount = 'Invalid amount';
-    } else if (parseFloat(amount) > parseFloat(tokenBalance)) {
-      newErrors.amount = 'Insufficient balance';
+    try {
+      const units = BigInt(parseDecimalAmount(amount, selectedToken.decimals));
+      if (units <= 0n) newErrors.amount = 'Enter an amount greater than zero';
+      else if (units > BigInt(parseDecimalAmount(tokenBalance, selectedToken.decimals))) newErrors.amount = 'Insufficient balance';
+    } catch (error) {
+      newErrors.amount = error instanceof Error ? error.message : 'Invalid amount';
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  };
-
-  const validateMana = async (): Promise<boolean> => {
-    const ESTIMATED_TRANSFER_MANA = 500000;
-
-    try {
-      const manaData = await getMana(address);
-      const availableMana = BigInt(manaData.available);
-      const maxMana = BigInt(manaData.max);
-      const requiredMana = BigInt(ESTIMATED_TRANSFER_MANA);
-
-      koinosLogger.debug('Available mana:', availableMana.toString());
-      koinosLogger.debug('Reserved mana:', manaData.reserved);
-      koinosLogger.debug('Estimated required:', requiredMana.toString());
-
-      if (availableMana < requiredMana) {
-        const timeToRegen = calculateManaRegenTime(
-          availableMana,
-          requiredMana,
-          maxMana
-        );
-
-        Alert.alert(
-          'Insufficient Mana',
-          `Your account doesn't have enough available mana to process this transaction.\n\nAvailable: ${manaData.availablePercentage.toFixed(1)}% (${(Number(availableMana) / 1000000).toFixed(2)}M)\nReserved: ${(Number(manaData.reserved) / 1000000).toFixed(2)}M\nRequired: ~${(Number(requiredMana) / 1000000).toFixed(2)}M\n\nMana regenerates over time. Please wait approximately ${timeToRegen} and try again.`,
-          [{ text: 'OK' }]
-        );
-        return false;
-      }
-
-      koinosLogger.debug('Mana check passed, proceeding with transfer');
-      return true;
-    } catch (error: any) {
-      koinosLogger.error('Mana check error:', error);
-      Alert.alert(
-        'Warning',
-        'Unable to check mana availability. The transaction may fail if you have insufficient mana. Continue anyway?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Continue', onPress: () => {} }
-        ]
-      );
-      return false;
-    }
   };
 
   const handleSend = async () => {
@@ -386,7 +361,16 @@ export const SendScreen = () => {
       return;
     }
 
+    const reviewedDraft = draftRef.current;
+    const epoch = approvalEpoch.current;
+    const expiresAt = Date.now() + 60_000;
+    const assertCurrent = () => {
+      if (draftRef.current !== reviewedDraft || useWalletStore.getState().address !== address || useNetworkStore.getState().mode !== networkMode || epoch !== approvalEpoch.current || Date.now() >= expiresAt) {
+        throw new Error('The transaction review changed or expired. Review the transaction again.');
+      }
+    };
     const resolution = await resolveRecipient(recipient, networkMode);
+    try { assertCurrent(); } catch (error) { Alert.alert('Review Changed', (error as Error).message); return; }
     if (!resolution) {
       setRecipientResolution(null);
       setErrors((prev) => ({
@@ -409,27 +393,35 @@ export const SendScreen = () => {
 
     setRecipientResolution(resolution);
 
-    const hasSufficientMana = await validateMana();
-    if (!hasSufficientMana) {
+    const network = historyNetworkMode === 'harbinger' ? TESTNET : MAINNET;
+    const payer = payerMode === 'own' ? address : payerMode === 'free' ? network.freeManaSharer : customPayer.trim();
+    let rcLimit: string;
+    try {
+      if (!isValidAddress(payer)) throw new Error('Enter a valid payer address.');
+      const capacity = await getTransferCapacity(payer, selectedToken.contractId, address, amount);
+      assertCurrent();
+      const defaultLimit = BigInt(parseManaLimit(DEFAULT_MAX_MANA));
+      rcLimit = maxMana ? parseManaLimit(maxMana) : (BigInt(capacity) < defaultLimit ? capacity : defaultLimit.toString());
+      assertManaCapacity(rcLimit, capacity);
+    } catch (error) {
+      Alert.alert('Mana Check', error instanceof Error ? error.message : 'Could not check available mana.');
       return;
     }
 
     const resolvedRecipientAddress = resolution.address;
     const trimmedMemo = memo.trim();
-    const displayRecipient = selectedContact
-      ? `${selectedContact.name} (${truncateAddress(recipient)})`
-      : resolution.source !== 'address'
-        ? `${resolution.input} (${truncateAddress(resolvedRecipientAddress)})`
-      : truncateAddress(recipient);
-
+    let approvalConsumed = false;
     Alert.alert(
       'Confirm Transaction',
-      `Send ${amount} ${selectedToken.symbol} to\n${displayRecipient}${trimmedMemo ? `\n\nMemo: ${trimmedMemo}` : ''}?`,
+      `Send ${amount} ${selectedToken.symbol} to\n${resolvedRecipientAddress}\n\nNetwork: ${network.name}\nPayer: ${payer}\nMaximum mana: ${formatMana(rcLimit)}${trimmedMemo ? `\n\nMemo: ${trimmedMemo}` : ''}\n\nExecution cost is checked by the network when submitted.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Send',
           onPress: async () => {
+            if (approvalConsumed) return;
+            approvalConsumed = true;
+            try { assertCurrent(); } catch (error) { Alert.alert('Review Changed', (error as Error).message); return; }
             if (sendConfirmationRequired) {
               const authenticationRequired = await shouldAuthenticateTransaction(address);
               if (authenticationRequired) {
@@ -444,6 +436,7 @@ export const SendScreen = () => {
 
             setIsSending(true);
             try {
+              assertCurrent();
               let pendingRecorded = false;
               const recordPendingTransaction = ({
                 transactionId,
@@ -462,6 +455,7 @@ export const SendScreen = () => {
                   networkMode: historyNetworkMode,
                   chainTransactionId: transactionId,
                   source: 'send',
+                  submissionTracked: true,
                   transaction: {
                     id: transactionId,
                     type: 'send',
@@ -474,7 +468,7 @@ export const SendScreen = () => {
                     to: resolvedRecipientAddress,
                     timestamp,
                     fee: '0',
-                    payer: address,
+                    payer,
                     ...(trimmedMemo ? { memo: trimmedMemo } : {}),
                   },
                 });
@@ -488,16 +482,19 @@ export const SendScreen = () => {
                 selectedToken.decimals,
                 {
                   ...(trimmedMemo ? { memo: trimmedMemo } : {}),
+                  rcLimit, payer, assertCurrent,
                   onBroadcastAccepted: recordPendingTransaction,
                 }
               );
 
               recordPendingTransaction({ transactionId: txId, timestamp: Date.now() });
 
-              // Refresh balances
-              const newBalance = await getBalance(address);
-              updateBalance(newBalance);
-              await refreshSingleBalance(address, selectedToken.contractId);
+              // A balance refresh cannot change a confirmed transaction outcome.
+              try {
+                const newBalance = await getBalance(address);
+                if (useWalletStore.getState().address === address) updateBalance(newBalance);
+                await refreshSingleBalance(address, selectedToken.contractId);
+              } catch { /* A later portfolio refresh will update balances. */ }
 
               Alert.alert(
                 'Success!',
@@ -511,7 +508,7 @@ export const SendScreen = () => {
               );
             } catch (error: any) {
               Alert.alert(
-                'Transaction Failed',
+                error instanceof TransactionOutcomeUnknownError ? 'Checking Transaction' : 'Transaction Failed',
                 error.message || 'Failed to send transaction'
               );
             } finally {
@@ -798,6 +795,18 @@ export const SendScreen = () => {
               onChangeText={setMemo}
               autoCapitalize="sentences"
             />
+          </View>
+          <View style={styles.memoSection}>
+            <Input label="Maximum mana" placeholder="Up to 10, limited by available mana" value={maxMana} onChangeText={setMaxMana} keyboardType="decimal-pad" />
+            <Text style={styles.inputLabel}>Mana payer</Text>
+            <View style={styles.savedRecipientChips}>
+              {(['own', 'free', 'custom'] as const).map(mode => (
+                <TouchableOpacity key={mode} accessibilityRole="radio" accessibilityState={{ selected: payerMode === mode }} style={styles.savedRecipientChip} onPress={() => setPayerMode(mode)}>
+                  <Text style={styles.savedRecipientChipText}>{mode === 'own' ? 'My account' : mode === 'free' ? 'Free mana' : 'Custom payer'}{payerMode === mode ? ' ✓' : ''}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {payerMode === 'custom' && <Input label="Payer address" value={customPayer} onChangeText={setCustomPayer} autoCapitalize="none" autoCorrect={false} />}
           </View>
         </ScrollView>
 

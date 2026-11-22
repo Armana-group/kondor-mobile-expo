@@ -1,3 +1,4 @@
+import { settleJournalTransactions } from './transactionJournal';
 /**
  * Manual token contract implementation that bypasses protobuf extension issues
  * Uses protobufjs directly without the problematic extensions
@@ -6,7 +7,12 @@
 import { Provider, Signer, utils, Transaction } from 'koilib';
 import * as protobuf from 'protobufjs/minimal';
 import { createLogger } from './logger';
-import { dryRunRcLimit } from './manaEstimation';
+import { parseDecimalAmount } from './swapMath';
+import { validateRcLimit, readPayerCapacity, assertManaCapacity } from './mana';
+import { submitTransactionOnce, TransactionOutcomeUnknownError } from './transactionBroadcast';
+import { useTransactionStore } from '../stores/transactionStore';
+import { useTokenStore } from '../stores/tokenStore';
+import { getActiveNetworkConfig, getNetworkConfigForMode, type NetworkMode } from '../stores/networkStore';
 
 const log = createLogger('TokenContract');
 
@@ -16,18 +22,13 @@ export interface TransferBroadcastAcceptedDetails {
 }
 
 export interface TransferOptions {
-  rcLimit?: number;
+  rcLimit: string;
+  payer?: string;
+  networkMode?: NetworkMode;
+  assertCurrent?: () => void;
   decimals?: number;
-  maxRc?: number;
   memo?: string;
   onBroadcastAccepted?: (details: TransferBroadcastAcceptedDetails) => void;
-}
-
-// Configure protobufjs for the environment
-if (typeof window !== 'undefined' && window.Buffer) {
-  // protobufjs: assigning Long = null disables 64-bit Long support
-  protobuf.util.Long = null as unknown as typeof protobuf.util.Long;
-  protobuf.configure();
 }
 
 export class ManualTokenContract {
@@ -165,87 +166,53 @@ export class ManualTokenContract {
 
   /**
    * Transfer tokens using manual transaction creation to avoid protobuf issues
-   * Uses dry-run estimation to determine actual RC needed (Kondor pattern)
+   * Signs the reviewed payer and mana ceiling once, then submits once.
    */
   async transfer(
     signer: Signer,
     to: string,
     amount: string,
-    options: TransferOptions = {}
+    options: TransferOptions
   ): Promise<{ transactionId: string }> {
     try {
       const decimals = options.decimals ?? 8;
+      const networkMode = options.networkMode ?? (getActiveNetworkConfig().isTestnet ? 'harbinger' : 'mainnet');
       log.debug(' Starting transfer to:', to, 'amount:', amount, 'decimals:', decimals);
 
       const from = signer.getAddress();
 
       // Convert amount to smallest unit using the token's decimals
-      const value = utils.parseUnits(amount, decimals);
+      const value = parseDecimalAmount(amount, decimals);
       log.debug(' Parsed amount:', value);
 
       // Encode transfer arguments
       const encodedArgs = this.encodeTransferArgs(from, to, value, options.memo);
       log.debug(' Encoded transfer args');
 
-      let rcLimit = options.rcLimit;
-
-      // If no RC limit provided, estimate it via dry-run (Kondor pattern)
-      if (!rcLimit) {
-        log.debug(' No RC limit provided, estimating via dry-run...');
-
-        // Choose an rc_limit for the dry-run. Prefer the account's MAX rc
-        // (balance, passed as options.maxRc) over currently-available rc, which
-        // can read low/stale right after funding and wrongly cap the dry-run —
-        // the node then rejects with "insufficient rc" until a retry. See
-        // dryRunRcLimit / the kondor estimateAndAdjustMana pattern.
-        let availableRc = 0;
-        try {
-          const rcResult = await this.provider.call<{ rc?: string }>('chain.get_account_rc', {
-            account: from
-          });
-          availableRc = Number(rcResult.rc || 0);
-        } catch (error) {
-          log.debug(' Could not fetch available RC');
-        }
-        const estimationLimit = dryRunRcLimit({ maxRc: options.maxRc, availableRc });
-        log.debug(' Dry-run rc_limit:', estimationLimit, '(maxRc:', options.maxRc, 'availableRc:', availableRc, ')');
-
-        // Create a test transaction for estimation
-        const estimateTx = new Transaction({
-          signer,
-          provider: this.provider,
-          options: {
-            rcLimit: estimationLimit,
-          }
+      const rcLimit = validateRcLimit(options.rcLimit);
+      const network = getNetworkConfigForMode(networkMode);
+      const payer = options.payer || from;
+      const assertResources = async () => {
+        options.assertCurrent?.();
+        const capacity = await readPayerCapacity({
+          provider: this.provider, payer, koinContract: network.koinContract,
+          sponsor: network.freeManaSharer,
+          outgoingKoin: payer === from && this.contractId === network.koinContract ? value : '0',
         });
+        options.assertCurrent?.();
+        assertManaCapacity(rcLimit, capacity);
+      };
+      await assertResources();
 
-        // Add the transfer operation
-        await estimateTx.pushOperation({
-          call_contract: {
-            contract_id: this.contractId,
-            entry_point: 0x27f576ca, // transfer entry point
-            args: utils.encodeBase64url(encodedArgs)
-          }
-        });
-
-        // Dry-run: send with broadcast: false to get actual RC usage
-        log.debug(' Performing dry-run...');
-        const dryRunReceipt = await estimateTx.send({ broadcast: false });
-        log.debug(' Dry-run receipt:', dryRunReceipt);
-
-        // Add 10% buffer to estimated RC (Kondor pattern)
-        const rcUsed = Number(dryRunReceipt.rc_used || 0);
-        rcLimit = Math.floor(1.1 * rcUsed);
-        log.debug(' Estimated RC used:', rcUsed);
-        log.debug(' RC limit with 10% buffer:', rcLimit);
-      }
-
-      // Create the actual transaction with estimated RC limit
+      // Create the transaction with the reviewed exact RC limit
       const tx = new Transaction({
         signer,
         provider: this.provider,
         options: {
-          rcLimit: rcLimit || 100000000, // Fallback to 100M if estimation fails
+          rcLimit,
+          payer,
+          chainId: network.chainId,
+          ...(payer !== from ? { payee: from } : {}),
         }
       });
 
@@ -262,20 +229,36 @@ export class ManualTokenContract {
 
       log.debug(' Transaction prepared, ID:', tx.transaction.id);
 
-      // Send transaction (broadcast: true)
-      log.debug(' Sending transaction...');
-      const receipt = await tx.send();
-      log.debug(' Transaction sent, receipt:', receipt);
-      options.onBroadcastAccepted?.({
-        transactionId: receipt.id,
-        timestamp: Date.now(),
+      await tx.prepare();
+      await assertResources();
+      await signer.signTransaction(tx.transaction);
+      options.assertCurrent?.();
+      const token = useTokenStore.getState().getTokenByContractId(this.contractId);
+      const receipt = await submitTransactionOnce({
+        provider: this.provider,
+        transaction: tx.transaction,
+        assertCurrent: options.assertCurrent,
+        pending: {
+          address: from,
+          networkMode,
+          source: 'send',
+          transaction: {
+            type: 'send', amount, token: this.contractId,
+            tokenSymbol: token?.symbol ?? 'TOKEN', tokenDecimals: decimals, tokenIcon: token?.icon,
+            from, to, timestamp: Date.now(), fee: '0', payer, memo: options.memo?.trim(),
+          },
+        },
+        onPersisted: pending => useTransactionStore.getState().addPendingTransaction(pending),
+        onRejected: pending => useTransactionStore.getState().removeRejectedSubmission(pending, pending.chainTransactionId!),
       });
-
-      // Wait for confirmation
-      log.debug(' Waiting for confirmation...');
-      await tx.wait();
-      log.debug(' Transaction confirmed!');
-
+      try {
+        options.onBroadcastAccepted?.({ transactionId: receipt.id, timestamp: Date.now() });
+        await this.provider.wait(receipt.id);
+        await settleJournalTransactions({ address: from, networkMode }, [receipt.id]);
+        useTransactionStore.getState().confirmPendingTransactionByChainId({ address: from, networkMode }, receipt.id);
+      } catch {
+        throw new TransactionOutcomeUnknownError(receipt.id);
+      }
       return { transactionId: receipt.id };
     } catch (error) {
       log.error(' Transfer error:', error);
