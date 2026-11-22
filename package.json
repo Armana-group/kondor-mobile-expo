@@ -23,7 +23,6 @@
     }
   },
   "dependencies": {
-    "@armana/walletconnect-koinos-sdk-js": "^0.1.4",
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/netinfo": "12.0.1",
@@ -53,8 +52,8 @@
     "expo-status-bar": "~56.0.4",
     "expo-system-ui": "~56.0.5",
     "fast-text-encoding": "^1.0.6",
-    "koilib": "^9.1.0",
-    "protobufjs": "^7.5.4",
+    "koilib": "^9.4.1",
+    "protobufjs": "^7.6.6",
     "react": "19.2.3",
     "react-native": "0.85.3",
     "react-native-gesture-handler": "~2.31.1",
@@ -80,6 +79,12 @@
   "overrides": {
     "ethers": {
       "ws": "8.21.0"
+    },
+    "metro": {
+      "image-size": "2.1.0"
+    },
+    "@expo/cli": {
+      "zod": "4.6.7"
     }
   },
   "private": true
