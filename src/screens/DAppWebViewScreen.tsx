@@ -1057,6 +1057,8 @@ export const DAppWebViewScreen = () => {
         appName={app.name}
         appOrigin={pendingRequest?.origin || currentOriginRef.current || app.url}
         isSend={pendingRequest?.isSend || false}
+        isRequestCurrent={() => !!pendingRequest &&
+          pendingTransactionRequestRef.current === pendingRequest && currentOriginRef.current === pendingRequest.origin}
         onApprove={handleApproveTransaction}
         onReject={handleRejectTransaction}
         onClose={handleCloseApprovalModal}

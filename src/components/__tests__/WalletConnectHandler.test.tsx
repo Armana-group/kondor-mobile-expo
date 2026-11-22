@@ -433,6 +433,21 @@ describe('WalletConnectHandler network reconciliation', () => {
     expect(lastTransactionApprovalModalProps?.visible).toBe(false);
   });
 
+  it('invalidates a transaction approval immediately when its WalletConnect request is cleared', async () => {
+    mockWalletConnectState.pendingTransaction = {
+      id: 40, topic: 'transaction-topic', method: 'koinos_signAndSendTransaction',
+      transaction: { operations: [] }, signerAddress: '1WalletAddress',
+      peerMeta: { name: 'Test dApp', url: 'https://example.com' },
+    };
+    const { WalletConnectHandler } = require('../WalletConnectHandler');
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => { renderer = TestRenderer.create(<WalletConnectHandler />); });
+    expect(lastTransactionApprovalModalProps.isRequestCurrent()).toBe(true);
+    mockWalletConnectState.pendingTransaction = null;
+    expect(lastTransactionApprovalModalProps.isRequestCurrent()).toBe(false);
+    await act(async () => { renderer!.unmount(); });
+  });
+
   it('opens a signing modal for pending koinos_signMessage requests and responds with WalletConnect base64', async () => {
     mockWalletConnectState = {
       ...mockWalletConnectState,

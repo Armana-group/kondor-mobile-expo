@@ -497,6 +497,10 @@ export const WalletConnectHandler: React.FC = () => {
         appName={transactionApproval?.appName || 'Unknown App'}
         appOrigin={transactionApproval?.appOrigin || ''}
         isSend={transactionApproval?.current.method === KOINOS_METHODS.SignAndSendTransaction}
+        source="walletconnect"
+        isRequestCurrent={() => !!transactionApproval &&
+          useWalletConnectStore.getState().pendingTransaction === transactionApproval.current &&
+          getSessionTopicValidationForActiveNetwork(transactionApproval.current.topic).status === 'ready'}
         onApprove={handleApproveTransaction}
         onReject={handleRejectTransaction}
         onClose={handleCloseTransaction}
