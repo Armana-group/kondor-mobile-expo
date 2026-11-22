@@ -64,6 +64,10 @@ All documentation is in the [`/docs`](docs/) directory:
 
 See [Progress](docs/development/progress.md) for details.
 
+### Recover an interrupted send
+
+Open a pending native token send in Activity and choose **Review and retry** when a saved draft is available. After fresh approval, Kondor retries the original transaction ID with the same recipient, amount, and mana limit. For other pending entries, Activity checks confirmation by transaction ID.
+
 ## 🔧 Development
 
 ### Project Structure

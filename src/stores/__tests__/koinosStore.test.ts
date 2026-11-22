@@ -14,7 +14,7 @@ jest.mock('koilib', () => ({
     jest.fn(function MockSigner(this: any, options: any) {
       this.privateKey = options.privateKey;
       this.provider = options.provider;
-      this.getAddress = jest.fn(() => '1MockSignerAddress');
+      this.getAddress = jest.fn(() => '1HWXa4xwwf5B2csdkiUgpCZZjjGA8q6HUy');
     }),
     {
       fromWif: mockSignerFromWif,
@@ -78,7 +78,7 @@ describe('koinosStore provider initialization', () => {
     mockManualTransfer.mockResolvedValue({ transactionId: '0xsend' });
     mockSignerFromWif.mockReturnValue({
       provider: null,
-      getAddress: jest.fn(() => '1MockSignerAddress'),
+      getAddress: jest.fn(() => '1HWXa4xwwf5B2csdkiUgpCZZjjGA8q6HUy'),
     });
 
     const { useKoinosStore } = require('../koinosStore');
@@ -139,4 +139,13 @@ describe('koinosStore provider initialization', () => {
       })
     );
   });
+  it('rejects a legacy key that belongs to another account before any transfer', async () => {
+    const secureStore = require('expo-secure-store');
+    secureStore.__store.set('kondor_wallet_private_key', 'legacy-wif');
+    mockSignerFromWif.mockReturnValue({ getAddress: () => 'different-account' });
+    const { useKoinosStore } = require('../koinosStore');
+    await expect(useKoinosStore.getState().transferToken('token', 'recipient', '1', 8)).rejects.toThrow('does not match');
+    expect(mockManualTransfer).not.toHaveBeenCalled();
+  });
+
 });

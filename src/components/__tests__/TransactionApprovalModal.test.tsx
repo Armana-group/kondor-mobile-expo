@@ -5,10 +5,22 @@ import * as SecureStore from 'expo-secure-store';
 import { utils } from 'koilib';
 import * as protobuf from 'protobufjs/minimal';
 import { TransactionApprovalModal } from '../TransactionApprovalModal';
-import { KOINDX } from '../../lib/constants';
+import { KOINDX, MAINNET } from '../../lib/constants';
 import { encodeApproveArgs, encodeSwapTokensInArgs } from '../../lib/koindxCodec';
 import { useNetworkStore } from '../../stores/networkStore';
 import { requireBiometricAuth } from '../../lib/biometrics';
+import { submitTransactionOnce } from '../../lib/transactionBroadcast';
+import { readPayerCapacity } from '../../lib/mana';
+
+jest.mock('../../lib/transactionBroadcast', () => ({
+  ...jest.requireActual('../../lib/transactionBroadcast'),
+  submitTransactionOnce: jest.fn(),
+}));
+
+jest.mock('../../lib/mana', () => ({
+  ...jest.requireActual('../../lib/mana'),
+  readPayerCapacity: jest.fn(async () => '3000000000'),
+}));
 
 jest.mock(
   '@react-native-async-storage/async-storage',
@@ -40,7 +52,9 @@ let mockWalletState = {
 };
 
 const mockProvider = jest.fn();
-const mockSignTransaction = jest.fn(async (_tx?: unknown) => undefined);
+const mockSignTransaction = jest.fn(async (tx: { signatures?: string[] }) => {
+  tx.signatures = [...(tx.signatures ?? []), 'wallet-signature'];
+});
 const mockPrepare = jest.fn(async function (this: any) {
   const header = this.transaction.header ?? {};
   header.nonce = header.nonce ?? '0x01';
@@ -58,6 +72,7 @@ jest.mock('../../stores/walletStore', () => ({
     {
       getState: () => ({
         accounts: mockWalletState.accounts,
+        address: mockWalletState.getActiveAccount().address,
       }),
     }
   ),
@@ -101,12 +116,15 @@ jest.mock('../../lib/logger', () => ({
 }));
 
 jest.mock('koilib', () => {
+  const actual = jest.requireActual('koilib');
   class Provider {
     rpcNodes: string[];
     constructor(rpcNodes: string[]) {
       this.rpcNodes = rpcNodes;
       mockProvider(rpcNodes);
     }
+    getNextNonce = jest.fn(async () => 'KAE=');
+    sendTransaction = mockEstimateSend;
   }
 
   class Signer {
@@ -125,12 +143,13 @@ jest.mock('koilib', () => {
       }
       return OWNER;
     }
-    async signTransaction(tx: unknown) {
+    async signTransaction(tx: { signatures?: string[] }) {
       return mockSignTransaction(tx);
     }
   }
 
   class Transaction {
+    static prepareTransaction = actual.Transaction.prepareTransaction;
     transaction: any = {};
     constructor(_options: unknown) {}
     async prepare() {
@@ -142,6 +161,7 @@ jest.mock('koilib', () => {
   }
 
   return {
+    ...actual,
     Provider,
     Signer,
     Transaction,
@@ -237,7 +257,7 @@ describe('TransactionApprovalModal', () => {
     });
   });
 
-  it('rejects KoinDX dApp swaps with mobile-native copy before auth', async () => {
+  it('rejects KoinDX dApp swaps on testnet before auth', async () => {
     const onReject = jest.fn();
 
     let renderer: TestRenderer.ReactTestRenderer;
@@ -279,12 +299,15 @@ describe('TransactionApprovalModal', () => {
     await flushEffects();
 
     await act(async () => {
+      findButton(renderer!, 'Review')?.props.onPress();
+    });
+    await act(async () => {
       findButton(renderer!, 'Sign')?.props.onPress();
     });
     await flushEffects();
 
     expect(onReject).toHaveBeenCalledWith(
-      'KoinDX swaps from dApps are not supported on mobile. Use the Swap tab in Kondor Mobile instead.'
+      'KoinDX swaps are only available on Koinos Mainnet.'
     );
     expect(requireBiometricAuth).not.toHaveBeenCalled();
   });
@@ -316,6 +339,9 @@ describe('TransactionApprovalModal', () => {
     activeRenderer = renderer!;
     await flushEffects();
 
+    await act(async () => {
+      findButton(renderer!, 'Review')?.props.onPress();
+    });
     await act(async () => {
       findButton(renderer!, 'Sign')?.props.onPress();
     });
@@ -354,6 +380,9 @@ describe('TransactionApprovalModal', () => {
     activeRenderer = renderer!;
     await flushEffects();
 
+    await act(async () => {
+      findButton(renderer!, 'Review')?.props.onPress();
+    });
     await act(async () => {
       findButton(renderer!, 'Sign')?.props.onPress();
     });
@@ -460,7 +489,7 @@ describe('TransactionApprovalModal', () => {
     expect(textContent).toContain('0x7b');
   });
 
-  it('uses the active network provider and free mana sharer when signing', async () => {
+  it('shows the selected sponsored payer and uses the active network when signing', async () => {
     const onApprove = jest.fn();
 
     let renderer: TestRenderer.ReactTestRenderer;
@@ -487,6 +516,12 @@ describe('TransactionApprovalModal', () => {
     activeRenderer = renderer!;
     await flushEffects();
 
+    await act(async () => {
+      findButton(renderer!, 'Paying with account mana')?.props.onPress();
+    });
+    await act(async () => {
+      findButton(renderer!, 'Review')?.props.onPress();
+    });
     await act(async () => {
       findButton(renderer!, 'Sign')?.props.onPress();
     });
@@ -546,6 +581,9 @@ describe('TransactionApprovalModal', () => {
     await flushEffects();
 
     await act(async () => {
+      findButton(renderer!, 'Review')?.props.onPress();
+    });
+    await act(async () => {
       findButton(renderer!, 'Sign')?.props.onPress();
     });
     await flushEffects();
@@ -555,7 +593,7 @@ describe('TransactionApprovalModal', () => {
       expect.objectContaining({
         transaction: expect.objectContaining({
           header: expect.objectContaining({
-            payee: OWNER,
+            payer: OWNER,
           }),
         }),
       })
@@ -609,6 +647,9 @@ describe('TransactionApprovalModal', () => {
     await flushEffects();
 
     await act(async () => {
+      findButton(renderer!, 'Review')?.props.onPress();
+    });
+    await act(async () => {
       findButton(renderer!, 'Sign')?.props.onPress();
     });
     await flushEffects();
@@ -618,7 +659,7 @@ describe('TransactionApprovalModal', () => {
       expect.objectContaining({
         transaction: expect.objectContaining({
           header: expect.objectContaining({
-            payee: RECEIVER,
+            payer: RECEIVER,
           }),
         }),
       })
@@ -672,6 +713,9 @@ describe('TransactionApprovalModal', () => {
     await flushEffects();
 
     await act(async () => {
+      findButton(renderer!, 'Review')?.props.onPress();
+    });
+    await act(async () => {
       findButton(renderer!, 'Sign')?.props.onPress();
     });
     await flushEffects();
@@ -682,11 +726,168 @@ describe('TransactionApprovalModal', () => {
       expect.objectContaining({
         transaction: expect.objectContaining({
           header: expect.objectContaining({
-            payee: RECEIVER,
+            payer: RECEIVER,
           }),
         }),
       })
     );
+  });
+
+  it('signs the reviewed payload without replacing the payer or earlier signatures', async () => {
+    const { Transaction } = jest.requireActual('koilib');
+    const transaction = await Transaction.prepareTransaction({
+      header: {
+        payer: RECEIVER,
+        payee: OWNER,
+        chain_id: 'EiAIKVvm6-V2qmsmUvPJy09vCCLbtn9lHFpwrJbcTIEWRQ==',
+        nonce: 'KAE=',
+        rc_limit: '90000000',
+      },
+      operations: [],
+      signatures: ['earlier-signature'],
+    });
+    const onApprove = jest.fn();
+    await act(async () => {
+      activeRenderer = TestRenderer.create(
+        <TransactionApprovalModal
+          visible
+          request={{ signerAddress: OWNER, transaction }}
+          appName="Existing signature"
+          appOrigin="https://example.com"
+          isSend={false}
+          onApprove={onApprove}
+          onReject={jest.fn()}
+          onClose={jest.fn()}
+        />
+      );
+    });
+    await act(async () => {
+      findButton(activeRenderer!, 'Review')?.props.onPress();
+    });
+    await act(async () => {
+      findButton(activeRenderer!, 'Sign')?.props.onPress();
+    });
+
+    expect(mockEstimateSend).not.toHaveBeenCalled();
+    expect(onApprove).toHaveBeenCalledWith({
+      transaction: {
+        ...transaction,
+        signatures: ['earlier-signature', 'wallet-signature'],
+      },
+    });
+  });
+
+  it('does not authorize keys or submit until the final reviewed send is approved', async () => {
+    const onApprove = jest.fn();
+    jest.mocked(submitTransactionOnce).mockResolvedValueOnce({ reverted: false } as never);
+    await act(async () => {
+      activeRenderer = TestRenderer.create(
+        <TransactionApprovalModal
+          visible
+          request={{ signerAddress: OWNER, transaction: { operations: [] } }}
+          appName="Test dApp"
+          appOrigin="https://example.com"
+          isSend
+          onApprove={onApprove}
+          onReject={jest.fn()}
+          onClose={jest.fn()}
+        />
+      );
+    });
+
+    await act(async () => {
+      findButton(activeRenderer!, 'Review')?.props.onPress();
+    });
+    expect(submitTransactionOnce).not.toHaveBeenCalled();
+    expect(requireBiometricAuth).not.toHaveBeenCalled();
+    expect(getTextContent(activeRenderer!)).toContain('Reviewed transaction');
+
+    await act(async () => {
+      const approve = findButton(activeRenderer!, 'Send')?.props.onPress;
+      approve?.();
+      approve?.();
+    });
+    expect(readPayerCapacity).toHaveBeenCalledTimes(2);
+    expect(submitTransactionOnce).toHaveBeenCalledTimes(1);
+    expect(submitTransactionOnce).toHaveBeenCalledWith(expect.objectContaining({
+      transaction: expect.objectContaining({
+        header: expect.objectContaining({ payer: OWNER, rc_limit: '1000000000' }),
+        signatures: ['wallet-signature'],
+      }),
+    }));
+    expect(onApprove).toHaveBeenCalledTimes(1);
+  });
+
+  it('authenticates again and retries only the original Activity transfer', async () => {
+    act(() => { useNetworkStore.setState({ mode: 'mainnet' }); });
+    const { Transaction } = jest.requireActual('koilib');
+    const transaction = await Transaction.prepareTransaction({
+      header: { payer: OWNER, chain_id: MAINNET.chainId, nonce: 'KAE=', rc_limit: '90000000' },
+      operations: [{ call_contract: {
+        contract_id: MAINNET.koinContract, entry_point: 0x27f576ca,
+        args: encodeTransferArgs({ from: OWNER, to: RECEIVER, value: '100000000' }),
+      } }],
+    });
+    const recovery = {
+      address: OWNER, networkMode: 'mainnet' as const, source: 'send' as const, chainTransactionId: transaction.id,
+      transaction: { type: 'send' as const, from: OWNER, to: RECEIVER, payer: OWNER, fee: '0', timestamp: 1,
+        amount: '1', token: MAINNET.koinContract, tokenDecimals: 8, tokenSymbol: 'KOIN' },
+    };
+    jest.mocked(submitTransactionOnce).mockResolvedValueOnce({ id: transaction.id } as never);
+    await act(async () => {
+      activeRenderer = TestRenderer.create(
+        <TransactionApprovalModal visible request={{ signerAddress: OWNER, transaction }} appName="" appOrigin=""
+          isSend recovery={recovery} onApprove={jest.fn()} onReject={jest.fn()} onClose={jest.fn()} />
+      );
+    });
+    expect(getTextContent(activeRenderer!)).toEqual(expect.arrayContaining([RECEIVER, '1 KOIN', '100000000']));
+    await act(async () => { await findButton(activeRenderer!, 'Review')?.props.onPress(); });
+    expect(requireBiometricAuth).not.toHaveBeenCalled();
+    expect(submitTransactionOnce).not.toHaveBeenCalled();
+    await act(async () => { await findButton(activeRenderer!, 'Retry send')?.props.onPress(); });
+    expect(requireBiometricAuth).toHaveBeenCalledTimes(1);
+    expect(readPayerCapacity).toHaveBeenCalledWith(expect.objectContaining({ payer: OWNER, outgoingKoin: '100000000' }));
+    expect(submitTransactionOnce).toHaveBeenCalledWith(expect.objectContaining({
+      transaction: { ...transaction, signatures: ['wallet-signature'] }, pending: recovery, retryOnly: true,
+    }));
+  });
+
+  it('does not load keys if the requesting site navigates during authentication', async () => {
+    let completeAuth: (approved: boolean) => void = () => {};
+    jest.mocked(requireBiometricAuth).mockImplementationOnce(() =>
+      new Promise<boolean>((resolve) => { completeAuth = resolve; })
+    );
+    let current = true;
+    const onApprove = jest.fn();
+    await act(async () => {
+      activeRenderer = TestRenderer.create(
+        <TransactionApprovalModal
+          visible
+          request={{ signerAddress: OWNER, transaction: { operations: [] } }}
+          appName="Site"
+          appOrigin="https://example.com"
+          isSend={false}
+          isRequestCurrent={() => current}
+          onApprove={onApprove}
+          onReject={jest.fn()}
+          onClose={jest.fn()}
+        />
+      );
+    });
+    await act(async () => {
+      findButton(activeRenderer!, 'Review')?.props.onPress();
+    });
+    await act(async () => {
+      findButton(activeRenderer!, 'Sign')?.props.onPress();
+    });
+    current = false;
+    await act(async () => {
+      completeAuth(true);
+    });
+
+    expect(SecureStore.getItemAsync).not.toHaveBeenCalled();
+    expect(mockSignTransaction).not.toHaveBeenCalled();
+    expect(onApprove).not.toHaveBeenCalled();
   });
 
   it('does not mutate the original request transaction after a successful approve', async () => {
@@ -718,6 +919,9 @@ describe('TransactionApprovalModal', () => {
     await flushEffects();
 
     await act(async () => {
+      findButton(renderer!, 'Review')?.props.onPress();
+    });
+    await act(async () => {
       findButton(renderer!, 'Sign')?.props.onPress();
     });
     await flushEffects();
@@ -729,7 +933,7 @@ describe('TransactionApprovalModal', () => {
     });
   });
 
-  it('does not mutate the original request transaction when dry-run estimation fails', async () => {
+  it('does not touch the request or keys when unsigned preparation fails', async () => {
     const onApprove = jest.fn();
     const onReject = jest.fn();
     const request = {
@@ -740,7 +944,7 @@ describe('TransactionApprovalModal', () => {
       },
     };
 
-    mockEstimateSend.mockRejectedValueOnce(new Error('Dry-run exploded'));
+    request.transaction.header = { payer: 'invalid payer' };
 
     let renderer: TestRenderer.ReactTestRenderer;
     await act(async () => {
@@ -761,6 +965,9 @@ describe('TransactionApprovalModal', () => {
     await flushEffects();
 
     await act(async () => {
+      findButton(renderer!, 'Review')?.props.onPress();
+    });
+    await act(async () => {
       findButton(renderer!, 'Sign')?.props.onPress();
     });
     await flushEffects();
@@ -769,10 +976,9 @@ describe('TransactionApprovalModal', () => {
     expect(onReject).not.toHaveBeenCalled();
     expect(request.transaction).toEqual({
       operations: [],
-      header: {},
+      header: { payer: 'invalid payer' },
     });
-    expect(getTextContent(renderer!)).toContain(
-      'Transaction simulation failed: Dry-run exploded'
-    );
+    expect(requireBiometricAuth).not.toHaveBeenCalled();
+    expect(mockSignTransaction).not.toHaveBeenCalled();
   });
 });

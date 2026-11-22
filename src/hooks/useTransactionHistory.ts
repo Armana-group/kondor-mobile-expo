@@ -4,6 +4,8 @@
  * Supports multi-token transactions
  */
 
+import { Provider } from 'koilib';
+import { reconcileJournalTransactions } from '../lib/transactionJournal';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useWalletStore } from '../stores/walletStore';
 import { useTokenStore } from '../stores/tokenStore';
@@ -142,6 +144,9 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
     }
 
     const requestScopeKey = historyScopeKey;
+    void reconcileJournalTransactions(pendingTransactionScope, new Provider(activeNetwork.rpcNodes)).then(ids => {
+      useTransactionStore.getState().confirmPendingTransactionsByChainIds(pendingTransactionScope, ids);
+    }).catch(() => txLogger.warn('Could not reconcile pending transaction IDs'));
     txLogger.debug('Fetching transactions for:', address);
 
     try {
@@ -225,6 +230,7 @@ export const useTransactionHistory = (): UseTransactionHistoryResult => {
   }, [
     activeNetwork.rest.history,
     activeNetwork.rest.transaction,
+    activeNetwork.rpcNodes,
     address,
     getTokenByContractId,
     historyScopeKey,

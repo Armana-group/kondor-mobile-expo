@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   FlatList,
   Pressable,
   Alert,
+  type AlertButton,
   ActivityIndicator,
   RefreshControl,
   Platform,
@@ -13,8 +14,13 @@ import {
   Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { RouteProp, useRoute } from '@react-navigation/native';
+import * as Clipboard from 'expo-clipboard';
+import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { Screen } from '../components/Screen';
+import { TransactionApprovalModal } from '../components/TransactionApprovalModal';
+import { getTransactionRecovery, type TransactionRecovery } from '../lib/transactionJournal';
+import { useWalletStore } from '../stores/walletStore';
+import { useNetworkStore } from '../stores/networkStore';
 import { useTransactionHistory, ParsedTransaction } from '../hooks/useTransactionHistory';
 import type { HomeStackParamList } from '../navigation/TabNavigator';
 import { getTransactionExplorerUrl } from '../lib/explorer';
@@ -85,7 +91,7 @@ function getAmountDisplay(tx: ParsedTransaction): string {
   return `${prefix}${tx.amount}`;
 }
 
-function handleTransactionPress(tx: ParsedTransaction) {
+export function buildTransactionDetailMessage(tx: ParsedTransaction): string {
   const detail =
     tx.type === 'swap'
       ? `Pay: ${tx.amount} ${tx.tokenSymbol}\n` +
@@ -97,31 +103,49 @@ function handleTransactionPress(tx: ParsedTransaction) {
       : `Amount: ${tx.amount} ${tx.tokenSymbol}\n` +
         `${tx.type === 'send' ? 'To' : 'From'}: ${tx.type === 'send' ? tx.to : tx.from}\n`;
 
-  Alert.alert(
-    'Transaction Details',
+  return `Transaction ID: ${tx.id}\n` +
     `Type: ${getTransactionLabel(tx)}\n` +
+    `From: ${tx.from}\n` +
+    `To: ${tx.to}\n` +
+    `Payer: ${tx.payer || 'N/A'}\n` +
     detail +
     `Status: ${tx.status === 'pending' ? 'Pending' : 'Confirmed'}\n` +
     `Block: ${tx.blockHeight || 'N/A'}\n` +
-    `Time: ${tx.timestamp ? new Date(tx.timestamp).toLocaleString() : 'N/A'}`,
+    `Time: ${tx.timestamp ? new Date(tx.timestamp).toLocaleString() : 'N/A'}`;
+}
+
+function showTransactionDetails(tx: ParsedTransaction, retry?: () => void) {
+  const recoveryButton: AlertButton = { text: 'Review and retry', onPress: retry };
+  Alert.alert(
+    'Transaction Details',
+    buildTransactionDetailMessage(tx),
     [
       {
-        text: 'View on Explorer',
+        text: 'Copy Tx ID',
         onPress: () => {
-          const url = getTransactionExplorerUrl(tx.id);
-          Linking.openURL(url);
+          void Clipboard.setStringAsync(tx.id);
         },
       },
-      { text: 'Close', style: 'cancel' },
-    ]
+        {
+          text: 'View on Explorer',
+          onPress: () => {
+            const url = getTransactionExplorerUrl(tx.id);
+            Linking.openURL(url);
+          },
+        },
+      ...(retry ? [recoveryButton] : []),
+      ...(retry && Platform.OS === 'android' ? [] : [{ text: 'Close', style: 'cancel' as const }]),
+    ],
+    { cancelable: true },
   );
 }
 
-function renderTransaction({ item: tx }: { item: ParsedTransaction }) {
+function TransactionRow({ tx, onPress }: { tx: ParsedTransaction; onPress: (tx: ParsedTransaction) => void }) {
   return (
     <Pressable
+      accessibilityRole="button"
       style={styles.transactionItem}
-      onPress={() => handleTransactionPress(tx)}
+      onPress={() => onPress(tx)}
     >
       <View style={styles.transactionIconContainer}>
         {tx.tokenIcon ? (
@@ -178,10 +202,56 @@ function renderTransaction({ item: tx }: { item: ParsedTransaction }) {
 
 export const ActivityScreen = () => {
   const route = useRoute<RouteProp<HomeStackParamList, 'Activity'>>();
+  const navigation = useNavigation();
   const { transactions, loading, error, refetch } = useTransactionHistory();
+  const [recovery, setRecovery] = useState<(TransactionRecovery & { isCurrent: () => boolean }) | null>(null);
+  const recoveryRequest = useMemo(() => recovery
+    ? { signerAddress: recovery.pending.address, transaction: recovery.transaction }
+    : null, [recovery]);
+  const recoveryRevision = useRef(0);
   const [activeFilter, setActiveFilter] = useState<ActivityFilter>(
     route.params?.initialFilter ?? 'all'
   );
+
+  const closeRecovery = useCallback(() => {
+    recoveryRevision.current += 1;
+    setRecovery(null);
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('blur', closeRecovery);
+    return () => {
+      recoveryRevision.current += 1;
+      unsubscribe();
+    };
+  }, [navigation, closeRecovery]);
+
+  const handleTransactionPress = useCallback(async (tx: ParsedTransaction) => {
+    const { address, activeAccountId } = useWalletStore.getState();
+    const { mode, hasHydrated } = useNetworkStore.getState();
+    if (tx.status !== 'pending' || !address || !hasHydrated) {
+      showTransactionDetails(tx);
+      return;
+    }
+
+    const revision = ++recoveryRevision.current;
+    const isCurrent = () => {
+      const wallet = useWalletStore.getState();
+      const network = useNetworkStore.getState();
+      return recoveryRevision.current === revision && navigation.isFocused() &&
+        wallet.activeAccountId === activeAccountId && wallet.address === address &&
+        network.hasHydrated && network.mode === mode;
+    };
+    const draft = await getTransactionRecovery({ address, networkMode: mode }, tx.id).catch(() => undefined);
+    if (!isCurrent()) return;
+    showTransactionDetails(tx, draft ? () => {
+      if (isCurrent()) setRecovery({ ...draft, isCurrent });
+    } : undefined);
+  }, [navigation]);
+
+  const renderTransaction = useCallback(({ item }: { item: ParsedTransaction }) => (
+    <TransactionRow tx={item} onPress={handleTransactionPress} />
+  ), [handleTransactionPress]);
 
   useEffect(() => {
     if (route.params?.initialFilter) {
@@ -286,13 +356,14 @@ export const ActivityScreen = () => {
             <ActivityIndicator size="large" color={colors.purple} />
             <Text style={styles.loadingText}>Loading transactions...</Text>
           </View>
-        ) : error ? (
+        ) : error && filteredTransactions.length === 0 ? (
           renderError()
         ) : (
           <FlatList
             data={filteredTransactions}
             keyExtractor={(item) => item.id}
             renderItem={renderTransaction}
+            ListHeaderComponent={error ? renderError : undefined}
             ListEmptyComponent={renderEmpty}
             contentContainerStyle={
               filteredTransactions.length === 0 ? styles.emptyContainer : styles.listContainer
@@ -302,6 +373,25 @@ export const ActivityScreen = () => {
           />
         )}
       </View>
+      {recovery && (
+        <TransactionApprovalModal
+          visible
+          request={recoveryRequest}
+          appName=""
+          appOrigin=""
+          isSend
+          recovery={recovery.pending}
+          isRequestCurrent={recovery.isCurrent}
+          onApprove={() => {
+            if (!recovery.isCurrent()) return;
+            closeRecovery();
+            void refetch();
+            Alert.alert('Transaction submitted', 'Check Activity for confirmation.');
+          }}
+          onReject={() => { if (recovery.isCurrent()) void refetch(); }}
+          onClose={closeRecovery}
+        />
+      )}
     </Screen>
   );
 };

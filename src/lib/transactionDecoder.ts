@@ -146,6 +146,14 @@ function decodeTransferArgs(args: string): {
   }
 }
 
+export function decodeRecoveryTransfer(operation: OperationJson | undefined) {
+  const call = operation?.call_contract;
+  if (!call?.args || call.entry_point !== 0x27f576ca) return undefined;
+  const decoded = decodeTransferArgs(call.args);
+  if (!decoded?.from || !decoded.to || !decoded.value) return undefined;
+  return { contractId: call.contract_id, from: decoded.from, to: decoded.to, value: decoded.value, memo: decoded.memo };
+}
+
 function decodeSwapTokensInArgs(args: string): {
   from?: string;
   receiver?: string;

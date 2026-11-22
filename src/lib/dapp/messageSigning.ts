@@ -128,11 +128,12 @@ async function getLegacyPrivateKeyForAccount(account: Account): Promise<string |
   return legacySigner.getAddress() === account.address ? legacyPrivateKey : null;
 }
 
-async function getAuthenticatedPrivateKeyForAccount(account: Account, operation: string): Promise<string> {
+async function getAuthenticatedPrivateKeyForAccount(account: Account, operation: string, assertCurrent?: () => void): Promise<string> {
   const authenticated = await requireBiometricAuth(operation);
   if (!authenticated) {
     throw new Error('Authentication required');
   }
+  assertCurrent?.();
 
   let privateKey: string | null = null;
 
@@ -179,6 +180,7 @@ interface AuthenticatedSigningParams {
   signerAddress: string;
   provider?: Provider;
   authOperation?: string;
+  assertCurrent?: () => void;
 }
 
 interface AuthenticatedSignerContext {
@@ -200,8 +202,10 @@ export async function withAuthenticatedAccountSigner<T>(
   try {
     privateKey = await getAuthenticatedPrivateKeyForAccount(
       account,
-      params.authOperation ?? 'sign with this account'
+      params.authOperation ?? 'sign with this account',
+      params.assertCurrent
     );
+    params.assertCurrent?.();
     signer = createSigner(privateKey, provider);
 
     if (signer.getAddress() !== params.signerAddress) {

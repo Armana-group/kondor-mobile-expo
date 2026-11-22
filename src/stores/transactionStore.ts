@@ -7,6 +7,8 @@ import {
   type ParsedTransaction,
 } from '../lib/transactionHistoryParser';
 import type { NetworkMode } from './networkStore';
+import { readTransactionJournal, settleJournalTransactions } from '../lib/transactionJournal';
+import { txLogger } from '../lib/logger';
 
 const STORAGE_NAME = 'transaction-store';
 const ZUSTAND_PERSIST_VERSION = 0;
@@ -40,6 +42,7 @@ export interface PendingTransactionRecord {
   swapRoute?: string;
   source?: 'send' | 'swap' | 'dapp' | 'walletconnect';
   appOrigin?: string;
+  submissionTracked?: boolean;
 }
 
 export interface PendingTransactionScope {
@@ -54,6 +57,7 @@ export interface AddPendingTransactionInput {
   transaction: Omit<ParsedTransaction, 'status' | 'id'> & Partial<Pick<ParsedTransaction, 'id'>>;
   source?: PendingTransactionRecord['source'];
   appOrigin?: string;
+  submissionTracked?: boolean;
 }
 
 export interface BroadcastPendingTransactionParams {
@@ -91,6 +95,13 @@ interface TransactionStoreState {
   pruneStalePendingTransactions: (now?: number) => void;
   getPendingTransactions: (scope: PendingTransactionScope) => ParsedTransaction[];
   setHasHydrated: (hydrated: boolean) => void;
+  recoverPendingSubmissions: () => Promise<void>;
+  removeRejectedSubmission: (scope: PendingTransactionScope, chainTransactionId: string) => void;
+}
+
+function settleConfirmedSubmissions(scope: PendingTransactionScope, ids: string[]): void {
+  if (ids.length === 0) return;
+  void settleJournalTransactions(scope, ids).catch(() => txLogger.error('Could not save transaction confirmation'));
 }
 
 let nextLocalId = 0;
@@ -191,6 +202,7 @@ function sanitizePendingTransactionRecord(
     ...(sanitizeOptionalString(swapRoute) ? { swapRoute } : {}),
     ...(sanitizeOptionalString(input.source) ? { source: input.source } : {}),
     ...(sanitizeOptionalString(input.appOrigin) ? { appOrigin: input.appOrigin } : {}),
+    ...(input.submissionTracked ? { submissionTracked: true } : {}),
   };
 }
 
@@ -249,6 +261,7 @@ function sanitizePendingTransactions(value: unknown): PendingTransactionRecord[]
         ? { source: record.source }
         : {}),
       ...(sanitizeOptionalString(record.appOrigin) ? { appOrigin: record.appOrigin } : {}),
+      ...(record.submissionTracked ? { submissionTracked: true } : {}),
     });
     return records;
   }, []);
@@ -475,6 +488,8 @@ export const useTransactionStore = create<TransactionStoreState>()(
       },
 
       confirmPendingTransactionByLocalId: (localId) => {
+        const record = get().pendingTransactions.find(entry => entry.localId === localId);
+        if (record?.chainTransactionId) settleConfirmedSubmissions(record, [record.chainTransactionId]);
         set((state) => ({
           pendingTransactions: state.pendingTransactions.filter(
             (record) => record.localId !== localId
@@ -483,6 +498,7 @@ export const useTransactionStore = create<TransactionStoreState>()(
       },
 
       confirmPendingTransactionByChainId: (scope, chainTransactionId) => {
+        settleConfirmedSubmissions(scope, [chainTransactionId]);
         set((state) => ({
           pendingTransactions: state.pendingTransactions.filter(
             (record) => !(
@@ -494,6 +510,7 @@ export const useTransactionStore = create<TransactionStoreState>()(
       },
 
       confirmPendingTransactionsByChainIds: (scope, chainTransactionIds) => {
+        settleConfirmedSubmissions(scope, chainTransactionIds);
         const confirmedIds = new Set(
           chainTransactionIds.filter((transactionId): transactionId is string => (
             typeof transactionId === 'string' && transactionId.length > 0
@@ -515,16 +532,32 @@ export const useTransactionStore = create<TransactionStoreState>()(
       },
 
       pruneStalePendingTransactions: (now = Date.now()) => {
-        set((state) => ({
-          pendingTransactions: state.pendingTransactions.filter(
-            (record) => now - record.timestamp <= PENDING_TRANSACTION_STALE_MS
-          ),
-        }));
+        set((state) => {
+          const pendingTransactions = state.pendingTransactions.filter(record =>
+            record.submissionTracked || now - record.timestamp <= PENDING_TRANSACTION_STALE_MS);
+          return pendingTransactions.length === state.pendingTransactions.length ? state : { pendingTransactions };
+        });
       },
 
       getPendingTransactions: (scope) => sortPendingTransactions(
         get().pendingTransactions.filter((record) => matchesScope(record, scope))
       ).map(toParsedTransaction),
+
+      removeRejectedSubmission: (scope, chainTransactionId) => {
+        set(state => ({ pendingTransactions: state.pendingTransactions.filter(record =>
+          !(matchesScope(record, scope) && record.chainTransactionId === chainTransactionId)) }));
+      },
+
+      recoverPendingSubmissions: async () => {
+        const records = await readTransactionJournal();
+        for (const record of records) {
+          if (record.state === 'unknown' || record.state === 'submitted') {
+            get().addPendingTransaction({ ...record.pending, submissionTracked: true });
+          } else {
+            get().removeRejectedSubmission(record.pending, record.transaction.id!);
+          }
+        }
+      },
 
       setHasHydrated: (hydrated) => {
         set({ hasHydrated: hydrated });
@@ -552,6 +585,7 @@ export const useTransactionStore = create<TransactionStoreState>()(
         return (state) => {
           isTransactionStoreHydrating = false;
           state?.setHasHydrated(true);
+          void state?.recoverPendingSubmissions().catch(() => txLogger.error('Could not recover pending submissions'));
         };
       },
     }
